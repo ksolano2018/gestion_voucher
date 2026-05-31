@@ -1,0 +1,145 @@
+services:
+  # Base de datos PostgreSQL
+  postgres:
+    image: postgres:15-alpine
+    container_name: proyecto-db
+    environment:
+      POSTGRES_DB: ${DB_NAME}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - proyecto-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # API Gateway
+  api-gateway:
+    build: ./api-gateway
+    container_name: proyecto-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      - SPRING_PROFILES_ACTIVE=docker
+      - EUREKA_CLIENT_ENABLED=false
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - proyecto-network
+
+  # Mock Moodle Web Services (solo desarrollo local)
+  moodle-mock:
+    build: ./servicios/moodle-mock
+    container_name: moodle-mock
+    ports:
+      - "8082:8082"
+    networks:
+      - proyecto-network
+
+  # Microservicio de Usuarios
+  servicio-usuarios:
+    build: ./servicios/servicio-usuarios
+    container_name: servicio-usuarios
+    ports:
+      - "8081:8081"
+    env_file:
+      - ./servicios/servicio-usuarios/.env
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      moodle-mock:
+        condition: service_started
+    networks:
+      - proyecto-network
+    volumes:
+      - ./logs/usuarios:/app/logs
+
+  # Frontend
+  frontend:
+    build: ./frontend
+    container_name: proyecto-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - REACT_APP_API_URL=http://localhost:8080
+    depends_on:
+      - api-gateway
+    networks:
+      - proyecto-network
+    volumes:
+      - ./frontend/public:/app/public
+
+  # Base de datos de Moodle (MariaDB oficial, separada del PostgreSQL de la app)
+  # Solo arranca con: docker compose --profile local-moodle up -d
+  moodle-db:
+    image: mariadb:10.11
+    container_name: moodle-db
+    profiles: [local-moodle]
+    environment:
+      - MYSQL_ROOT_PASSWORD=rootpassword123
+      - MYSQL_USER=moodle
+      - MYSQL_PASSWORD=moodlepass123
+      - MYSQL_DATABASE=moodle
+    volumes:
+      - moodle_mariadb_data:/var/lib/mysql
+    networks:
+      - proyecto-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "moodle", "-pmoodlepass123"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # Moodle LMS local (acceso: http://localhost:8090  admin/Admin1234!)
+  # Solo arranca con: docker compose --profile local-moodle up -d
+  moodle:
+    image: erseco/alpine-moodle
+    container_name: moodle
+    profiles: [local-moodle]
+    ports:
+      - "8090:8080"
+    environment:
+      - SITE_URL=http://localhost:8090
+      - DB_TYPE=mariadb
+      - DB_HOST=moodle-db
+      - DB_PORT=3306
+      - DB_NAME=moodle
+      - DB_USER=moodle
+      - DB_PASS=moodlepass123
+      - MOODLE_USERNAME=admin
+      - MOODLE_PASSWORD=Admin1234!
+      - MOODLE_EMAIL=admin@certjoin.com
+      - MOODLE_SITENAME=CertJOIN-LMS
+      - MOODLE_LANGUAGE=es
+      - REVERSEPROXY=true
+    depends_on:
+      moodle-db:
+        condition: service_healthy
+    volumes:
+      - moodle_data:/var/www/html/moodledata
+    networks:
+      - proyecto-network
+
+networks:
+  proyecto-network:
+    driver: bridge
+
+volumes:
+  postgres_data:
+  moodle_mariadb_data:
+  moodle_data:
+  moodle_datadir:

@@ -1,0 +1,12 @@
+{
+  "name": "moodle-mock",
+  "version": "1.0.0",
+  "description": "Mock Moodle Web Services server para desarrollo local",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2"
+  }
+}

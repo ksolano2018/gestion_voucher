@@ -1,0 +1,4564 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>CertJOIN - Plataforma de Certificaciones Profesionales</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+      :root {
+        --primary: #f97316;
+        --primary-dark: #ea580c;
+        --primary-light: #fb923c;
+        --primary-xlight: #fff7ed;
+        --accent: #c2410c;
+        --success: #10b981;
+        --danger: #ef4444;
+        --info: #3b82f6;
+        --warning: #f59e0b;
+        --dark: #0f172a;
+        --dark-2: #1e293b;
+        --dark-3: #334155;
+        --surface: #f1f5f9;
+        --card: #ffffff;
+        --muted: #64748b;
+        --muted-light: #94a3b8;
+        --border: #e2e8f0;
+        --shadow-xs: 0 1px 2px rgba(15,23,42,0.06);
+        --shadow-sm: 0 1px 3px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.04);
+        --shadow-md: 0 4px 12px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.04);
+        --shadow-lg: 0 10px 24px rgba(15,23,42,0.10), 0 4px 8px rgba(15,23,42,0.06);
+        --shadow-xl: 0 20px 40px rgba(15,23,42,0.12), 0 8px 16px rgba(15,23,42,0.06);
+        --shadow-primary: 0 8px 24px rgba(249,115,22,0.30);
+        --radius-sm: 8px;
+        --radius: 12px;
+        --radius-lg: 16px;
+        --radius-xl: 24px;
+        --radius-full: 9999px;
+        --transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-fast: all 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+        --transition-slow: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+      }
+
+      /* ===== RESET & BASE ===== */
+      *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+      html { scroll-behavior: smooth; font-size: 16px; }
+
+      body {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        min-height: 100vh;
+        background: var(--surface);
+        color: var(--dark);
+        overflow-x: hidden;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      /* ===== ANIMATIONS ===== */
+      @keyframes fadeIn   { from { opacity:0; transform:translateY(16px); } to { opacity:1; transform:translateY(0); } }
+      @keyframes slideInL { from { opacity:0; transform:translateX(-24px); } to { opacity:1; transform:translateX(0); } }
+      @keyframes slideInR { from { opacity:0; transform:translateX(24px);  } to { opacity:1; transform:translateX(0); } }
+      @keyframes scaleIn  { from { opacity:0; transform:scale(0.93); } to { opacity:1; transform:scale(1); } }
+      @keyframes pulse    { 0%,100% { opacity:1; } 50% { opacity:.55; } }
+      @keyframes spin     { to { transform:rotate(360deg); } }
+      @keyframes shimmer  { 0% { background-position:-800px 0; } 100% { background-position:800px 0; } }
+      @keyframes gradMove { 0%,100% { background-position:0% 50%; } 50% { background-position:100% 50%; } }
+
+      .fade-in      { animation: fadeIn  0.45s ease-out both; }
+      .slide-in-left  { animation: slideInL 0.45s ease-out both; }
+      .slide-in-right { animation: slideInR 0.45s ease-out both; }
+      .scale-in     { animation: scaleIn  0.35s ease-out both; }
+
+      /* ===== LOGIN PAGE ===== */
+      #login-container {
+        display: flex;
+        min-height: 100vh;
+        background: var(--dark);
+        position: relative;
+        overflow: hidden;
+      }
+
+      #login-container::before {
+        content: '';
+        position: absolute;
+        inset: 0;
+        background:
+          radial-gradient(ellipse 80% 60% at 20% 50%, rgba(249,115,22,0.18) 0%, transparent 70%),
+          radial-gradient(ellipse 60% 80% at 80% 20%, rgba(249,115,22,0.10) 0%, transparent 60%);
+        pointer-events: none;
+      }
+
+      .login-split {
+        display: flex;
+        width: 100%;
+        align-items: stretch;
+      }
+
+      .login-brand-panel {
+        display: none;
+        flex: 1;
+        background: linear-gradient(145deg, #1e293b 0%, #0f172a 100%);
+        align-items: center;
+        justify-content: center;
+        padding: 4rem 3rem;
+        position: relative;
+        overflow: hidden;
+        border-right: 1px solid rgba(249,115,22,0.15);
+      }
+
+      @media (min-width: 900px) {
+        .login-brand-panel { display: flex; }
+      }
+
+      .login-brand-panel::before {
+        content: '';
+        position: absolute;
+        width: 500px; height: 500px;
+        border-radius: 50%;
+        background: radial-gradient(circle, rgba(249,115,22,0.12) 0%, transparent 70%);
+        top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+      }
+
+      .login-brand-content {
+        position: relative;
+        text-align: center;
+        color: white;
+        max-width: 340px;
+      }
+
+      .login-brand-content img {
+        width: 200px;
+        margin-bottom: 2.5rem;
+        filter: brightness(1.1);
+      }
+
+      .login-brand-content h1 {
+        font-size: 2.25rem;
+        font-weight: 800;
+        margin-bottom: 1rem;
+        line-height: 1.2;
+      }
+
+      .login-brand-content p {
+        font-size: 1.05rem;
+        color: rgba(255,255,255,0.65);
+        line-height: 1.7;
+      }
+
+      .login-brand-features {
+        margin-top: 2.5rem;
+        display: flex;
+        flex-direction: column;
+        gap: 0.9rem;
+        text-align: left;
+      }
+
+      .login-brand-feature {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        color: rgba(255,255,255,0.75);
+        font-size: 0.92rem;
+        font-weight: 500;
+      }
+
+      .login-brand-feature .feat-icon {
+        width: 32px; height: 32px;
+        border-radius: 8px;
+        background: rgba(249,115,22,0.2);
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1rem;
+        flex-shrink: 0;
+      }
+
+      .login-form-panel {
+        width: 100%;
+        max-width: 480px;
+        margin: 0 auto;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 2.5rem 1.5rem;
+      }
+
+      @media (min-width: 900px) {
+        .login-form-panel { width: 480px; flex-shrink: 0; margin: 0; }
+      }
+
+      .login-box {
+        background: rgba(255,255,255,0.04);
+        border: 1px solid rgba(255,255,255,0.10);
+        border-radius: var(--radius-xl);
+        padding: 2.75rem 2.25rem;
+        width: 100%;
+        animation: scaleIn 0.4s ease-out;
+        backdrop-filter: blur(20px);
+      }
+
+      .login-logo {
+        text-align: center;
+        margin-bottom: 2rem;
+      }
+
+      .login-logo-img {
+        width: 180px;
+        height: auto;
+        display: inline-block;
+        filter: brightness(1.2);
+      }
+
+      .login-logo-text {
+        font-size: 2.5rem;
+        font-weight: 900;
+        color: var(--primary);
+        margin-bottom: 0.25rem;
+      }
+
+      .login-logo p {
+        font-size: 0.95rem;
+        color: rgba(255,255,255,0.55);
+        margin-top: 0.5rem;
+        font-weight: 500;
+      }
+
+      .login-form { margin-top: 1.5rem; }
+
+      .form-group { margin-bottom: 1.1rem; }
+
+      /* Dark-context inputs (login screen) */
+      #login-container .form-control {
+        background: rgba(255,255,255,0.07);
+        border: 1.5px solid rgba(255,255,255,0.12);
+        border-radius: var(--radius);
+        padding: 0.85rem 1rem;
+        font-size: 0.97rem;
+        font-weight: 500;
+        color: white;
+        transition: var(--transition);
+      }
+
+      #login-container .form-control::placeholder { color: rgba(255,255,255,0.35); }
+
+      #login-container .form-control:hover {
+        border-color: rgba(249,115,22,0.4);
+      }
+
+      #login-container .form-control:focus {
+        outline: none;
+        background: rgba(255,255,255,0.10);
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(249,115,22,0.20);
+        color: white;
+      }
+
+      .btn-login {
+        width: 100%;
+        background: var(--primary);
+        border: none;
+        color: #fff;
+        padding: 0.9rem 1rem;
+        border-radius: var(--radius);
+        font-weight: 700;
+        font-size: 1rem;
+        box-shadow: var(--shadow-primary);
+        transition: var(--transition);
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        letter-spacing: 0.01em;
+      }
+
+      .btn-login:hover {
+        background: var(--primary-dark);
+        transform: translateY(-2px);
+        box-shadow: 0 14px 32px rgba(249,115,22,0.40);
+      }
+
+      .btn-login:active { transform: translateY(0); }
+
+      #login-message { margin-bottom: 1rem; }
+
+      /* ===== APP SHELL ===== */
+      body.authenticated { background: var(--surface); }
+
+      .app-shell {
+        max-width: 1280px;
+        margin: 0 auto;
+        padding: 1.75rem 1.5rem;
+        animation: fadeIn 0.4s ease-out;
+      }
+
+      /* ===== HEADER ===== */
+      .modern-header {
+        background: var(--dark);
+        box-shadow: 0 1px 0 rgba(255,255,255,0.06), 0 4px 16px rgba(0,0,0,0.3);
+        position: sticky;
+        top: 0;
+        z-index: 1000;
+      }
+
+      .header-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 0 1.75rem;
+        height: 64px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 1rem;
+      }
+
+      .header-logo {
+        width: auto;
+          max-width: 180px;
+          max-height: 52px;
+        height: auto;
+        display: block;
+        filter: brightness(1.1);
+        transition: var(--transition-fast);
+        flex-shrink: 0;
+      }
+
+      .header-logo:hover { opacity: 0.85; }
+
+      .header-nav {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        flex: 1;
+        justify-content: center;
+      }
+
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-shrink: 0;
+      }
+
+      .nav-btn {
+        border-radius: var(--radius-sm);
+        padding: 0.5rem 1rem;
+        font-weight: 600;
+        font-size: 0.88rem;
+        border: none;
+        background: transparent;
+        color: rgba(255,255,255,0.65);
+        transition: var(--transition);
+        cursor: pointer;
+        white-space: nowrap;
+        position: relative;
+      }
+
+      .nav-btn:hover {
+        background: rgba(255,255,255,0.08);
+        color: white;
+      }
+
+      .nav-btn.active {
+        background: rgba(249,115,22,0.18);
+        color: var(--primary);
+      }
+
+      .user-info-badge {
+        padding: 0.35rem 0.85rem;
+        border-radius: var(--radius-full);
+        background: rgba(249,115,22,0.18);
+        color: var(--primary-light);
+        font-weight: 600;
+        font-size: 0.85rem;
+        border: 1px solid rgba(249,115,22,0.25);
+        transition: var(--transition);
+      }
+
+      /* Cart badge */
+      #nav-cart {
+        background: rgba(255,255,255,0.07);
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: var(--radius-sm);
+        color: white;
+      }
+      #nav-cart:hover { background: rgba(255,255,255,0.13); }
+
+      /* Logout */
+      #logout-btn {
+        background: #fff1f2 !important;
+        color: #b42318 !important;
+        border: 1px solid #fda4af !important;
+        border-radius: var(--radius-sm) !important;
+        font-weight: 600 !important;
+        font-size: 0.85rem !important;
+        padding: 0.45rem 1rem !important;
+        transition: var(--transition) !important;
+      }
+      #logout-btn:hover {
+        background: #fee2e2 !important;
+        color: #7f1d1d !important;
+        border-color: #fb7185 !important;
+      }
+
+      /* ===== CARDS ===== */
+      .card {
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        background: var(--card);
+        box-shadow: var(--shadow-sm);
+        transition: var(--transition);
+      }
+
+      .card:hover { box-shadow: var(--shadow-md); }
+
+      .card-body { padding: 1.5rem; }
+
+      .card-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+      }
+
+      /* ===== GLASS PANEL ===== */
+      .glass-panel {
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius-lg);
+        box-shadow: var(--shadow-sm);
+        transition: var(--transition);
+      }
+
+      .glass-panel:hover { box-shadow: var(--shadow-md); }
+
+      /* ===== SECTION TITLES ===== */
+      .section-title {
+        font-weight: 800;
+        color: var(--dark);
+        letter-spacing: -0.02em;
+      }
+
+      .section-subtitle { color: var(--muted); font-size: 1rem; }
+      .small-muted { color: var(--muted); font-size: 0.875rem; }
+
+      /* ===== BUTTONS ===== */
+      .btn {
+        font-weight: 600;
+        border-radius: var(--radius-sm);
+        font-size: 0.9rem;
+        padding: 0.55rem 1.1rem;
+        transition: var(--transition);
+        border-width: 1.5px;
+        cursor: pointer;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+      }
+
+      .btn:hover { transform: translateY(-1px); }
+      .btn:active { transform: translateY(0); }
+
+      .btn-primary {
+        background: var(--primary);
+        border-color: var(--primary);
+        color: white;
+        box-shadow: 0 2px 8px rgba(249,115,22,0.25);
+      }
+
+      .btn-primary:hover {
+        background: var(--primary-dark);
+        border-color: var(--primary-dark);
+        color: white;
+        box-shadow: 0 4px 16px rgba(249,115,22,0.35);
+      }
+
+      .btn-outline-primary {
+        border-color: var(--primary);
+        color: var(--primary);
+        background: transparent;
+      }
+
+      .btn-outline-primary:hover {
+        background: var(--primary);
+        color: white;
+        box-shadow: 0 4px 12px rgba(249,115,22,0.25);
+      }
+
+      /* ===== PARTNER VOUCHERS QUICK BUY ===== */
+      #voucher-qty {
+        max-width: 180px;
+      }
+
+      .voucher-quick-actions {
+        min-height: 42px;
+      }
+
+      .voucher-total-text {
+        display: inline-flex;
+        align-items: center;
+        font-size: 1.55rem;
+        font-weight: 800;
+        color: var(--primary);
+        line-height: 1;
+        margin-left: 0.25rem;
+      }
+
+      @media (max-width: 768px) {
+        #voucher-qty {
+          max-width: 100%;
+        }
+
+        .voucher-total-text {
+          font-size: 1.3rem;
+          margin-left: 0;
+        }
+      }
+
+      .btn-outline-secondary {
+        border-color: var(--border);
+        color: var(--muted);
+        background: transparent;
+      }
+
+      .btn-outline-secondary:hover {
+        background: var(--dark-3);
+        border-color: var(--dark-3);
+        color: white;
+      }
+
+      .btn-outline-success:hover { background: var(--success); border-color: var(--success); color: white; }
+      .btn-outline-danger:hover  { background: var(--danger);  border-color: var(--danger);  color: white; }
+      .btn-outline-info:hover    { background: var(--info);    border-color: var(--info);    color: white; }
+
+      .btn-sm { font-size: 0.82rem; padding: 0.4rem 0.85rem; }
+      .btn-lg { font-size: 1rem;   padding: 0.75rem 1.75rem; }
+
+      /* ===== FORMS ===== */
+      .form-label {
+        font-weight: 600;
+        color: var(--dark-3);
+        margin-bottom: 0.4rem;
+        font-size: 0.85rem;
+        letter-spacing: 0.01em;
+      }
+
+      .form-control, .form-select {
+        border: 1.5px solid var(--border);
+        border-radius: var(--radius-sm);
+        padding: 0.6rem 0.9rem;
+        font-size: 0.93rem;
+        font-weight: 500;
+        color: var(--dark);
+        background: white;
+        transition: var(--transition);
+        width: 100%;
+      }
+
+      .form-control:hover, .form-select:hover { border-color: #cbd5e1; }
+
+      .form-control:focus, .form-select:focus {
+        outline: none;
+        border-color: var(--primary);
+        box-shadow: 0 0 0 3px rgba(249,115,22,0.12);
+      }
+
+      .form-control-sm, .form-select-sm {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.84rem;
+        border-radius: 6px;
+      }
+
+      /* ===== MODERN SIDEBAR/MENU CARDS ===== */
+      .modern-sidebar {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.75rem;
+      }
+
+      .modern-menu-card {
+        background: var(--card);
+        border-radius: var(--radius-lg);
+        padding: 1.5rem 1.25rem;
+        text-align: center;
+        cursor: pointer;
+        transition: var(--transition);
+        border: 1.5px solid var(--border);
+        box-shadow: var(--shadow-xs);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .modern-menu-card::after {
+        content: '';
+        position: absolute;
+        bottom: 0; left: 0;
+        width: 100%; height: 3px;
+        background: linear-gradient(90deg, var(--primary), var(--primary-light));
+        transform: scaleX(0);
+        transform-origin: left;
+        transition: transform 0.3s ease;
+      }
+
+      .modern-menu-card:hover::after,
+      .modern-menu-card.active::after { transform: scaleX(1); }
+
+      .modern-menu-card:hover {
+        transform: translateY(-4px);
+        box-shadow: var(--shadow-lg);
+        border-color: rgba(249,115,22,0.3);
+      }
+
+      .modern-menu-card.active {
+        border-color: rgba(249,115,22,0.4);
+        background: linear-gradient(145deg, #fff7ed 0%, #fff 100%);
+        box-shadow: var(--shadow-md);
+      }
+
+      .modern-menu-card .icon {
+        font-size: 2.25rem;
+        margin-bottom: 0.6rem;
+        display: block;
+        transition: var(--transition);
+        pointer-events: none;
+      }
+
+      .modern-menu-card:hover .icon { transform: scale(1.15); }
+
+      .modern-menu-card .title {
+        font-weight: 700;
+        font-size: 0.9rem;
+        color: var(--dark);
+        margin: 0;
+        pointer-events: none;
+      }
+
+      .modern-menu-card .subtitle {
+        font-size: 0.75rem;
+        color: var(--muted);
+        margin-top: 0.2rem;
+        pointer-events: none;
+      }
+
+      .modern-menu-card.color-cyan   { background: linear-gradient(145deg,#ecfeff,#fff);  border-color:#a5f3fc; }
+      .modern-menu-card.color-yellow { background: linear-gradient(145deg,#fefce8,#fff);  border-color:#fde68a; }
+      .modern-menu-card.color-pink   { background: linear-gradient(145deg,#fdf2f8,#fff);  border-color:#f9a8d4; }
+      .modern-menu-card.color-purple { background: linear-gradient(145deg,#f5f3ff,#fff);  border-color:#c4b5fd; }
+      .modern-menu-card.color-green  { background: linear-gradient(145deg,#f0fdf4,#fff);  border-color:#86efac; }
+      .modern-menu-card.color-orange { background: linear-gradient(145deg,#fff7ed,#fff);  border-color:#fdba74; }
+      .modern-menu-card.color-blue   { background: linear-gradient(145deg,#eff6ff,#fff);  border-color:#93c5fd; }
+
+      .modern-menu-card.color-cyan.active,
+      .modern-menu-card.color-yellow.active,
+      .modern-menu-card.color-pink.active,
+      .modern-menu-card.color-purple.active,
+      .modern-menu-card.color-green.active,
+      .modern-menu-card.color-orange.active,
+      .modern-menu-card.color-blue.active {
+        box-shadow: var(--shadow-md);
+      }
+
+      /* ===== ADMIN LEFT PANEL LAYOUT ===== */
+      #admin.fade-in,
+      #partner.fade-in {
+        margin: -1.75rem -1.5rem;
+      }
+
+      .admin-layout {
+        display: flex;
+        gap: 0;
+        min-height: calc(100vh - 64px);
+      }
+
+      .admin-left-panel {
+        width: 220px;
+        min-width: 220px;
+        background: var(--card);
+        border-right: 1px solid var(--border);
+        padding: 1rem 0;
+        display: flex;
+        flex-direction: column;
+        gap: 0.15rem;
+        position: sticky;
+        top: 64px;
+        height: calc(100vh - 64px);
+        overflow-y: auto;
+      }
+
+        .admin-sidebar-brand {
+          display: flex;
+          justify-content: center;
+          align-items: center;
+          padding: 0.35rem 1.25rem 1.1rem;
+          margin-bottom: 0.3rem;
+        }
+
+        .admin-sidebar-brand img {
+          width: 132px;
+          max-width: 100%;
+          height: auto;
+          display: block;
+        }
+
+      .admin-side-item {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.7rem 1.25rem;
+        cursor: pointer;
+        border-radius: 0;
+        transition: var(--transition);
+        color: var(--muted);
+        font-weight: 600;
+        font-size: 0.88rem;
+        border-left: 3px solid transparent;
+        text-decoration: none;
+        user-select: none;
+      }
+
+      .admin-side-item:hover {
+        background: rgba(249,115,22,0.07);
+        color: var(--primary);
+        border-left-color: rgba(249,115,22,0.4);
+      }
+
+      .admin-side-item.active {
+        background: rgba(249,115,22,0.1);
+        color: var(--primary);
+        border-left-color: var(--primary);
+      }
+
+      .admin-side-item .side-icon {
+        font-size: 1.1rem;
+        width: 22px;
+        text-align: center;
+        flex-shrink: 0;
+      }
+
+      .admin-content-area {
+        flex: 1;
+        padding: 1.5rem;
+        overflow-x: hidden;
+        min-width: 0;
+      }
+
+      /* ===== USERS MODULE ===== */
+      .users-sub-nav {
+        display: flex;
+        gap: 0.5rem;
+        border-bottom: 1px solid var(--border);
+        margin-bottom: 1.5rem;
+        padding-bottom: 0;
+      }
+
+      .users-tab {
+        padding: 0.55rem 1.2rem;
+        border: none;
+        background: transparent;
+        font-weight: 600;
+        font-size: 0.88rem;
+        color: var(--muted);
+        cursor: pointer;
+        border-bottom: 2px solid transparent;
+        margin-bottom: -1px;
+        transition: var(--transition);
+        border-radius: 0;
+      }
+
+      .users-tab:hover { color: var(--primary); }
+      .users-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+
+      .users-view { display: none; }
+      .users-view.active { display: block; }
+
+      /* Users table */
+      .user-avatar {
+        width: 38px;
+        height: 38px;
+        border-radius: 50%;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 700;
+        font-size: 0.82rem;
+        color: white;
+        flex-shrink: 0;
+      }
+
+      .role-badge {
+        display: inline-block;
+        padding: 0.28rem 0.75rem;
+        border-radius: var(--radius-full);
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
+      .role-admin    { background: #1e3a5f; color: #93c5fd; }
+      .role-gerente  { background: #3b1a78; color: #c4b5fd; }
+      .role-partner  { background: #14532d; color: #86efac; }
+      .role-supervisor { background: #134e4a; color: #5eead4; }
+      .role-op-tanqueo { background: #78350f; color: #fcd34d; }
+      .role-op-viajes  { background: #1c3347; color: #7dd3fc; }
+      .role-default  { background: #374151; color: #d1d5db; }
+
+      .status-dot {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.85rem;
+        font-weight: 600;
+      }
+
+      .status-dot::before {
+        content: '';
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        background: #22c55e;
+      }
+
+      .status-dot.inactive::before { background: #ef4444; }
+
+      .status-badge-warn {
+        display: inline-block;
+        padding: 0.18rem 0.55rem;
+        border-radius: var(--radius-full);
+        font-size: 0.7rem;
+        font-weight: 600;
+        background: #fef3c7;
+        color: #92400e;
+        margin-top: 0.25rem;
+      }
+      .status-badge-expired {
+        display: inline-block;
+        padding: 0.18rem 0.55rem;
+        border-radius: var(--radius-full);
+        font-size: 0.7rem;
+        font-weight: 600;
+        background: #fee2e2;
+        color: #991b1b;
+        margin-top: 0.25rem;
+      }
+
+      .users-search-bar {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-bottom: 1.25rem;
+      }
+
+      .users-search-bar input {
+        flex: 1;
+        min-width: 200px;
+      }
+
+      .users-header-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        gap: 1rem;
+        margin-bottom: 1.25rem;
+      }
+
+      /* ===== USER DROPDOWN (logout) ===== */
+      .user-dropdown-wrap {
+        position: relative;
+      }
+
+      .user-dropdown-trigger {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        padding: 0.35rem 0.85rem;
+        border-radius: var(--radius-full);
+        background: rgba(249,115,22,0.18);
+        color: var(--primary-light);
+        font-weight: 600;
+        font-size: 0.85rem;
+        border: 1px solid rgba(249,115,22,0.25);
+        cursor: pointer;
+        transition: var(--transition);
+      }
+
+      .user-dropdown-trigger:hover {
+        background: rgba(249,115,22,0.28);
+      }
+
+      .user-dropdown-trigger .chevron {
+        font-size: 0.65rem;
+        transition: transform 0.2s;
+      }
+
+      .user-dropdown-wrap.open .chevron { transform: rotate(180deg); }
+
+      .user-dropdown-menu {
+        display: none;
+        position: absolute;
+        top: calc(100% + 8px);
+        right: 0;
+        min-width: 200px;
+        background: var(--card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-lg);
+        z-index: 2000;
+        overflow: hidden;
+      }
+
+      .user-dropdown-wrap.open .user-dropdown-menu { display: block; }
+
+      .user-dropdown-info {
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+
+      .user-dropdown-info strong {
+        display: block;
+        font-size: 0.88rem;
+        color: var(--dark);
+        margin-bottom: 0.1rem;
+      }
+
+      .user-dropdown-item {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        width: 100%;
+        padding: 0.7rem 1rem;
+        border: none;
+        background: #ffffff;
+        border-bottom: 1px solid #e2e8f0;
+        font-size: 0.88rem;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background 0.15s;
+        text-align: left;
+        color: #24415d;
+      }
+
+      .user-dropdown-item:hover { background: #f5f9ff; color: #153653; }
+
+      .user-dropdown-item:last-child { border-bottom: none; }
+
+      .user-dropdown-item-primary {
+        color: #0b5ea6;
+        font-weight: 700;
+        background: #edf5ff;
+      }
+
+      .user-dropdown-item-primary:hover {
+        background: #dbeafe;
+        color: #0b4b8b;
+      }
+
+      /* ===== TOAST NOTIFICATIONS ===== */
+      #toast-container {
+        position: fixed;
+        bottom: 1.5rem;
+        right: 1.5rem;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        gap: 0.6rem;
+        pointer-events: none;
+      }
+
+      .toast-item {
+        min-width: 280px;
+        max-width: 380px;
+        padding: 0.85rem 1.1rem;
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-lg);
+        font-size: 0.875rem;
+        font-weight: 600;
+        display: flex;
+        align-items: flex-start;
+        gap: 0.6rem;
+        pointer-events: auto;
+        animation: toastIn 0.28s ease-out;
+        transition: opacity 0.3s, transform 0.3s;
+        border-left: 4px solid currentColor;
+      }
+
+      .toast-item.success { background:#f0fdf4; color:#166534; }
+      .toast-item.danger  { background:#fef2f2; color:#991b1b; }
+      .toast-item.warning { background:#fffbeb; color:#92400e; }
+      .toast-item.info    { background:#eff6ff; color:#1e40af; }
+
+      .toast-item .toast-icon { font-size:1.1rem; flex-shrink:0; margin-top:1px; }
+      .toast-item .toast-msg  { flex:1; line-height:1.4; }
+      .toast-item .toast-close {
+        background:none; border:none; cursor:pointer; opacity:0.5;
+        font-size:1rem; padding:0; line-height:1; color:inherit; flex-shrink:0;
+      }
+      .toast-item .toast-close:hover { opacity:1; }
+
+      @keyframes toastIn {
+        from { opacity:0; transform: translateX(30px); }
+        to   { opacity:1; transform: translateX(0); }
+      }
+
+      /* ===== CONTENT SECTIONS ===== */
+      .content-section { display: none; }
+      .content-section.active { display: block; animation: fadeIn 0.35s ease-out; }
+
+      /* ===== KPI CARDS ===== */
+      .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+      }
+
+      .kpi-card {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 1.1rem 1.25rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        border-left-width: 4px;
+        background: var(--card);
+        box-shadow: var(--shadow-xs);
+        transition: var(--transition);
+      }
+
+      .kpi-card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow-md);
+      }
+
+      .kpi-icon {
+        font-size: 1.75rem;
+        line-height: 1;
+        flex-shrink: 0;
+        width: 44px;
+        height: 44px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: var(--radius-sm);
+        background: var(--surface);
+      }
+
+      .kpi-label {
+        font-size: 0.72rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--muted);
+        margin-bottom: 0.2rem;
+      }
+
+      .kpi-value        { font-size: 1.6rem; font-weight: 800; line-height: 1.1; color: var(--dark); }
+      .kpi-value--sm    { font-size: 1rem; }
+
+      /* KPI card with colored/dark background — force white text */
+      .kpi-card--light .kpi-label { color: rgba(255,255,255,0.85); }
+      .kpi-card--light .kpi-value { color: #fff; }
+      /* metric-list inside dark panel — double-class for specificity over .metric-list li */
+      .metric-list.metric-list--light li { color: rgba(255,255,255,0.92); border-bottom-color: rgba(255,255,255,0.15); }
+      .metric-list.metric-list--light li span { color: rgba(255,255,255,0.92); }
+      .metric-list.metric-list--light li strong { color: #fff; }
+
+      .kpi-orange { border-left-color: var(--primary); }
+      .kpi-orange .kpi-value { color: var(--primary-dark); }
+      .kpi-green  { border-left-color: #10b981; } .kpi-green  .kpi-value { color: #047857; }
+      .kpi-red    { border-left-color: #ef4444; } .kpi-red    .kpi-value { color: #b91c1c; }
+      .kpi-teal   { border-left-color: #14b8a6; } .kpi-teal   .kpi-value { color: #0f766e; }
+      .kpi-blue   { border-left-color: #3b82f6; } .kpi-blue   .kpi-value { color: #1d4ed8; }
+      .kpi-purple { border-left-color: #a855f7; } .kpi-purple .kpi-value { color: #7c3aed; }
+      .kpi-indigo { border-left-color: #6366f1; } .kpi-indigo .kpi-value { color: #4338ca; }
+      .kpi-yellow { border-left-color: #f59e0b; } .kpi-yellow .kpi-value { color: #b45309; }
+      .kpi-gray   { border-left-color: #94a3b8; } .kpi-gray   .kpi-value { color: #475569; }
+
+      /* ===== STATS CARDS ===== */
+      .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 1rem;
+      }
+
+      .stats-card {
+        padding: 1.25rem;
+        border-radius: var(--radius);
+        border: 1px solid var(--border);
+        background: var(--card);
+        box-shadow: var(--shadow-xs);
+        transition: var(--transition);
+        cursor: pointer;
+      }
+
+      .stats-card:hover {
+        transform: translateY(-3px);
+        box-shadow: var(--shadow-md);
+        border-color: rgba(249,115,22,0.3);
+      }
+
+      .stats-card h5 {
+        font-size: 0.8rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+        margin-bottom: 0.5rem;
+      }
+
+      .stats-value {
+        font-size: 1.9rem;
+        font-weight: 800;
+        color: var(--primary-dark);
+        letter-spacing: -0.03em;
+      }
+
+      .metric-note { font-size: 0.82rem; color: var(--muted); margin-top: 0.35rem; }
+
+      /* ===== DASHBOARD PANELS ===== */
+      .dashboard-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 1rem;
+        margin-top: 1.25rem;
+      }
+
+      .dashboard-panel {
+        border: 1px solid var(--border);
+        border-top-width: 3px;
+        border-radius: var(--radius);
+        background: var(--card);
+        padding: 1.1rem 1.25rem;
+        box-shadow: var(--shadow-xs);
+      }
+
+      .dp-header {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding-bottom: 0.65rem;
+        margin-bottom: 0.65rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .dp-icon { font-size: 1rem; }
+
+      .dp-header h6 {
+        margin: 0;
+        font-weight: 700;
+        font-size: 0.85rem;
+        letter-spacing: 0.01em;
+      }
+
+      .dp-orange { border-top-color: var(--primary); }  .dp-orange .dp-header h6 { color: var(--primary-dark); }
+      .dp-blue   { border-top-color: #3b82f6; }          .dp-blue   .dp-header h6 { color: #1d4ed8; }
+      .dp-teal   { border-top-color: #14b8a6; }          .dp-teal   .dp-header h6 { color: #0f766e; }
+      .dp-purple { border-top-color: #a855f7; }          .dp-purple .dp-header h6 { color: #7c3aed; }
+
+      .metric-bar-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 0.6rem;
+        align-items: center;
+        margin-bottom: 0.5rem;
+      }
+
+      .metric-bar-track {
+        height: 8px;
+        background: var(--surface);
+        border-radius: var(--radius-full);
+        overflow: hidden;
+      }
+
+      .metric-bar-fill {
+        height: 100%;
+        border-radius: var(--radius-full);
+        background: linear-gradient(90deg, var(--primary), var(--primary-light));
+        transition: width 0.8s cubic-bezier(0.4,0,0.2,1);
+      }
+
+      .metric-list { list-style: none; }
+
+      .metric-list li {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.4rem 0;
+        border-bottom: 1px solid var(--border);
+        font-size: 0.88rem;
+        color: var(--dark-3);
+      }
+
+      .metric-list li:last-child { border-bottom: none; }
+
+      .metric-badge {
+        padding: 0.18rem 0.55rem;
+        border-radius: var(--radius-full);
+        font-size: 0.75rem;
+        font-weight: 700;
+        background: var(--primary-xlight);
+        color: var(--primary-dark);
+      }
+
+      /* ===== TABLES ===== */
+      .table { font-size: 0.9rem; animation: fadeIn 0.4s ease-out; }
+
+      .table thead th {
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: var(--muted);
+        background: var(--surface);
+        border-bottom: 1px solid var(--border);
+        padding: 0.75rem 1rem;
+        white-space: nowrap;
+        text-align: center;
+      }
+
+      .table tbody td {
+        padding: 0.7rem 1rem;
+        vertical-align: middle;
+        border-bottom: 1px solid var(--surface);
+        color: var(--dark-3);
+        text-align: center;
+      }
+
+      /* Fuerza centrado aunque existan utilidades de alineación heredadas */
+      .table .text-end,
+      .table .text-start {
+        text-align: center !important;
+      }
+
+      .table tbody tr {
+        transition: var(--transition-fast);
+        background: white;
+      }
+
+      .table tbody tr:hover {
+        background: #fff7ed;
+      }
+
+      .table tbody tr:last-child td { border-bottom: none; }
+
+      /* ===== BADGES ===== */
+      .badge {
+        font-weight: 600;
+        font-size: 0.75rem;
+        padding: 0.3rem 0.6rem;
+        border-radius: var(--radius-full);
+        letter-spacing: 0.02em;
+      }
+
+      .bg-danger   { background: #ef4444 !important; }
+      .bg-success  { background: #10b981 !important; }
+      .bg-warning  { background: #f59e0b !important; }
+      .bg-primary  { background: var(--primary) !important; }
+
+      /* ===== ALERTS ===== */
+      .alert {
+        border-radius: var(--radius);
+        border: 1px solid transparent;
+        font-size: 0.9rem;
+        padding: 0.85rem 1.1rem;
+        animation: slideInR 0.35s ease-out;
+      }
+
+      .alert-success {
+        background: #ecfdf5;
+        border-color: #a7f3d0;
+        color: #065f46;
+      }
+
+      .alert-danger {
+        background: #fef2f2;
+        border-color: #fecaca;
+        color: #991b1b;
+      }
+
+      .alert-warning {
+        background: #fffbeb;
+        border-color: #fde68a;
+        color: #92400e;
+      }
+
+      .alert-info {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+        color: #1e40af;
+      }
+
+      /* ===== SPINNER ===== */
+      .spinner {
+        display: inline-block;
+        width: 15px; height: 15px;
+        border: 2px solid rgba(255,255,255,0.35);
+        border-top-color: white;
+        border-radius: 50%;
+        animation: spin 0.6s linear infinite;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+
+      /* ===== SCROLLBAR ===== */
+      ::-webkit-scrollbar { width: 6px; height: 6px; }
+      ::-webkit-scrollbar-track { background: transparent; }
+      ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: var(--radius-full); }
+      ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+      /* ===== HERO SECTION ===== */
+      .hero-section {
+        position: relative;
+        min-height: 560px;
+        border-radius: var(--radius-xl);
+        overflow: hidden;
+        box-shadow: var(--shadow-xl);
+        margin-bottom: 2.5rem;
+      }
+
+      .hero-video-container {
+        position: absolute; inset: 0; overflow: hidden;
+      }
+
+      .hero-video { width: 100%; height: 100%; object-fit: cover; }
+
+      .hero-overlay {
+        position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(15,23,42,0.80) 0%, rgba(249,115,22,0.50) 100%);
+      }
+
+      .hero-content {
+        position: relative;
+        z-index: 2;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 560px;
+        text-align: center;
+        padding: 4rem 2rem;
+        color: white;
+      }
+
+      .hero-title {
+        font-size: 3.5rem;
+        font-weight: 900;
+        margin-bottom: 1.25rem;
+        letter-spacing: -0.03em;
+        text-shadow: 0 4px 24px rgba(0,0,0,0.4);
+        animation: fadeIn 0.7s ease-out;
+        line-height: 1.1;
+      }
+
+      .hero-subtitle {
+        font-size: 1.3rem;
+        margin-bottom: 2.25rem;
+        font-weight: 400;
+        opacity: 0.85;
+        animation: fadeIn 0.7s ease-out 0.15s both;
+        max-width: 560px;
+      }
+
+      .hero-buttons {
+        display: flex;
+        gap: 0.85rem;
+        flex-wrap: wrap;
+        justify-content: center;
+        animation: fadeIn 0.7s ease-out 0.3s both;
+      }
+
+      .hero-btn {
+        padding: 0.9rem 2.25rem !important;
+        font-size: 1rem !important;
+        border-radius: var(--radius-full) !important;
+        font-weight: 700 !important;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+      }
+
+      /* ===== FEATURES ===== */
+      .features-section { margin-top: 2.5rem; }
+
+      .feature-card {
+        background: var(--card);
+        padding: 2rem 1.75rem;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-sm);
+        text-align: center;
+        transition: var(--transition);
+        height: 100%;
+      }
+
+      .feature-card:hover {
+        transform: translateY(-8px);
+        box-shadow: var(--shadow-lg);
+        border-color: rgba(249,115,22,0.3);
+      }
+
+      .feature-icon {
+        font-size: 3rem;
+        margin-bottom: 1.25rem;
+        display: inline-block;
+      }
+
+      .feature-card h4 {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: var(--dark);
+        margin-bottom: 0.75rem;
+        letter-spacing: -0.01em;
+      }
+
+      .feature-card p { color: var(--muted); line-height: 1.65; margin: 0; font-size: 0.93rem; }
+
+      /* ===== STATS COUNTER SECTION ===== */
+      .stats-counter-section {
+        background: linear-gradient(135deg, var(--dark) 0%, var(--dark-2) 100%);
+        padding: 3.5rem 2rem;
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-xl);
+        color: white;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .stats-counter-section::before {
+        content: '';
+        position: absolute; inset: 0;
+        background: radial-gradient(ellipse 60% 80% at 80% 50%, rgba(249,115,22,0.12) 0%, transparent 70%);
+        pointer-events: none;
+      }
+
+      .counter-card { padding: 1.25rem; position: relative; z-index: 1; }
+
+      .counter-number {
+        font-size: 3.25rem;
+        font-weight: 900;
+        margin-bottom: 0.4rem;
+        color: var(--primary-light);
+        letter-spacing: -0.04em;
+      }
+
+      .counter-label {
+        font-size: 0.85rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: rgba(255,255,255,0.6);
+      }
+
+      /* ===== TESTIMONIALS ===== */
+      .testimonials-section { padding: 2.5rem 0; }
+
+      .testimonial-card {
+        background: var(--card);
+        padding: 2rem 1.75rem;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-sm);
+        text-align: center;
+        transition: var(--transition);
+        height: 100%;
+      }
+
+      .testimonial-card:hover {
+        transform: translateY(-6px);
+        box-shadow: var(--shadow-lg);
+      }
+
+      .testimonial-avatar {
+        width: 72px; height: 72px;
+        margin: 0 auto 1.25rem;
+        border-radius: 50%;
+        overflow: hidden;
+        border: 3px solid var(--primary);
+        box-shadow: 0 4px 16px rgba(249,115,22,0.25);
+      }
+
+      .testimonial-avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+      .testimonial-stars { font-size: 1rem; margin-bottom: 0.85rem; }
+
+      .testimonial-text {
+        font-style: italic;
+        color: var(--muted);
+        line-height: 1.7;
+        margin-bottom: 1.25rem;
+        font-size: 0.9rem;
+      }
+
+      .testimonial-author strong { display: block; color: var(--dark); font-weight: 700; font-size: 0.95rem; }
+      .testimonial-author span   { display: block; color: var(--primary); font-size: 0.85rem; font-weight: 600; margin-top: 0.2rem; }
+
+      /* ===== PARTNERS ===== */
+      .partners-section {
+        padding: 2.5rem;
+        background: var(--card);
+        border-radius: var(--radius-xl);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-sm);
+      }
+
+      .partners-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        gap: 1.25rem;
+        padding-top: 1.5rem;
+        align-items: center;
+      }
+
+      .partner-logo {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 1.1rem;
+        font-size: 0.9rem;
+        font-weight: 700;
+        color: var(--muted);
+        border: 1.5px solid var(--border);
+        border-radius: var(--radius);
+        transition: var(--transition);
+        text-align: center;
+        background: var(--surface);
+      }
+
+      .partner-logo:hover {
+        transform: scale(1.06);
+        border-color: var(--primary);
+        color: var(--primary);
+        box-shadow: var(--shadow-md);
+        background: var(--primary-xlight);
+      }
+
+      /* ===== VIDEO SECTION ===== */
+      .video-section { margin: 2.5rem 0; }
+
+      .video-embed {
+        position: relative;
+        padding-bottom: 56.25%;
+        height: 0;
+        overflow: hidden;
+        border-radius: var(--radius-lg);
+        overflow: hidden;
+      }
+
+      .video-embed iframe {
+        position: absolute; top: 0; left: 0;
+        width: 100%; height: 100%;
+      }
+
+      .feature-list { list-style: none; padding: 0; }
+
+      .feature-list li {
+        padding: 0.65rem 0;
+        color: var(--dark-3);
+        font-weight: 500;
+        font-size: 0.97rem;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .feature-list li:last-child { border-bottom: none; }
+
+      .feature-list li::before {
+        content: '';
+        width: 20px; height: 20px;
+        background: #ecfdf5 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23059669'%3E%3Cpath d='M12.416 3.376a.75.75 0 0 1 .208 1.04l-5 7.5a.75.75 0 0 1-1.154.114l-3-3a.75.75 0 0 1 1.06-1.06l2.353 2.353 4.493-6.74a.75.75 0 0 1 1.04-.207Z'/%3E%3C/svg%3E") no-repeat center/14px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      /* ===== CTA SECTION ===== */
+      .cta-section {
+        background: linear-gradient(135deg, var(--dark) 0%, var(--dark-2) 100%);
+        padding: 4rem 2rem;
+        border-radius: var(--radius-xl);
+        text-align: center;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .cta-section::before {
+        content: '';
+        position: absolute; inset: 0;
+        background: radial-gradient(ellipse 50% 70% at 50% 50%, rgba(249,115,22,0.15) 0%, transparent 70%);
+        pointer-events: none;
+      }
+
+      .cta-section h2 {
+        font-size: 2.25rem;
+        font-weight: 800;
+        color: white;
+        letter-spacing: -0.03em;
+        position: relative;
+      }
+
+      .cta-section p {
+        font-size: 1.1rem;
+        color: rgba(255,255,255,0.65);
+        position: relative;
+      }
+
+      .cta-section .btn-primary {
+        position: relative;
+        box-shadow: 0 8px 32px rgba(249,115,22,0.4);
+        font-size: 1rem;
+        padding: 0.85rem 2.25rem;
+        border-radius: var(--radius-full);
+      }
+
+      /* ===== ABOUT ===== */
+      .about-hero {
+        position: relative;
+        overflow: hidden;
+        border-radius: var(--radius-xl);
+        box-shadow: var(--shadow-lg);
+      }
+
+      .about-hero-overlay {
+        position: absolute; inset: 0;
+        background: linear-gradient(135deg, rgba(15,23,42,0.70) 0%, rgba(249,115,22,0.45) 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      .team-section { padding: 1.5rem 0; }
+
+      .team-member {
+        text-align: center;
+        transition: var(--transition);
+        padding: 1rem;
+        border-radius: var(--radius);
+      }
+
+      .team-member:hover { transform: translateY(-8px); }
+
+      .team-member img {
+        width: 110px; height: 110px;
+        border-radius: 50%;
+        object-fit: cover;
+        margin-bottom: 1rem;
+        border: 3px solid var(--primary);
+        box-shadow: 0 4px 16px rgba(249,115,22,0.25);
+        transition: var(--transition);
+      }
+
+      .team-member:hover img { box-shadow: 0 8px 24px rgba(249,115,22,0.40); }
+      .team-member h6 { font-weight: 700; color: var(--dark); margin-bottom: 0.2rem; }
+      .team-member span { color: var(--muted); font-size: 0.85rem; font-weight: 500; }
+
+      /* ===== MODAL ===== */
+      .modal-content {
+        border-radius: var(--radius-lg);
+        border: none;
+        box-shadow: var(--shadow-xl);
+      }
+
+      .modal-header {
+        border-bottom: 1px solid var(--border);
+        padding: 1.25rem 1.5rem;
+      }
+
+      .modal-title { font-weight: 700; font-size: 1.05rem; }
+      .modal-footer { border-top: 1px solid var(--border); }
+
+      /* ===== SIDEBAR-MENU (legacy) ===== */
+      .sidebar-menu { display: flex; flex-direction: column; gap: 0.5rem; }
+
+      .sidebar-menu .menu-section {
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
+        cursor: pointer;
+        font-weight: 600;
+        font-size: 0.9rem;
+        background: var(--card);
+        transition: var(--transition);
+        position: relative;
+      }
+
+      .sidebar-menu .menu-section:hover {
+        transform: translateX(4px);
+        border-color: rgba(249,115,22,0.3);
+        background: var(--primary-xlight);
+        color: var(--primary-dark);
+      }
+
+      .sidebar-menu .menu-section.active {
+        background: var(--primary-xlight);
+        border-color: rgba(249,115,22,0.4);
+        color: var(--primary-dark);
+        font-weight: 700;
+      }
+
+      /* ===== RESPONSIVE ===== */
+      @media (max-width: 992px) {
+        .stats-grid, .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .dashboard-grid { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 768px) {
+        .header-logo {
+          max-width: 190px;
+          max-height: 56px;
+        }
+
+        .hero-title { font-size: 2.25rem; }
+        .hero-subtitle { font-size: 1.05rem; }
+        .counter-number { font-size: 2.5rem; }
+        .cta-section h2 { font-size: 1.75rem; }
+
+        .header-container {
+          padding: 0.45rem 1rem 0.3rem;
+          height: auto;
+          min-height: 64px;
+          flex-wrap: wrap;
+          align-items: center;
+        }
+
+        .header-nav {
+          order: 3;
+          width: 100%;
+          overflow-x: auto;
+          padding: 0.5rem 0;
+          justify-content: flex-start;
+        }
+
+        .header-nav::-webkit-scrollbar { height: 0; }
+
+        .modern-sidebar { grid-template-columns: repeat(2, 1fr); }
+        .modern-menu-card { padding: 1.1rem 1rem; }
+        .modern-menu-card .icon { font-size: 1.75rem; }
+
+        .kpi-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+        .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+
+        .sidebar-menu {
+          flex-direction: row;
+          overflow-x: auto;
+          padding-bottom: 0.5rem;
+        }
+        .sidebar-menu .menu-section { min-width: 160px; flex-shrink: 0; }
+
+        .card-head { flex-direction: column; align-items: flex-start; }
+      }
+
+      @media (max-width: 480px) {
+        .kpi-grid   { grid-template-columns: 1fr; }
+        .stats-grid { grid-template-columns: 1fr; }
+        .modern-sidebar { grid-template-columns: repeat(2, 1fr); }
+        .app-shell { padding: 1rem; }
+      }
+
+      /* ===== PROFESSIONAL TECH THEME ===== */
+      :root {
+        --primary: #0f5fae;
+        --primary-dark: #0b4b8b;
+        --primary-light: #4b90cf;
+        --primary-xlight: #edf5ff;
+        --accent: #00a2a7;
+        --surface: #eef3f8;
+        --card: #ffffff;
+        --dark: #12263a;
+        --dark-2: #1f3348;
+        --muted: #5e748b;
+        --border: #d4deea;
+        --shadow-sm: 0 2px 6px rgba(18,38,58,0.08), 0 1px 2px rgba(18,38,58,0.06);
+        --shadow-md: 0 10px 26px rgba(18,38,58,0.10), 0 3px 8px rgba(18,38,58,0.05);
+        --shadow-lg: 0 18px 40px rgba(18,38,58,0.12), 0 6px 14px rgba(18,38,58,0.06);
+        --shadow-primary: 0 10px 26px rgba(15,95,174,0.28);
+      }
+
+      body {
+        font-family: 'IBM Plex Sans', 'Segoe UI', sans-serif;
+        background:
+          radial-gradient(circle at 12% 8%, rgba(15,95,174,0.09) 0%, transparent 38%),
+          radial-gradient(circle at 88% 4%, rgba(0,162,167,0.08) 0%, transparent 34%),
+          linear-gradient(180deg, #f4f8fc 0%, #edf2f8 100%);
+      }
+
+      body.authenticated::before {
+        content: '';
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 0;
+        opacity: 0.35;
+        background-image:
+          linear-gradient(rgba(15,95,174,0.08) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(15,95,174,0.08) 1px, transparent 1px);
+        background-size: 32px 32px;
+        mask-image: linear-gradient(to bottom, rgba(0,0,0,0.28) 0%, rgba(0,0,0,0.1) 30%, transparent 85%);
+      }
+
+      body.authenticated #app-shell-wrapper,
+      body.authenticated .app-shell {
+        position: relative;
+        z-index: 1;
+      }
+
+      body.authenticated .modern-header {
+        position: sticky;
+        top: 0;
+        z-index: 5000;
+        background: rgba(255,255,255,0.86);
+        border-bottom: 1px solid rgba(15,95,174,0.18);
+        backdrop-filter: blur(10px);
+        box-shadow: 0 6px 18px rgba(18,38,58,0.08);
+      }
+
+      body.authenticated .header-logo {
+        max-width: 152px;
+        max-height: 44px;
+        filter: contrast(1.08) saturate(1.15);
+      }
+
+      body.authenticated .nav-btn {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        color: #29445f;
+        font-weight: 600;
+        font-size: 0.86rem;
+        letter-spacing: 0.02em;
+        background: transparent;
+      }
+
+      body.authenticated .nav-btn:hover {
+        background: rgba(15,95,174,0.10);
+        border-color: rgba(15,95,174,0.20);
+        color: var(--primary-dark);
+        transform: translateY(-1px);
+      }
+
+      body.authenticated .nav-btn.active {
+        background: linear-gradient(135deg, var(--primary) 0%, #0b72c5 100%);
+        color: #fff;
+        border-color: rgba(11,75,139,0.4);
+        box-shadow: var(--shadow-primary);
+      }
+
+      body.authenticated .user-dropdown-menu {
+        background: #ffffff;
+        border-color: #c8d7e8;
+        box-shadow: 0 14px 28px rgba(18,38,58,0.18), 0 4px 12px rgba(18,38,58,0.10);
+      }
+
+      body.authenticated .user-dropdown-info {
+        background: #f2f7fd;
+        color: #3f5d79;
+        border-bottom-color: #d6e1ee;
+      }
+
+      body.authenticated .user-dropdown-info strong {
+        color: #12263a;
+      }
+
+      body.authenticated .user-dropdown-item {
+        color: #24415d;
+      }
+
+      body.authenticated .user-dropdown-item:hover {
+        background: #f5f9ff;
+        color: #153653;
+      }
+
+      body.authenticated .user-dropdown-item-primary {
+        color: #0b5ea6;
+        background: #edf5ff;
+      }
+
+      body.authenticated .user-dropdown-item-primary:hover {
+        background: #dbeafe;
+        color: #0b4b8b;
+      }
+
+      body.authenticated .app-shell {
+        max-width: 1600px;
+        margin: 0 auto;
+      }
+
+      body.authenticated .admin-layout {
+        gap: 1.2rem;
+      }
+
+      body.authenticated .admin-left-panel {
+        background: linear-gradient(180deg, #16324a 0%, #12263a 100%);
+        border: 1px solid rgba(100,149,196,0.35);
+        box-shadow: var(--shadow-lg);
+      }
+
+      body.authenticated .admin-sidebar-brand {
+        padding-top: 0.6rem;
+        padding-bottom: 1.25rem;
+      }
+
+      body.authenticated .admin-sidebar-brand img {
+        width: 156px;
+        filter: drop-shadow(0 8px 18px rgba(15, 23, 42, 0.24));
+      }
+
+      body.authenticated .admin-side-item {
+        border: 1px solid transparent;
+        border-radius: 10px;
+        color: rgba(229,239,249,0.86);
+      }
+
+      body.authenticated .admin-side-item .side-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 8px;
+        background: rgba(255,255,255,0.07);
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+      }
+
+      body.authenticated .admin-side-item:hover {
+        background: rgba(77,148,213,0.18);
+        border-color: rgba(132,184,233,0.34);
+      }
+
+      body.authenticated .admin-side-item.active {
+        background: linear-gradient(135deg, rgba(15,95,174,0.28) 0%, rgba(0,162,167,0.24) 100%);
+        border-color: rgba(132,184,233,0.52);
+        color: #fff;
+        box-shadow: inset 0 0 0 1px rgba(255,255,255,0.06);
+      }
+
+      body.authenticated .glass-panel,
+      body.authenticated .card {
+        background: rgba(255,255,255,0.95);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-sm);
+      }
+
+      body.authenticated .glass-panel {
+        border-radius: 16px;
+      }
+
+      body.authenticated .glass-panel:hover,
+      body.authenticated .card:hover {
+        box-shadow: var(--shadow-md);
+      }
+
+      body.authenticated h2,
+      body.authenticated h3,
+      body.authenticated h4,
+      body.authenticated h5,
+      body.authenticated h6,
+      body.authenticated .section-title {
+        font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+        color: var(--dark);
+        letter-spacing: 0.01em;
+      }
+
+      body.authenticated .small-muted,
+      body.authenticated .text-muted {
+        color: var(--muted) !important;
+      }
+
+      body.authenticated .btn {
+        border-radius: 10px;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, background-color 0.18s ease, border-color 0.18s ease;
+      }
+
+      body.authenticated .btn:hover {
+        transform: translateY(-1px);
+      }
+
+      body.authenticated .btn-primary {
+        background: linear-gradient(135deg, var(--primary) 0%, #0b72c5 100%);
+        border-color: #0b5ea6;
+        box-shadow: 0 6px 16px rgba(15,95,174,0.26);
+      }
+
+      body.authenticated .btn-primary:hover {
+        background: linear-gradient(135deg, var(--primary-dark) 0%, #095995 100%);
+      }
+
+      body.authenticated .btn-outline-primary {
+        border-color: rgba(15,95,174,0.42);
+        color: var(--primary-dark);
+      }
+
+      body.authenticated .btn-outline-primary:hover {
+        background: rgba(15,95,174,0.10);
+        color: var(--primary-dark);
+      }
+
+      body.authenticated .form-control,
+      body.authenticated .form-select {
+        border-radius: 10px;
+        border: 1px solid #ccdae9;
+        background: #fff;
+      }
+
+      body.authenticated .form-control:focus,
+      body.authenticated .form-select:focus {
+        border-color: rgba(15,95,174,0.56);
+        box-shadow: 0 0 0 0.2rem rgba(15,95,174,0.15);
+      }
+
+      body.authenticated .table {
+        --bs-table-bg: transparent;
+        --bs-table-hover-bg: rgba(15,95,174,0.06);
+      }
+
+      body.authenticated .table thead th {
+        border-bottom: 1px solid #cfdceb;
+        background: linear-gradient(180deg, #f7fbff 0%, #edf4fb 100%);
+        color: #3a5570;
+        font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+
+      body.authenticated .table td {
+        border-color: #e3ebf4;
+        vertical-align: middle;
+      }
+
+      body.authenticated code,
+      body.authenticated pre,
+      body.authenticated .mono {
+        font-family: 'IBM Plex Mono', 'Cascadia Code', Consolas, monospace;
+      }
+
+      body.authenticated .kpi-card,
+      body.authenticated .stats-card,
+      body.authenticated .dashboard-panel {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        box-shadow: var(--shadow-sm);
+      }
+
+      body.authenticated .kpi-card {
+        background: linear-gradient(180deg, #ffffff 0%, #f5f9fe 100%);
+      }
+
+      body.authenticated .kpi-value,
+      body.authenticated .stats-value {
+        font-family: 'Space Grotesk', 'IBM Plex Sans', sans-serif;
+        font-weight: 700;
+      }
+
+      body.authenticated .pagination .page-link {
+        border-radius: 8px;
+        border: 1px solid #d0dceb;
+        color: #385572;
+        margin: 0 2px;
+      }
+
+      body.authenticated .pagination .page-item.active .page-link {
+        background: linear-gradient(135deg, var(--primary) 0%, #0b72c5 100%);
+        border-color: #0b5ea6;
+        color: #fff;
+      }
+
+      body.authenticated .content-section.active {
+        animation: fadeIn 0.35s ease-out;
+      }
+
+      @media (max-width: 992px) {
+        body.authenticated .admin-layout {
+          gap: 0.8rem;
+        }
+      }
+
+      @media (max-width: 768px) {
+        body.authenticated .modern-header {
+          backdrop-filter: blur(6px);
+        }
+
+        body.authenticated .admin-left-panel {
+          padding: 0.75rem;
+          border-radius: 12px;
+        }
+
+        body.authenticated .admin-sidebar-brand {
+          padding: 0.3rem 0.75rem 0.9rem;
+        }
+
+        body.authenticated .admin-sidebar-brand img {
+          width: 132px;
+        }
+
+        body.authenticated .admin-side-item {
+          font-size: 0.84rem;
+          padding: 0.5rem 0.65rem;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <span id="api-url" style="display:none;">%API_URL%</span>
+
+    <!-- Login Container -->
+    <div id="login-container">
+      <div class="login-split">
+        <!-- Brand Panel (visible en pantallas grandes) -->
+        <div class="login-brand-panel">
+          <div class="login-brand-content">
+            <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN" onerror="this.style.display='none'">
+            <h1>La plataforma de certificaciones para tu empresa</h1>
+            <p>Gestiona, compra y activa vouchers de certificación profesional en un solo lugar.</p>
+            <div class="login-brand-features">
+              <div class="login-brand-feature">
+                <div class="feat-icon">🎟️</div>
+                <span>Vouchers digitales con gestión centralizada</span>
+              </div>
+              <div class="login-brand-feature">
+                <div class="feat-icon">💳</div>
+                <span>Pagos seguros integrados con Stripe</span>
+              </div>
+              <div class="login-brand-feature">
+                <div class="feat-icon">📊</div>
+                <span>Dashboard con métricas en tiempo real</span>
+              </div>
+              <div class="login-brand-feature">
+                <div class="feat-icon">🌎</div>
+                <span>Certificaciones reconocidas internacionalmente</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Form Panel -->
+        <div class="login-form-panel">
+          <div class="login-box">
+            <div class="login-logo">
+              <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" class="login-logo-img" onerror="this.style.display='none';document.querySelector('.login-logo-text').style.display='block';" />
+              <div class="login-logo-text" style="display:none;">CertJOIN</div>
+              <p>Bienvenido de nuevo</p>
+            </div>
+
+            <div id="auth" class="login-form">
+              <div class="form-group">
+                <input id="login-username" class="form-control" placeholder="Email o usuario" autocomplete="username" />
+              </div>
+              <div class="form-group">
+                <input id="login-password" type="password" class="form-control" placeholder="Contraseña" autocomplete="current-password" />
+              </div>
+              <div id="login-message"></div>
+              <button id="login-btn" class="btn btn-login">Iniciar sesión</button>
+
+              <div id="first-login-password-section" style="display:none;margin-top:1.25rem;">
+                <div class="alert alert-warning mb-3" style="font-size:0.88rem;">Primer acceso detectado. Cambia tu contraseña temporal para continuar.</div>
+                <div class="form-group">
+                  <input id="first-login-username" class="form-control" placeholder="Email" autocomplete="username" readonly />
+                </div>
+                <div class="form-group">
+                  <input id="first-login-current-password" type="password" class="form-control" placeholder="Contraseña temporal" autocomplete="current-password" />
+                </div>
+                <div class="form-group">
+                  <input id="first-login-new-password" type="password" class="form-control" placeholder="Nueva contraseña" autocomplete="new-password" />
+                </div>
+                <div class="form-group">
+                  <input id="first-login-confirm-password" type="password" class="form-control" placeholder="Confirmar contraseña" autocomplete="new-password" />
+                </div>
+                <button id="first-login-change-password-btn" class="btn btn-login" type="button">Cambiar contraseña</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main App Container (hidden until login) -->
+    <div id="app-shell-wrapper" style="display:none;">
+      <!-- Modern Header Navigation -->
+      <header class="modern-header">
+        <div class="header-container">
+          <div style="display:flex;align-items:center;gap:1rem;">
+            <img class="header-logo" src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" onerror="this.style.display='none';this.nextElementSibling.style.display='block';" />
+            <span style="display:none;font-size:1.5rem;font-weight:800;background:linear-gradient(135deg, var(--primary), var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;">CertJOIN</span>
+          </div>
+
+          <nav class="header-nav">
+            <button id="nav-home" class="nav-btn">🏠 Inicio</button>
+            <button id="nav-about" class="nav-btn">ℹ️ Quiénes Somos</button>
+            <button id="nav-location" class="nav-btn">📍 Ubicación</button>
+            <button id="nav-admin" class="nav-btn" style="display:none;">⚙️ Administración</button>
+            <button id="nav-partner" class="nav-btn" style="display:none;">🎟️ Vouchers</button>
+          </nav>
+
+          <div class="header-actions">
+            <button id="nav-cart" class="nav-btn partner-only" title="Carrito" style="display:none;">🛒 <span id="cart-count" class="badge bg-danger">0</span></button>
+            <div class="user-dropdown-wrap" id="user-dropdown-wrap" style="display:none;">
+              <button class="user-dropdown-trigger" id="user-dropdown-trigger">
+                <span id="user-info-display"></span>
+                <span class="chevron">▼</span>
+              </button>
+              <div class="user-dropdown-menu">
+                <button class="user-dropdown-item user-dropdown-item-primary" id="user-dropdown-go-stats">📊 Ir a Estadísticas</button>
+                <button class="user-dropdown-item" id="logout-btn">🚪 Cerrar Sesión</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div class="app-shell">
+
+        <div id="main-app">
+          <!-- HOME SECTION -->
+          <div id="home" class="fade-in" style="display:none;">
+            <!-- Hero Section with Video Background -->
+            <div class="hero-section mb-5">
+              <div class="hero-video-container">
+                <video autoplay muted loop playsinline class="hero-video">
+                  <source src="https://assets.mixkit.co/videos/preview/mixkit-person-typing-on-a-laptop-4907-large.mp4" type="video/mp4">
+                </video>
+                <div class="hero-overlay"></div>
+              </div>
+              <div class="hero-content">
+                <h1 class="hero-title">Impulsa tu Carrera Profesional</h1>
+                <p class="hero-subtitle">Certificaciones tecnológicas reconocidas a nivel mundial</p>
+                <div class="hero-buttons">
+                  <button id="hero-go-partner" class="btn btn-lg btn-primary hero-btn">Ir a Vouchers</button>
+                  <button id="hero-go-about" class="btn btn-lg btn-outline-light hero-btn">Conocer Más</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Features Section -->
+            <div class="features-section mb-5">
+              <div class="text-center mb-5">
+                <h2 class="section-title mb-3">¿Por qué CertJOIN?</h2>
+                <p class="section-subtitle">La plataforma líder en certificaciones profesionales</p>
+              </div>
+              <div class="row g-4">
+                <div class="col-md-4">
+                  <div class="feature-card">
+                    <div class="feature-icon">🎓</div>
+                    <h4>Certificaciones Oficiales</h4>
+                    <p>Trabajamos con las principales organizaciones certificadoras del mundo tecnológico</p>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="feature-card">
+                    <div class="feature-icon">⚡</div>
+                    <h4>Proceso Rápido</h4>
+                    <p>Sistema de vouchers digital que agiliza tu proceso de certificación</p>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="feature-card">
+                    <div class="feature-icon">💼</div>
+                    <h4>Soluciones Empresariales</h4>
+                    <p>Programas de capacitación corporativa personalizados para tu equipo</p>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="feature-card">
+                    <div class="feature-icon">📊</div>
+                    <h4>Seguimiento Completo</h4>
+                    <p>Portal de administración para gestionar todas tus certificaciones</p>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="feature-card">
+                    <div class="feature-icon">🔒</div>
+                    <h4>Seguridad Total</h4>
+                    <p>Protección de datos con estándares internacionales y encriptación</p>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="feature-card">
+                    <div class="feature-icon">💰</div>
+                    <h4>Mejores Precios</h4>
+                    <p>Descuentos por volumen y planes flexibles para empresas</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Stats Counter Section -->
+            <div class="stats-counter-section mb-5">
+              <div class="row g-4 text-center">
+                <div class="col-md-3 col-6">
+                  <div class="counter-card">
+                    <div class="counter-number" data-target="5000">0</div>
+                    <div class="counter-label">Certificaciones Entregadas</div>
+                  </div>
+                </div>
+                <div class="col-md-3 col-6">
+                  <div class="counter-card">
+                    <div class="counter-number" data-target="200">0</div>
+                    <div class="counter-label">Empresas Asociadas</div>
+                  </div>
+                </div>
+                <div class="col-md-3 col-6">
+                  <div class="counter-card">
+                    <div class="counter-number" data-target="98">0</div>
+                    <div class="counter-label">% Satisfacción</div>
+                  </div>
+                </div>
+                <div class="col-md-3 col-6">
+                  <div class="counter-card">
+                    <div class="counter-number" data-target="15">0</div>
+                    <div class="counter-label">Países Atendidos</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Testimonials Section -->
+            <div class="testimonials-section mb-5">
+              <div class="text-center mb-5">
+                <h2 class="section-title mb-3">Lo que Dicen Nuestros Clientes</h2>
+                <p class="section-subtitle">Historias de éxito de profesionales certificados</p>
+              </div>
+              <div class="row g-4">
+                <div class="col-md-4">
+                  <div class="testimonial-card">
+                    <div class="testimonial-avatar">
+                      <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&h=150&fit=crop" alt="Cliente 1">
+                    </div>
+                    <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+                    <p class="testimonial-text">"Gracias a CertJOIN obtuve mi certificación en Python y conseguí trabajo en una startup tecnológica. El proceso fue muy profesional."</p>
+                    <div class="testimonial-author">
+                      <strong>María González</strong>
+                      <span>Desarrolladora Backend</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="testimonial-card">
+                    <div class="testimonial-avatar">
+                      <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop" alt="Cliente 2">
+                    </div>
+                    <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+                    <p class="testimonial-text">"Excelente servicio para certificar a todo nuestro equipo de desarrollo. El sistema de vouchers es muy práctico y el soporte impecable."</p>
+                    <div class="testimonial-author">
+                      <strong>Carlos Ramírez</strong>
+                      <span>CTO en TechCorp</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="col-md-4">
+                  <div class="testimonial-card">
+                    <div class="testimonial-avatar">
+                      <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&h=150&fit=crop" alt="Cliente 3">
+                    </div>
+                    <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
+                    <p class="testimonial-text">"La mejor inversión en mi carrera. Las certificaciones de CertJOIN son reconocidas internacionalmente y el precio es muy competitivo."</p>
+                    <div class="testimonial-author">
+                      <strong>Andrea Silva</strong>
+                      <span>Arquitecta de Software</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Partners Gallery Section -->
+            <div class="partners-section mb-5">
+              <div class="text-center mb-4">
+                <h2 class="section-title mb-3">Empresas que Confían en Nosotros</h2>
+                <p class="section-subtitle">Partners y clientes corporativos</p>
+              </div>
+              <div class="partners-grid">
+                <div class="partner-logo">Microsoft</div>
+                <div class="partner-logo">Amazon AWS</div>
+                <div class="partner-logo">Google Cloud</div>
+                <div class="partner-logo">Oracle</div>
+                <div class="partner-logo">IBM</div>
+                <div class="partner-logo">CompTIA</div>
+              </div>
+            </div>
+
+            <!-- Video Section -->
+            <div class="video-section mb-5">
+              <div class="card shadow-sm overflow-hidden">
+                <div class="row g-0">
+                  <div class="col-md-6">
+                    <div class="video-embed">
+                      <iframe width="100%" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ" title="CertJOIN Promo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="p-5">
+                      <h3 class="mb-4">Descubre CertJOIN</h3>
+                      <p class="mb-3">Mira cómo nuestra plataforma puede transformar el desarrollo profesional de tu equipo.</p>
+                      <ul class="feature-list">
+                        <li>✓ Proceso de certificación simplificado</li>
+                        <li>✓ Portal de gestión intuitivo</li>
+                        <li>✓ Soporte dedicado 24/7</li>
+                        <li>✓ Reportes y analytics en tiempo real</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- CTA Section -->
+            <div class="cta-section">
+              <div class="text-center">
+                <h2 class="mb-3">¿Listo para Certificarte?</h2>
+                <p class="mb-4">Únete a miles de profesionales que han impulsado su carrera con CertJOIN</p>
+                <button id="cta-go-cart" class="btn btn-lg btn-primary">Comprar Vouchers</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ABOUT SECTION -->
+          <div id="about-section" class="fade-in" style="display:none;">
+            <div class="card shadow-sm mb-4">
+              <div class="card-body">
+                <!-- Hero Image Section -->
+                <div class="about-hero mb-5">
+                  <img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop" alt="Equipo CertJOIN" style="width:100%;height:400px;object-fit:cover;border-radius:var(--radius-lg);">
+                  <div class="about-hero-overlay">
+                    <h2 style="color:white;font-size:3rem;font-weight:900;text-shadow:0 4px 20px rgba(0,0,0,0.5);">Nuestra Historia</h2>
+                  </div>
+                </div>
+
+                <h4 class="section-title">Quienes Somos</h4>
+                <p class="section-subtitle" style="font-size:1.1rem;line-height:1.8;color:#555;margin-bottom:2rem;">
+                  <strong style="color:var(--primary);">CertJOIN</strong> es una firma líder especializada en certificación profesional y desarrollo de talento digital. 
+                  Con más de una década de experiencia en el mercado, nos dedicamos a impulsar el crecimiento profesional de individuos y organizaciones 
+                  a través de programas de certificación reconocidos internacionalmente.
+                </p>
+
+                <!-- Image Gallery -->
+                <div class="row g-3 mb-4">
+                  <div class="col-md-4">
+                    <img src="https://images.unsplash.com/photo-1531482615713-2afd69097998?q=80&w=400&auto=format&fit=crop" alt="Oficina" class="img-fluid rounded shadow-sm" style="height:250px;width:100%;object-fit:cover;">
+                  </div>
+                  <div class="col-md-4">
+                    <img src="https://images.unsplash.com/photo-1552581234-26160f608093?q=80&w=400&auto=format&fit=crop" alt="Equipo" class="img-fluid rounded shadow-sm" style="height:250px;width:100%;object-fit:cover;">
+                  </div>
+                  <div class="col-md-4">
+                    <img src="https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=400&auto=format&fit=crop" alt="Reunión" class="img-fluid rounded shadow-sm" style="height:250px;width:100%;object-fit:cover;">
+                  </div>
+                </div>
+
+                <div class="row g-4 mb-4">
+                  <div class="col-md-6">
+                    <div class="glass-panel p-4" style="height:100%;">
+                      <h5 style="color:var(--primary);margin-bottom:1rem;">📚 Nuestra Misión</h5>
+                      <p style="line-height:1.7;color:#666;">
+                        Democratizar el acceso a certificaciones profesionales de clase mundial, 
+                        brindando soluciones flexibles y accesibles que permitan a profesionales y empresas 
+                        alcanzar sus objetivos de capacitación y desarrollo continuo.
+                      </p>
+                    </div>
+                  </div>
+                  <div class="col-md-6">
+                    <div class="glass-panel p-4" style="height:100%;">
+                      <h5 style="color:var(--accent);margin-bottom:1rem;">🎯 Nuestra Visión</h5>
+                      <p style="line-height:1.7;color:#666;">
+                        Ser la plataforma líder en América Latina para certificaciones profesionales, 
+                        reconocida por nuestra excelencia, innovación y compromiso con el éxito de nuestros clientes, 
+                        transformando el panorama educativo y profesional de la región.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="row g-3 mb-4">
+                  <div class="col-md-3">
+                    <div class="stats-card">
+                      <h5>Experiencia</h5>
+                      <div class="stats-value">10+ años</div>
+                      <p style="font-size:0.85rem;color:#999;margin-top:0.5rem;">en el mercado</p>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="stats-card">
+                      <h5>Certificaciones</h5>
+                      <div class="stats-value">5000+</div>
+                      <p style="font-size:0.85rem;color:#999;margin-top:0.5rem;">entregadas</p>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="stats-card">
+                      <h5>Clientes</h5>
+                      <div class="stats-value">200+</div>
+                      <p style="font-size:0.85rem;color:#999;margin-top:0.5rem;">empresas asociadas</p>
+                    </div>
+                  </div>
+                  <div class="col-md-3">
+                    <div class="stats-card">
+                      <h5>Satisfacción</h5>
+                      <div class="stats-value">98%</div>
+                      <p style="font-size:0.85rem;color:#999;margin-top:0.5rem;">de nuestros clientes</p>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Team Section -->
+                <div class="team-section mb-4">
+                  <h5 style="color:var(--primary);margin-bottom:2rem;text-align:center;font-size:1.8rem;font-weight:700;">Nuestro Equipo</h5>
+                  <div class="row g-4">
+                    <div class="col-md-3 col-6">
+                      <div class="team-member">
+                        <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=300&h=300&fit=crop" alt="CEO">
+                        <h6>Juan Pérez</h6>
+                        <span>CEO & Fundador</span>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                      <div class="team-member">
+                        <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&h=300&fit=crop" alt="CTO">
+                        <h6>Ana Martínez</h6>
+                        <span>CTO</span>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                      <div class="team-member">
+                        <img src="https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=300&h=300&fit=crop" alt="Director">
+                        <h6>Carlos Rodríguez</h6>
+                        <span>Director de Ventas</span>
+                      </div>
+                    </div>
+                    <div class="col-md-3 col-6">
+                      <div class="team-member">
+                        <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=300&h=300&fit=crop" alt="Manager">
+                        <h6>Lucía Gómez</h6>
+                        <span>Customer Success</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="glass-panel p-4">
+                  <h5 style="color:var(--primary);margin-bottom:1.5rem;">💼 ¿Por qué elegir CertJOIN?</h5>
+                  <div class="row g-3">
+                    <div class="col-md-4">
+                      <div style="display:flex;gap:1rem;align-items:start;">
+                        <span style="font-size:2rem;">✅</span>
+                        <div>
+                          <strong style="color:#333;">Certificaciones Reconocidas</strong>
+                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Trabajamos con las principales organizaciones certificadoras a nivel mundial</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div style="display:flex;gap:1rem;align-items:start;">
+                        <span style="font-size:2rem;">🚀</span>
+                        <div>
+                          <strong style="color:#333;">Proceso Ágil</strong>
+                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Plataforma digital intuitiva para gestionar tus certificaciones fácilmente</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div style="display:flex;gap:1rem;align-items:start;">
+                        <span style="font-size:2rem;">💰</span>
+                        <div>
+                          <strong style="color:#333;">Precios Competitivos</strong>
+                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Sistema de vouchers flexible con descuentos para volumen</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div style="display:flex;gap:1rem;align-items:start;">
+                        <span style="font-size:2rem;">👥</span>
+                        <div>
+                          <strong style="color:#333;">Soporte Personalizado</strong>
+                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Equipo dedicado para resolver tus dudas en cada paso</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div style="display:flex;gap:1rem;align-items:start;">
+                        <span style="font-size:2rem;">📊</span>
+                        <div>
+                          <strong style="color:#333;">Reportes Detallados</strong>
+                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Seguimiento completo de certificaciones y renovaciones</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-md-4">
+                      <div style="display:flex;gap:1rem;align-items:start;">
+                        <span style="font-size:2rem;">🔒</span>
+                        <div>
+                          <strong style="color:#333;">Seguridad Garantizada</strong>
+                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Protección de datos con estándares de seguridad internacionales</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- LOCATION SECTION -->
+          <div id="location-section" class="fade-in" style="display:none;">
+            <div class="card shadow-sm mb-4">
+              <div class="card-body">
+                <h4 class="section-title">Ubicacion</h4>
+                <p class="section-subtitle">Calle 100 #8A-55, World Trade Center, Bogota, Colombia.</p>
+                <div class="ratio ratio-16x9 mt-3">
+                  <iframe title="CertJOIN" src="https://maps.google.com/maps?q=Calle%20100%20%238A-55%20Bogota&t=&z=14&ie=UTF8&iwloc=&output=embed" style="border:0;"></iframe>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CART SUMMARY -->
+          <div id="cart-summary" class="fade-in" style="display:none;">
+            <div class="card shadow-sm mb-4">
+              <div class="card-body">
+                <h4 class="section-title">Carrito</h4>
+                <div id="cart-items-container" class="mt-3"></div>
+                <div class="d-flex justify-content-between align-items-center mt-3">
+                  <span class="section-subtitle">Total:</span>
+                  <strong id="cart-total">$0.00</strong>
+                </div>
+                <div id="cart-pricing-note" class="small-muted mt-2"></div>
+                <div class="d-flex gap-2 mt-3">
+                  <button id="cart-clear" class="btn btn-outline-secondary">Vaciar carrito</button>
+                  <button id="cart-checkout" class="btn btn-primary">Continuar</button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ADMIN SECTION -->
+          <div id="admin" class="fade-in" style="display:none;">
+            <div class="admin-layout">
+            <!-- Left Panel -->
+            <div class="admin-left-panel">
+              <div class="admin-sidebar-brand">
+                <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" onerror="this.style.display='none';" />
+              </div>
+              <div class="admin-side-item active admin-menu-item" data-target="admin-dashboard">
+                <span class="side-icon">🏠</span> Dashboard
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-purchases">
+                <span class="side-icon">🛒</span> Compras
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-users">
+                <span class="side-icon">👤</span> Usuarios
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-courses">
+                <span class="side-icon">📚</span> Certificaciones
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-pricing">
+                <span class="side-icon">🏷️</span> Pricing
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-stats">
+                <span class="side-icon">📊</span> Estadísticas
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-audit">
+                <span class="side-icon">🧾</span> Auditoría
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-reports">
+                <span class="side-icon">📈</span> Reportería
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-activaciones">
+                <span class="side-icon">🎓</span> Activaciones
+              </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="admin-content-area">
+              <div class="row">
+              <div class="col-12">
+                <div id="admin-purchases" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
+                    <div class="d-flex align-items-center gap-2">
+                      <span style="font-size:2rem;">🛒</span>
+                      <h4 class="mb-0">Historial de Compras</h4>
+                    </div>
+                    <div class="d-flex gap-2">
+                      <button id="list-purchases" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
+                      <button id="admin-purchase-external-btn" class="btn btn-outline-success btn-sm" style="display:none;">+ Compra Externa</button>
+                      <button id="admin-complimentary-btn" class="btn btn-outline-warning btn-sm" style="display:none;">🎁 Dar Cortesía</button>
+                    </div>
+                  </div>
+
+                  <!-- Filtros -->
+                  <div class="card mb-4">
+                    <div class="card-body py-3">
+                      <div class="row g-3 align-items-end">
+                        <div class="col-md-3">
+                          <label class="form-label">Partner</label>
+                          <select id="pf-partner" class="form-select form-select-sm">
+                            <option value="">Todos los partners</option>
+                          </select>
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label">Estado</label>
+                          <select id="pf-status" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                            <option value="paid">Pagado</option>
+                            <option value="pending">Pendiente</option>
+                            <option value="failed">Fallido</option>
+                          </select>
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label">Desde</label>
+                          <input id="pf-date-from" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label">Hasta</label>
+                          <input id="pf-date-to" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label">Método de pago</label>
+                          <select id="pf-method" class="form-select form-select-sm">
+                            <option value="">Todos los métodos</option>
+                            <option value="stripe">💳 Stripe</option>
+                            <option value="bank_transfer">🏦 Transferencia</option>
+                            <option value="cash">💵 Efectivo</option>
+                            <option value="invoice">📄 Factura</option>
+                            <option value="complimentary">🎁 Cortesía</option>
+                          </select>
+                        </div>
+                        <div class="col-md-2 d-flex gap-2 align-items-end">
+                          <button id="pf-apply" class="btn btn-primary btn-sm">🔍 Filtrar</button>
+                          <button id="pf-clear" class="btn btn-outline-secondary btn-sm">✕ Limpiar</button>
+                        </div>
+                      </div>
+                      <div id="pf-summary" class="small-muted mt-2" style="display:none;"></div>
+                    </div>
+                  </div>
+
+                  <div class="table-responsive">
+                    <table class="table table-hover">
+                      <thead>
+                        <tr>
+                          <th>ID</th>
+                          <th>Partner</th>
+                          <th>Cantidad</th>
+                          <th>Total</th>
+                          <th>Estado</th>
+                          <th>Payment Intent</th>
+                          <th>Productos</th>
+                          <th>Fecha</th>
+                          <th>Status DB</th>
+                          <th>Método</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody id="purchases-table-body"></tbody>
+                    </table>
+                  </div>
+                  <div id="purchases-pagination" class="mt-2"></div>
+                </div>
+
+                <div id="admin-users" class="content-section glass-panel p-4">
+                  <!-- Sub-navigation -->
+                  <div class="users-sub-nav">
+                    <button class="users-tab active" data-view="users-list-view">👤 Usuarios</button>
+                    <button class="users-tab" data-view="users-roles-view">🔑 Roles</button>
+                    <button class="users-tab" data-view="users-policy-view">🔒 Política</button>
+                  </div>
+
+                  <!-- USUARIOS VIEW -->
+                  <div id="users-list-view" class="users-view active">
+                    <div class="users-header-row">
+                      <div>
+                        <h4 class="mb-0" style="font-weight:700;">Usuarios del sistema</h4>
+                        <div class="small text-muted mt-1" id="users-count-label">—</div>
+                      </div>
+                      <button class="btn btn-primary btn-sm px-3" id="btn-open-new-user">+ Nuevo usuario</button>
+                    </div>
+                    <div class="users-search-bar">
+                      <input id="users-search-input" class="form-control form-control-sm" placeholder="🔍 Buscar por nombre o email...">
+                      <select id="users-role-filter" class="form-select form-select-sm" style="width:auto;min-width:150px;">
+                        <option value="">Todos los roles</option>
+                      </select>
+                      <button id="list-users" class="btn btn-outline-secondary btn-sm">🔄 Actualizar</button>
+                    </div>
+                    <div class="table-responsive">
+                      <table class="table table-hover align-middle">
+                        <thead style="background:rgba(249,115,22,0.06); font-size:0.78rem; text-transform:uppercase; letter-spacing:0.05em;">
+                          <tr>
+                            <th>Usuario</th>
+                            <th>Rol</th>
+                            <th>Estado</th>
+                            <th>Desde</th>
+                            <th>Acciones</th>
+                          </tr>
+                        </thead>
+                        <tbody id="users-table-body">
+                          <tr><td colspan="5" class="text-center text-muted p-4">Haz clic en Actualizar para cargar usuarios</td></tr>
+                        </tbody>
+                      </table>
+                    </div>
+                    <div class="small text-muted mt-2" id="users-showing-label"></div>
+                  </div>
+
+                  <!-- ROLES VIEW -->
+                  <div id="users-roles-view" class="users-view">
+                    <div class="d-flex align-items-center justify-content-between mb-4">
+                      <h5 class="mb-0 fw-bold">Gestión de Roles</h5>
+                      <button class="btn btn-primary btn-sm px-3" id="btn-open-create-role">➕ Nuevo rol</button>
+                    </div>
+                    <div id="roles-list-container">
+                      <div class="text-muted small p-3">Cargando roles...</div>
+                    </div>
+                  </div>
+
+                  <!-- POLÍTICA VIEW -->
+                  <div id="users-policy-view" class="users-view">
+                    <div class="d-flex align-items-center gap-2 mb-4">
+                      <h5 class="mb-0 fw-bold">Política de Contraseñas</h5>
+                    </div>
+
+                    <div class="row g-4">
+                      <!-- Caducidad global -->
+                      <div class="col-12 col-md-6">
+                        <div class="card border-0 shadow-sm h-100">
+                          <div class="card-body p-4">
+                            <h6 class="fw-bold mb-1">Caducidad de contraseña</h6>
+                            <p class="text-muted small mb-3">Define cada cuántos días expiran las contraseñas de todos los usuarios. Al cambiar contraseña, la nueva fecha se calcula automáticamente desde ese momento.</p>
+                            <label class="form-label fw-semibold">Días de validez</label>
+                            <div class="input-group mb-2">
+                              <select id="policy-expiry-preset" class="form-select">
+                                <option value="0">Sin caducidad</option>
+                                <option value="30">30 días</option>
+                                <option value="60">60 días</option>
+                                <option value="90">90 días</option>
+                                <option value="180">180 días</option>
+                                <option value="365">1 año</option>
+                                <option value="custom">Personalizado…</option>
+                              </select>
+                            </div>
+                            <div id="policy-expiry-custom-wrap" style="display:none;" class="mb-3">
+                              <input id="policy-expiry-custom" type="number" min="1" max="730" class="form-control" placeholder="Número de días">
+                            </div>
+                            <div id="policy-msg" class="mb-2"></div>
+                            <button id="btn-save-policy" class="btn btn-primary btn-sm px-4">Guardar política</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Disponibilidad máxima de activación -->
+                      <div class="col-12 col-md-6">
+                        <div class="card border-0 shadow-sm h-100">
+                          <div class="card-body p-4">
+                            <h6 class="fw-bold mb-1">Disponibilidad máxima de activación</h6>
+                            <p class="text-muted small mb-3">Define el número máximo de meses que un partner puede asignar al activar un voucher. El partner no puede superar este límite.</p>
+                            <label class="form-label fw-semibold">Meses máximos</label>
+                            <div class="input-group mb-2">
+                              <input id="max-activation-months-input" type="number" min="1" max="120" class="form-control" placeholder="Ej: 12">
+                              <button id="btn-save-max-activation-months" class="btn btn-primary">Guardar</button>
+                            </div>
+                            <div id="max-activation-months-msg" class="small"></div>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Info -->
+                      <div class="col-12 col-md-6">
+                        <div class="card border-0 shadow-sm h-100" style="background:rgba(249,115,22,0.04);">
+                          <div class="card-body p-4">
+                            <h6 class="fw-bold mb-3">¿Cómo funciona?</h6>
+                            <ul class="list-unstyled small text-muted" style="line-height:2;">
+                              <li>🔑 Todos los usuarios nuevos son creados con <strong>cambio de contraseña obligatorio al primer inicio</strong>.</li>
+                              <li>📅 Si se define una caducidad, la contraseña expirará automáticamente pasado ese plazo.</li>
+                              <li>⚠️ Al vencer la contraseña, el usuario deberá cambiarla en su próximo inicio de sesión.</li>
+                              <li>🔄 Cada vez que un usuario cambia su contraseña, el contador se reinicia.</li>
+                              <li>🛡️ La caducidad puede configurarse también de forma individual al crear o editar un usuario.</li>
+                            </ul>
+                            <div class="mt-3 p-2 rounded" style="background:rgba(249,115,22,0.08);">
+                              <div class="small fw-semibold">Política activa:</div>
+                              <div id="policy-active-display" class="small text-muted">Cargando…</div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="admin-pricing" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center gap-2 mb-4">
+                    <span style="font-size:2rem;">🏷️</span>
+                    <h4 class="mb-0">Pricing de Partners</h4>
+                  </div>
+
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <h6 class="mb-3">Asignación por Partner</h6>
+                      <div id="partner-pricing-message"></div>
+                      <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                          <label class="form-label">Partner</label>
+                          <select id="pricing-partner-select" class="form-control">
+                            <option value="">Selecciona un partner</option>
+                          </select>
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Categoría base</label>
+                          <select id="partner-category-select" class="form-control">
+                            <option value="">Selecciona categoría</option>
+                          </select>
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Perfil especial</label>
+                          <select id="partner-special-profile-select" class="form-control">
+                            <option value="">Sin perfil especial</option>
+                          </select>
+                        </div>
+                        <div class="col-12 d-flex gap-2">
+                          <button id="load-partner-pricing-config" class="btn btn-outline-secondary">Cargar partner</button>
+                          <button id="save-partner-pricing" class="btn btn-primary">Guardar pricing</button>
+                        </div>
+                      </div>
+                      <div id="partner-pricing-summary" class="mt-3"></div>
+                    </div>
+                  </div>
+
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <h6 class="mb-3">Crear Perfil Especial</h6>
+                      <div id="special-profile-message"></div>
+                      <div class="row g-3 align-items-end">
+                        <div class="col-md-4">
+                          <label class="form-label">Nombre</label>
+                          <input id="special-profile-name" class="form-control" placeholder="Ej: Mayorista Q4">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Código (opcional)</label>
+                          <input id="special-profile-code" class="form-control" placeholder="mayorista_q4">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Descripción</label>
+                          <input id="special-profile-description" class="form-control" placeholder="Condición especial temporal">
+                        </div>
+                        <div class="col-12">
+                          <button id="create-special-profile" class="btn btn-outline-primary">Crear perfil especial</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card shadow-sm">
+                    <div class="card-body">
+                      <h6 class="mb-3">Reglas por Perfil</h6>
+                      <div id="pricing-profile-message"></div>
+                      <div class="row g-3 align-items-end mb-3">
+                        <div class="col-md-3">
+                          <label class="form-label">Perfil</label>
+                          <select id="pricing-profile-editor-select" class="form-control">
+                            <option value="">Selecciona un perfil</option>
+                          </select>
+                        </div>
+                        <div class="col-md-3">
+                          <label class="form-label">Nombre</label>
+                          <input id="pricing-profile-name" class="form-control">
+                        </div>
+                        <div class="col-md-3">
+                          <label class="form-label">Código</label>
+                          <input id="pricing-profile-code" class="form-control" readonly>
+                        </div>
+                        <div class="col-md-3">
+                          <label class="form-label">Activo</label>
+                          <select id="pricing-profile-active" class="form-control">
+                            <option value="true">Sí</option>
+                            <option value="false">No</option>
+                          </select>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label">Descripción</label>
+                          <input id="pricing-profile-description" class="form-control" placeholder="Describe cuándo aplica este pricing">
+                        </div>
+                      </div>
+
+                      <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                          <thead>
+                            <tr>
+                              <th>Mín. cantidad</th>
+                              <th>Máx. cantidad</th>
+                              <th>Precio unitario</th>
+                              <th>Acción</th>
+                            </tr>
+                          </thead>
+                          <tbody id="pricing-rules-body"></tbody>
+                        </table>
+                      </div>
+
+                      <div class="d-flex gap-2 mt-3">
+                        <button id="add-pricing-rule-row" class="btn btn-outline-secondary">Agregar tramo</button>
+                        <button id="save-pricing-profile" class="btn btn-primary">Guardar reglas</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="admin-courses" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
+                    <div class="d-flex align-items-center gap-2">
+                      <span style="font-size:2rem;">📚</span>
+                      <div>
+                        <h4 class="mb-0">Gestión de Certificaciones</h4>
+                        <div class="small-muted">Crea, edita y elimina certificaciones disponibles para activación</div>
+                      </div>
+                    </div>
+                    <button id="admin-courses-refresh" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
+                  </div>
+
+                  <div id="admin-courses-message"></div>
+
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <h6 class="mb-3">Formulario de certificación</h6>
+                      <input type="hidden" id="admin-course-edit-id">
+                      <div class="row g-3 align-items-end">
+                        <div class="col-md-8">
+                          <label class="form-label">Nombre de la certificación</label>
+                          <input id="admin-course-name" class="form-control" maxlength="200" placeholder="Ej: Certificación Docker Avanzado">
+                        </div>
+                        <div class="col-md-4 d-flex gap-2">
+                          <button id="admin-course-save" class="btn btn-primary">💾 Guardar</button>
+                          <button id="admin-course-cancel" class="btn btn-outline-secondary" style="display:none;">Cancelar</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card shadow-sm">
+                    <div class="card-body p-0">
+                      <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                          <thead>
+                            <tr>
+                              <th>ID</th>
+                              <th>Certificación</th>
+                              <th>Estado</th>
+                              <th>Creado</th>
+                              <th>Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody id="admin-courses-tbody">
+                            <tr><td colspan="5" class="text-center text-muted p-3">Haz clic en Actualizar para cargar certificaciones</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="admin-stats" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center gap-2 mb-4">
+                    <span style="font-size:2rem;">📊</span>
+                    <h4 class="mb-0">Estadísticas de Partners</h4>
+                  </div>
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <h6 class="mb-3">Consultar estadísticas (Global o Partner)</h6>
+                      <div class="row g-3 align-items-end">
+                        <div class="col-md-6">
+                          <label class="form-label">Selecciona un criterio de búsqueda</label>
+                          <select id="admin-select-partner-id" class="form-control">
+                            <option value="global">🌐 Vista global (todos los partners)</option>
+                            <option value="">-- Selecciona un partner --</option>
+                          </select>
+                        </div>
+                        <div class="col-md-6">
+                          <div class="d-flex flex-wrap gap-2">
+                            <button id="admin-load-stats" class="btn btn-primary">🔍 Cargar Estadísticas</button>
+                            <div class="btn-group">
+                              <button id="admin-download-excel" class="btn btn-success" title="Descargar informe en Excel">📥 Excel</button>
+                              <button id="admin-download-pdf" class="btn btn-danger" title="Descargar informe en PDF">📄 PDF</button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="stats-grid">
+                    <div class="stats-card">
+                      <h5>Total Vouchers</h5>
+                      <div id="admin-stat-total-vouchers" class="stats-value">0</div>
+                    </div>
+                    <div class="stats-card">
+                      <h5>Disponibles</h5>
+                      <div id="admin-stat-available-vouchers" class="stats-value">0</div>
+                    </div>
+                    <div class="stats-card">
+                      <h5>Usados</h5>
+                      <div id="admin-stat-used-vouchers" class="stats-value">0</div>
+                    </div>
+                    <div class="stats-card" style="border-top:3px solid #27a060;">
+                      <h5>🎓 Completados</h5>
+                      <div id="admin-stat-completed-courses" class="stats-value" style="color:#27a060;">0</div>
+                    </div>
+                    <div class="stats-card" style="border-top:3px solid #7c3aed;">
+                      <h5>📈 Tasa compl.</h5>
+                      <div id="admin-stat-completion-rate" class="stats-value" style="color:#7c3aed;font-size:1.4rem;">0%</div>
+                    </div>
+                  </div>
+                  <div id="admin-stats-result" class="mt-3"></div>
+                </div>
+
+                <div id="admin-audit" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
+                    <div class="d-flex align-items-center gap-2">
+                      <span style="font-size:2rem;">🧾</span>
+                      <div>
+                        <h4 class="mb-0">Auditoría de Movimientos</h4>
+                        <div class="small-muted">Trazabilidad de eventos, pagos, webhooks, compras y activaciones</div>
+                      </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                      <button id="admin-audit-export-csv" class="btn btn-success btn-sm">📥 Exportar CSV</button>
+                      <button id="admin-audit-refresh" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
+                    </div>
+                  </div>
+
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body py-3">
+                      <div class="row g-3 align-items-end">
+                        <div class="col-md-2">
+                          <label class="form-label">Fuente</label>
+                          <select id="audit-filter-source" class="form-select form-select-sm">
+                            <option value="">Todas</option>
+                            <option value="SYSTEM">System</option>
+                            <option value="TRANSACTION">Transaction</option>
+                            <option value="STRIPE">Stripe</option>
+                            <option value="PURCHASE">Purchase</option>
+                            <option value="ACTIVATION">Activation</option>
+                          </select>
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label">Estado</label>
+                          <select id="audit-filter-status" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                            <option value="SUCCESS">SUCCESS</option>
+                            <option value="FAILED">FAILED</option>
+                            <option value="PENDING">PENDING</option>
+                            <option value="ERROR">ERROR</option>
+                          </select>
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label">Partner</label>
+                          <select id="audit-filter-partner-id" class="form-select form-select-sm">
+                            <option value="">Todos</option>
+                          </select>
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label">Compra ID</label>
+                          <input id="audit-filter-purchase-id" class="form-control form-control-sm" placeholder="Ej: 104">
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label">Desde</label>
+                          <input id="audit-filter-start-date" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-2">
+                          <label class="form-label">Hasta</label>
+                          <input id="audit-filter-end-date" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-8">
+                          <label class="form-label">Buscar</label>
+                          <input id="audit-filter-search" class="form-control form-control-sm" placeholder="Texto libre: tipo, estado, resumen, partner o compra">
+                        </div>
+                        <div class="col-md-4 d-flex gap-2">
+                          <button id="admin-audit-apply" class="btn btn-primary btn-sm">🔍 Filtrar</button>
+                          <button id="admin-audit-clear" class="btn btn-outline-secondary btn-sm">✕ Limpiar</button>
+                        </div>
+                      </div>
+                      <div id="admin-audit-summary-text" class="small-muted mt-2"></div>
+                    </div>
+                  </div>
+
+                  <div class="stats-grid mb-4">
+                    <div class="stats-card">
+                      <h5>Total movimientos</h5>
+                      <div id="audit-total-count" class="stats-value">0</div>
+                    </div>
+                    <div class="stats-card">
+                      <h5>Últimas 24h</h5>
+                      <div id="audit-last24-count" class="stats-value">0</div>
+                    </div>
+                    <div class="stats-card">
+                      <h5>Fallidos</h5>
+                      <div id="audit-failed-count" class="stats-value">0</div>
+                    </div>
+                  </div>
+
+                  <div class="table-responsive">
+                    <table class="table table-hover table-sm align-middle">
+                      <thead>
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Fuente</th>
+                          <th>Tipo</th>
+                          <th>Categoría</th>
+                          <th>Estado</th>
+                          <th>Partner</th>
+                          <th>Compra</th>
+                          <th>Usuario</th>
+                          <th>Resumen</th>
+                          <th>Detalle</th>
+                        </tr>
+                      </thead>
+                      <tbody id="admin-audit-table-body">
+                        <tr><td colspan="10" class="text-center text-muted p-3">Sin datos de auditoría</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div id="admin-audit-pagination" class="mt-2"></div>
+                </div>
+
+                <!-- REPORTERÍA -->
+                <div id="admin-reports" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center gap-2 mb-4">
+                    <span style="font-size:2rem;">📈</span>
+                    <div>
+                      <h4 class="mb-0">Reportería</h4>
+                      <div class="small-muted">Genera reportes en PDF o Excel filtrando por fechas y módulo</div>
+                    </div>
+                  </div>
+
+                  <!-- Tabs por módulo -->
+                  <ul class="nav nav-tabs" id="rpt-tabs" role="tablist">
+                    <li class="nav-item"><button class="nav-link active" data-rpt-tab="compras">🛒 Compras</button></li>
+                    <li class="nav-item"><button class="nav-link" data-rpt-tab="vouchers">🎟️ Vouchers</button></li>
+                    <li class="nav-item"><button class="nav-link" data-rpt-tab="activaciones">✅ Activaciones</button></li>
+                    <li class="nav-item"><button class="nav-link" data-rpt-tab="partners">🤝 Partners</button></li>
+                    <li class="nav-item"><button class="nav-link" data-rpt-tab="tendencia">📅 Tendencia</button></li>
+                  </ul>
+
+                  <div class="border border-top-0 rounded-bottom p-4">
+
+                    <!-- COMPRAS -->
+                    <div id="rpt-panel-compras" class="rpt-panel">
+                      <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-3">
+                          <label class="form-label">Desde</label>
+                          <input id="rpt-compras-start" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3">
+                          <label class="form-label">Hasta</label>
+                          <input id="rpt-compras-end" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3">
+                          <label class="form-label">Partner</label>
+                          <select id="rpt-compras-partner" class="form-select form-select-sm">
+                            <option value="">Todos los partners</option>
+                          </select>
+                        </div>
+                        <div class="col-md-3">
+                          <button id="rpt-compras-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                        </div>
+                      </div>
+                      <div id="rpt-compras-msg" class="text-muted small mb-2"></div>
+                      <div id="rpt-compras-preview" style="display:none">
+                        <div class="table-responsive" style="max-height:340px;overflow-y:auto;">
+                          <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light" style="position:sticky;top:0;">
+                              <tr>
+                                <th>ID</th><th>Partner</th><th class="text-end">Qty</th>
+                                <th class="text-end">Total</th><th>Estado</th><th>Stripe</th>
+                                <th class="text-end">Usados</th><th>Fecha</th>
+                              </tr>
+                            </thead>
+                            <tbody id="rpt-compras-tbody"></tbody>
+                          </table>
+                        </div>
+                        <div class="d-flex gap-2 mt-3 justify-content-end">
+                          <button id="rpt-compras-excel" class="btn btn-success btn-sm">📊 Descargar Excel</button>
+                          <button id="rpt-compras-pdf" class="btn btn-danger btn-sm">📄 Descargar PDF</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- VOUCHERS -->
+                    <div id="rpt-panel-vouchers" class="rpt-panel" style="display:none">
+                      <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-3">
+                          <label class="form-label">Desde</label>
+                          <input id="rpt-vouchers-start" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3">
+                          <label class="form-label">Hasta</label>
+                          <input id="rpt-vouchers-end" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-3">
+                          <label class="form-label">Partner</label>
+                          <select id="rpt-vouchers-partner" class="form-select form-select-sm">
+                            <option value="">Todos los partners</option>
+                          </select>
+                        </div>
+                        <div class="col-md-3">
+                          <button id="rpt-vouchers-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                        </div>
+                      </div>
+                      <div id="rpt-vouchers-msg" class="text-muted small mb-2"></div>
+                      <div id="rpt-vouchers-preview" style="display:none">
+                        <div class="table-responsive">
+                          <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light">
+                              <tr><th>Métrica</th><th class="text-end">Valor</th></tr>
+                            </thead>
+                            <tbody id="rpt-vouchers-tbody"></tbody>
+                          </table>
+                        </div>
+                        <div class="d-flex gap-2 mt-3 justify-content-end">
+                          <button id="rpt-vouchers-excel" class="btn btn-success btn-sm">📊 Descargar Excel</button>
+                          <button id="rpt-vouchers-pdf" class="btn btn-danger btn-sm">📄 Descargar PDF</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- ACTIVACIONES -->
+                    <div id="rpt-panel-activaciones" class="rpt-panel" style="display:none">
+                      <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-4">
+                          <label class="form-label">Desde</label>
+                          <input id="rpt-activaciones-start" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Hasta</label>
+                          <input id="rpt-activaciones-end" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                          <button id="rpt-activaciones-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                        </div>
+                      </div>
+                      <div id="rpt-activaciones-msg" class="text-muted small mb-2"></div>
+                      <div id="rpt-activaciones-preview" style="display:none">
+                        <div class="table-responsive" style="max-height:340px;overflow-y:auto;">
+                          <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light" style="position:sticky;top:0;">
+                              <tr><th>#</th><th>Certificación</th><th class="text-end">Activaciones</th><th class="text-end">Partners</th></tr>
+                            </thead>
+                            <tbody id="rpt-activaciones-tbody"></tbody>
+                          </table>
+                        </div>
+                        <div class="d-flex gap-2 mt-3 justify-content-end">
+                          <button id="rpt-activaciones-excel" class="btn btn-success btn-sm">📊 Descargar Excel</button>
+                          <button id="rpt-activaciones-pdf" class="btn btn-danger btn-sm">📄 Descargar PDF</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- PARTNERS -->
+                    <div id="rpt-panel-partners" class="rpt-panel" style="display:none">
+                      <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-4">
+                          <label class="form-label">Desde</label>
+                          <input id="rpt-partners-start" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Hasta</label>
+                          <input id="rpt-partners-end" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                          <button id="rpt-partners-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                        </div>
+                      </div>
+                      <div id="rpt-partners-msg" class="text-muted small mb-2"></div>
+                      <div id="rpt-partners-preview" style="display:none">
+                        <div class="table-responsive" style="max-height:340px;overflow-y:auto;">
+                          <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light" style="position:sticky;top:0;">
+                              <tr><th>#</th><th>Partner</th><th class="text-end">Compras</th><th class="text-end">Vouchers</th><th class="text-end">Ingresos</th></tr>
+                            </thead>
+                            <tbody id="rpt-partners-tbody"></tbody>
+                          </table>
+                        </div>
+                        <div class="d-flex gap-2 mt-3 justify-content-end">
+                          <button id="rpt-partners-excel" class="btn btn-success btn-sm">📊 Descargar Excel</button>
+                          <button id="rpt-partners-pdf" class="btn btn-danger btn-sm">📄 Descargar PDF</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- TENDENCIA -->
+                    <div id="rpt-panel-tendencia" class="rpt-panel" style="display:none">
+                      <div class="row g-2 align-items-end mb-3">
+                        <div class="col-md-4">
+                          <label class="form-label">Desde</label>
+                          <input id="rpt-tendencia-start" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Hasta</label>
+                          <input id="rpt-tendencia-end" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col-md-4">
+                          <button id="rpt-tendencia-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                        </div>
+                      </div>
+                      <div id="rpt-tendencia-msg" class="text-muted small mb-2"></div>
+                      <div id="rpt-tendencia-preview" style="display:none">
+                        <div class="table-responsive" style="max-height:340px;overflow-y:auto;">
+                          <table class="table table-sm table-hover align-middle mb-0">
+                            <thead class="table-light" style="position:sticky;top:0;">
+                              <tr><th>Mes</th><th class="text-end">Compras</th><th class="text-end">Vouchers</th><th class="text-end">Ingresos</th></tr>
+                            </thead>
+                            <tbody id="rpt-tendencia-tbody"></tbody>
+                          </table>
+                        </div>
+                        <div class="d-flex gap-2 mt-3 justify-content-end">
+                          <button id="rpt-tendencia-excel" class="btn btn-success btn-sm">📊 Descargar Excel</button>
+                          <button id="rpt-tendencia-pdf" class="btn btn-danger btn-sm">📄 Descargar PDF</button>
+                        </div>
+                      </div>
+                    </div>
+
+                  </div><!-- /border panel -->
+                </div>
+
+                <!-- ACTIVACIONES SECTION -->
+                <div id="admin-activaciones" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
+                    <div class="d-flex align-items-center gap-2">
+                      <span style="font-size:2rem;">🎓</span>
+                      <div>
+                        <h4 class="mb-0">Activaciones de Certificaciones</h4>
+                        <div class="small text-muted">Historial completo de activaciones con estado de matrícula Moodle</div>
+                      </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                      <button id="admin-activaciones-refresh" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
+                      <button id="admin-moodle-sync-completions" class="btn btn-outline-secondary btn-sm" title="Consulta Moodle y actualiza el estado de los matriculados">🎓 Sync Completaciones</button>
+                    </div>
+                  </div>
+
+                  <!-- Filtros -->
+                  <div class="row g-2 mb-3">
+                    <div class="col-md-3">
+                      <select id="admin-act-filter-partner" class="form-select form-select-sm">
+                        <option value="">Todos los partners</option>
+                      </select>
+                    </div>
+                    <div class="col-md-3">
+                      <select id="admin-act-filter-moodle" class="form-select form-select-sm">
+                        <option value="">Todos los estados Moodle</option>
+                        <option value="COMPLETED">🎓 Completado</option>
+                        <option value="ENROLLED">✅ Matriculado</option>
+                        <option value="FAILED">❌ Error</option>
+                        <option value="PENDING">⏳ Pendiente</option>
+                        <option value="SKIPPED">⬜ Sin mapear</option>
+                        <option value="MOCKED">🔵 Simulado</option>
+                      </select>
+                    </div>
+                    <div class="col-md-3">
+                      <select id="admin-act-filter-course" class="form-select form-select-sm">
+                        <option value="">Todas las certificaciones</option>
+                      </select>
+                    </div>
+                    <div class="col-md-3">
+                      <button id="admin-act-filter-btn" class="btn btn-primary btn-sm w-100">🔍 Filtrar</button>
+                    </div>
+                  </div>
+
+                  <!-- Resumen rápido -->
+                  <div id="admin-act-summary" class="row g-2 mb-3" style="display:none!important;"></div>
+
+                  <!-- Tabla -->
+                  <div class="table-responsive">
+                    <table class="table table-hover table-sm">
+                      <thead class="table-dark">
+                        <tr>
+                          <th>Fecha</th>
+                          <th>Partner</th>
+                          <th>Voucher</th>
+                          <th>Certificación</th>
+                          <th>Estudiante</th>
+                          <th>Cliente final</th>
+                          <th>Expira</th>
+                          <th>Estado Moodle</th>
+                          <th>ID Moodle</th>
+                          <th>Acciones</th>
+                        </tr>
+                      </thead>
+                      <tbody id="admin-activaciones-tbody">
+                        <tr><td colspan="10" class="text-center text-muted p-3">Haz clic en Actualizar para cargar activaciones</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                  <div id="admin-activaciones-pagination" class="mt-2"></div>
+                </div>
+
+                <!-- DASHBOARD SECTION -->
+                <div id="admin-dashboard" class="content-section active glass-panel p-4">
+                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
+                    <div class="d-flex align-items-center gap-2">
+                      <span style="font-size:2rem;">🏠</span>
+                      <div>
+                        <h4 class="mb-0">Dashboard</h4>
+                        <div class="small-muted">Resumen ejecutivo de la plataforma</div>
+                      </div>
+                    </div>
+                    <button id="btn-refresh-dashboard" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
+                  </div>
+
+                  <!-- KPI Cards -->
+                  <div class="row g-3 mb-4" id="dash-kpi-row">
+                    <div class="col-6 col-md-4 col-lg-2">
+                      <div class="card text-center p-3 h-100" style="border-left:4px solid #4caf50;">
+                        <div class="small text-muted mb-1">Ingresos Totales</div>
+                        <div class="fw-bold fs-5" id="dash-kpi-revenue">—</div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                      <div class="card text-center p-3 h-100" style="border-left:4px solid #2196f3;">
+                        <div class="small text-muted mb-1">Total Compras</div>
+                        <div class="fw-bold fs-5" id="dash-kpi-purchases">—</div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                      <div class="card text-center p-3 h-100" style="border-left:4px solid #9c27b0;">
+                        <div class="small text-muted mb-1">Vouchers Vendidos</div>
+                        <div class="fw-bold fs-5" id="dash-kpi-vouchers-sold">—</div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                      <div class="card text-center p-3 h-100" style="border-left:4px solid #ff9800;">
+                        <div class="small text-muted mb-1">Vouchers Usados</div>
+                        <div class="fw-bold fs-5" id="dash-kpi-vouchers-used">—</div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                      <div class="card text-center p-3 h-100" style="border-left:4px solid #f44336;">
+                        <div class="small text-muted mb-1">Activaciones</div>
+                        <div class="fw-bold fs-5" id="dash-kpi-activations">—</div>
+                      </div>
+                    </div>
+                    <div class="col-6 col-md-4 col-lg-2">
+                      <div class="card text-center p-3 h-100" style="border-left:4px solid #00bcd4;">
+                        <div class="small text-muted mb-1">Partners Activos</div>
+                        <div class="fw-bold fs-5" id="dash-kpi-partners">—</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Tendencia mensual -->
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <h6 class="mb-3">📅 Tendencia Mensual (últimos 12 meses)</h6>
+                      <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                          <thead>
+                            <tr>
+                              <th>Mes</th>
+                              <th class="text-end">Ingresos</th>
+                              <th class="text-end">Compras</th>
+                              <th class="text-end">Vouchers</th>
+                              <th class="text-end">Activaciones</th>
+                            </tr>
+                          </thead>
+                          <tbody id="dash-monthly-body">
+                            <tr><td colspan="5" class="text-center text-muted p-3">Cargando...</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Top Partners y Top Cursos -->
+                  <div class="row g-3">
+                    <div class="col-md-6">
+                      <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                          <h6 class="mb-3">🏆 Top Partners por Ingresos</h6>
+                          <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>Partner</th>
+                                  <th class="text-end">Ingresos</th>
+                                  <th class="text-end">Compras</th>
+                                </tr>
+                              </thead>
+                              <tbody id="dash-top-partners-body">
+                                <tr><td colspan="4" class="text-center text-muted p-2">Cargando...</td></tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="col-md-6">
+                      <div class="card shadow-sm h-100">
+                        <div class="card-body">
+                          <h6 class="mb-3">📚 Top Certificaciones por Activaciones</h6>
+                          <div class="table-responsive">
+                            <table class="table table-sm table-hover mb-0">
+                              <thead>
+                                <tr>
+                                  <th>#</th>
+                                  <th>Certificación</th>
+                                  <th class="text-end">Activaciones</th>
+                                  <th class="text-end">Vouchers</th>
+                                </tr>
+                              </thead>
+                              <tbody id="dash-top-courses-body">
+                                <tr><td colspan="4" class="text-center text-muted p-2">Cargando...</td></tr>
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+            </div><!-- /admin-content-area -->
+            </div><!-- /admin-layout -->
+          </div>
+
+          <!-- PARTNER SECTION -->
+          <div id="partner" class="fade-in" style="display:none;">
+            <div class="admin-layout">
+            <!-- Left Panel -->
+            <div class="admin-left-panel">
+              <div class="admin-sidebar-brand">
+                <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" onerror="this.style.display='none';" />
+              </div>
+              <div class="admin-side-item active partner-menu-item" data-target="partner-stats">
+                <span class="side-icon">📊</span> Estadísticas
+              </div>
+              <div class="admin-side-item partner-menu-item" data-target="partner-vouchers">
+                <span class="side-icon">🎟️</span> Vouchers
+              </div>
+              <div class="admin-side-item partner-menu-item" data-target="partner-activate">
+                <span class="side-icon">✅</span> Activar
+              </div>
+              <div class="admin-side-item partner-menu-item" data-target="partner-clients">
+                <span class="side-icon">👥</span> Clientes
+              </div>
+            </div>
+
+            <!-- Content Area -->
+            <div class="admin-content-area">
+              <div class="row">
+              <div class="col-12">
+                <div id="partner-stats" class="content-section active glass-panel p-4">
+                  <div class="d-flex align-items-center justify-content-between mb-4 flex-wrap gap-2">
+                    <div class="d-flex align-items-center gap-2">
+                      <span style="font-size:2rem;">📊</span>
+                      <div>
+                        <h4 class="mb-0">Mis Estadísticas</h4>
+                        <div class="small-muted">Resumen de actividad y rendimiento</div>
+                      </div>
+                    </div>
+                    <div class="d-flex flex-wrap gap-2 align-items-center">
+                      <button id="load-stats" class="btn btn-sm btn-primary">🔄 Actualizar</button>
+                      <div class="btn-group">
+                        <button id="partner-download-excel" class="btn btn-sm btn-success" title="Descargar informe en Excel">📥 Excel</button>
+                        <button id="partner-download-pdf" class="btn btn-sm btn-danger" title="Descargar informe en PDF">📄 PDF</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- KPI cards -->
+                  <div class="kpi-grid">
+                    <div class="kpi-card kpi-orange">
+                      <div class="kpi-icon">🎟️</div>
+                      <div class="kpi-body">
+                        <div class="kpi-label">Total Vouchers</div>
+                        <div id="stat-total-vouchers" class="kpi-value">0</div>
+                      </div>
+                    </div>
+                    <div class="kpi-card kpi-green">
+                      <div class="kpi-icon">✅</div>
+                      <div class="kpi-body">
+                        <div class="kpi-label">Disponibles</div>
+                        <div id="stat-available-vouchers" class="kpi-value">0</div>
+                      </div>
+                    </div>
+                    <div class="kpi-card kpi-red">
+                      <div class="kpi-icon">🔖</div>
+                      <div class="kpi-body">
+                        <div class="kpi-label">Consumidos</div>
+                        <div id="stat-used-vouchers" class="kpi-value">0</div>
+                      </div>
+                    </div>
+                    <div class="kpi-card kpi-blue">
+                      <div class="kpi-icon">💳</div>
+                      <div class="kpi-body">
+                        <div class="kpi-label">Compras pagadas</div>
+                        <div id="stat-paid-purchases" class="kpi-value">0</div>
+                      </div>
+                    </div>
+                    <div class="kpi-card kpi-yellow">
+                      <div class="kpi-icon">⏳</div>
+                      <div class="kpi-body">
+                        <div class="kpi-label">Compras pendientes</div>
+                        <div id="stat-pending-purchases" class="kpi-value">0</div>
+                      </div>
+                    </div>
+                    <div class="kpi-card kpi-gray">
+                      <div class="kpi-icon">🕐</div>
+                      <div class="kpi-body">
+                        <div class="kpi-label">Última activación</div>
+                        <div id="stat-last-activation" class="kpi-value kpi-value--sm">-</div>
+                      </div>
+                    </div>
+                    <div class="kpi-card kpi-card--light" style="background:linear-gradient(135deg,#059669,#34d399);color:#fff;">
+                      <div class="kpi-icon">🎓</div>
+                      <div class="kpi-body">
+                        <div class="kpi-label">Certificaciones completadas</div>
+                        <div id="stat-completed-courses" class="kpi-value">0</div>
+                      </div>
+                    </div>
+                    <div class="kpi-card kpi-card--light" style="background:linear-gradient(135deg,#7c3aed,#a78bfa);color:#fff;">
+                      <div class="kpi-icon">📈</div>
+                      <div class="kpi-body">
+                        <div class="kpi-label">Tasa de completación</div>
+                        <div id="stat-completion-rate" class="kpi-value kpi-value--sm">0%</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Paneles de detalle -->
+                  <div class="dashboard-grid mt-4">
+                    <div class="dashboard-panel dp-orange">
+                      <div class="dp-header">
+                        <span class="dp-icon">📊</span>
+                        <h6>Rendimiento de vouchers</h6>
+                      </div>
+                      <div class="metric-bar-row mt-2">
+                        <div class="metric-bar-track">
+                          <div id="bar-usage" class="metric-bar-fill" style="width:0%"></div>
+                        </div>
+                        <span id="bar-usage-label" class="metric-badge">0%</span>
+                      </div>
+                      <div class="metric-note">Vouchers consumidos sobre el total generado.</div>
+                    </div>
+
+                    <div class="dashboard-panel dp-blue">
+                      <div class="dp-header">
+                        <span class="dp-icon">🧮</span>
+                        <h6>Estado de compras</h6>
+                      </div>
+                      <ul id="purchase-status-list" class="metric-list mt-2">
+                        <li><span>Pagadas</span><strong>0</strong></li>
+                        <li><span>Pendientes</span><strong>0</strong></li>
+                        <li><span>Fallidas</span><strong>0</strong></li>
+                      </ul>
+                    </div>
+
+                    <div class="dashboard-panel dp-teal">
+                      <div class="dp-header">
+                        <span class="dp-icon">📅</span>
+                        <h6>Tendencia mensual</h6>
+                      </div>
+                      <div id="monthly-paid-bars" class="mt-2">
+                        <div class="metric-note">Sin datos aún.</div>
+                      </div>
+                    </div>
+
+                    <div class="dashboard-panel dp-purple">
+                      <div class="dp-header">
+                        <span class="dp-icon">🏆</span>
+                        <h6>Certificaciones más activadas</h6>
+                      </div>
+                      <ul id="top-courses-list" class="metric-list mt-2">
+                        <li><span>Sin activaciones</span><strong>0</strong></li>
+                      </ul>
+                    </div>
+
+                    <div class="dashboard-panel" style="background:linear-gradient(135deg,#1b4332,#2d6a4f);border:1px solid #52b788;">
+                      <div class="dp-header">
+                        <span class="dp-icon">🎓</span>
+                        <h6 style="color:#b7e4c7;">Certificaciones completadas</h6>
+                      </div>
+                      <ul id="completed-courses-list" class="metric-list metric-list--light mt-2">
+                        <li><span style="color:rgba(255,255,255,0.6);">Sin completaciones aún</span><strong>0</strong></li>
+                      </ul>
+                      <div class="metric-bar-row mt-2">
+                        <div class="metric-bar-track" style="background:rgba(255,255,255,0.2);">
+                          <div id="bar-completion" class="metric-bar-fill" style="width:0%;background:#6ee7b7;"></div>
+                        </div>
+                        <span id="bar-completion-label" class="metric-badge" style="background:rgba(255,255,255,0.15);color:#fff;">0%</span>
+                      </div>
+                      <div class="metric-note" style="color:rgba(255,255,255,0.6);">Completados sobre vouchers consumidos.</div>
+                    </div>
+                  </div>
+
+                  <div id="stats-result" class="mt-3"></div>
+                </div>
+
+                <div id="partner-vouchers" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center gap-2 mb-4">
+                    <span style="font-size:2rem;">🎟️</span>
+                    <h4 class="mb-0">Mis Vouchers</h4>
+                  </div>
+                  <div class="card shadow-sm mb-3">
+                    <div class="card-body">
+                      <h6 class="mb-2">Compra rápida</h6>
+                      <div class="row g-3 align-items-end">
+                        <div class="col-12 col-md-3 col-lg-2">
+                          <label class="form-label">Cantidad</label>
+                          <input id="voucher-qty" type="number" min="1" value="1" class="form-control">
+                        </div>
+                        <div class="col-12 col-md-9 col-lg-10">
+                          <div class="d-flex flex-wrap align-items-center gap-2 voucher-quick-actions">
+                            <button id="buy-voucher-btn" class="btn btn-primary">Comprar Voucher</button>
+                            <span id="partner-pricing-preview" class="voucher-total-text"></span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <button id="load-vouchers" class="btn btn-outline-primary mb-3">🔄 Recargar Lista</button>
+
+                  <!-- Resumen de vouchers -->
+                  <div id="vouchers-summary-strip" class="d-flex gap-3 mb-3 flex-wrap">
+                    <span class="badge fs-6 bg-primary px-3 py-2">Comprados: <span id="vsummary-total">0</span></span>
+                    <span class="badge fs-6 bg-secondary px-3 py-2">Usados: <span id="vsummary-used">0</span></span>
+                    <span class="badge fs-6 bg-success px-3 py-2">Disponibles: <span id="vsummary-available">0</span></span>
+                  </div>
+
+                  <!-- Filtros de búsqueda de vouchers -->
+                  <div class="card shadow-sm mb-3" id="vouchers-filter-card">
+                    <div class="card-body py-2">
+                      <div class="row g-2 align-items-end flex-nowrap">
+                        <div class="col">
+                          <label class="form-label form-label-sm mb-1">Certificación</label>
+                          <select id="voucher-filter-course" class="form-select form-select-sm">
+                            <option value="">Todas las certificaciones</option>
+                          </select>
+                        </div>
+                        <div class="col">
+                          <label class="form-label form-label-sm mb-1">Cliente final</label>
+                          <select id="voucher-filter-client" class="form-select form-select-sm">
+                            <option value="">Todos los clientes</option>
+                          </select>
+                        </div>
+                        <div class="col">
+                          <label class="form-label form-label-sm mb-1">Periodo</label>
+                          <select id="voucher-filter-period" class="form-select form-select-sm">
+                            <option value="">Cualquier fecha</option>
+                            <option value="today">Hoy</option>
+                            <option value="week">Esta semana</option>
+                            <option value="month">Este mes</option>
+                            <option value="year">Este año</option>
+                            <option value="custom">Personalizado</option>
+                          </select>
+                        </div>
+                        <div class="col-auto d-flex align-items-end gap-2">
+                          <button id="voucher-filter-apply" class="btn btn-sm btn-primary">🔍 Filtrar</button>
+                          <button id="voucher-export-excel" class="btn btn-sm btn-success">📊 Descargar Excel</button>
+                          <button id="voucher-filter-clear" class="btn btn-sm btn-outline-secondary">✕</button>
+                        </div>
+                      </div>
+                      <div id="voucher-filter-custom-dates" class="row g-2 mt-1" style="display:none;">
+                        <div class="col">
+                          <label class="form-label form-label-sm mb-1">Desde</label>
+                          <input id="voucher-filter-date-from" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col">
+                          <label class="form-label form-label-sm mb-1">Hasta</label>
+                          <input id="voucher-filter-date-to" type="date" class="form-control form-control-sm">
+                        </div>
+                        <div class="col col-md-6"></div>
+                      </div>
+                      <div id="voucher-filter-summary" class="small-muted mt-2" style="display:none;"></div>
+                    </div>
+                  </div>
+
+                  <div class="table-responsive">
+                    <table class="table table-hover">
+                      <thead style="background:rgba(255,152,0,0.08);">
+                        <tr>
+                          <th>Código</th>
+                          <th>Estado</th>
+                          <th>Certificación asociada</th>
+                          <th>Consumido por</th>
+                          <th>Cliente final</th>
+                          <th>Estado Moodle</th>
+                          <th>Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody id="vouchers-table-body"></tbody>
+                    </table>
+                  </div>
+                  <div id="vouchers-pagination" class="mt-2"></div>
+
+                  <hr class="my-4" />
+
+                  <div class="d-flex align-items-center gap-2 mb-3">
+                    <span style="font-size:1.4rem;">🧾</span>
+                    <h5 class="mb-0">Compras de Vouchers</h5>
+                  </div>
+                  <div class="table-responsive">
+                    <table class="table table-hover">
+                      <thead style="background:rgba(33,150,243,0.08);">
+                        <tr>
+                          <th>Compra ID</th>
+                          <th>Cantidad</th>
+                          <th>Total</th>
+                          <th>Método</th>
+                          <th>Estado</th>
+                          <th>Fecha</th>
+                        </tr>
+                      </thead>
+                      <tbody id="partner-payments-table-body"></tbody>
+                    </table>
+                  </div>
+                  <div id="partner-payments-pagination" class="mt-2"></div>
+                </div>
+
+                <div id="partner-clients" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center gap-2 mb-4">
+                    <span style="font-size:2rem;">👥</span>
+                    <h4 class="mb-0">Clientes Finales</h4>
+                  </div>
+
+                  <!-- Crear cliente -->
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <h6 class="mb-3">Agregar Cliente</h6>
+                      <div class="row g-3 align-items-end">
+                        <div class="col-md-8">
+                          <label class="form-label">Nombre del cliente final</label>
+                          <input id="new-final-client-name" type="text" class="form-control" placeholder="Ej: Empresa ABC S.A.S." maxlength="200">
+                        </div>
+                        <div class="col-md-4">
+                          <button id="create-final-client-btn" class="btn btn-primary w-100">+ Agregar</button>
+                        </div>
+                      </div>
+                      <div id="final-client-message" class="mt-2" style="display:none;"></div>
+                    </div>
+                  </div>
+
+                  <!-- Lista de clientes -->
+                  <div class="card shadow-sm">
+                    <div class="card-body p-0">
+                      <div class="d-flex align-items-center justify-content-between px-3 pt-3 pb-2">
+                        <h6 class="mb-0">Mis Clientes</h6>
+                        <span id="final-clients-count" class="badge bg-secondary">0</span>
+                      </div>
+                      <div class="table-responsive">
+                        <table class="table table-sm table-hover mb-0">
+                          <thead class="table-light">
+                            <tr>
+                              <th class="text-center">Nombre</th>
+                              <th class="text-center">Fecha registro</th>
+                              <th class="text-center">Acciones</th>
+                            </tr>
+                          </thead>
+                          <tbody id="final-clients-tbody"></tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="partner-activate" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center gap-2 mb-4">
+                    <span style="font-size:2rem;">✅</span>
+                    <h4 class="mb-0">Activar Voucher</h4>
+                  </div>
+                  <div class="mb-3">
+                    <span class="badge fs-6 bg-success px-3 py-2" id="activate-available-count" style="display:none;">Disponibles: <span id="activate-count-num">0</span></span>
+                    <span class="badge fs-6 bg-warning text-dark px-3 py-2" id="activate-no-vouchers" style="display:none;">Sin vouchers disponibles</span>
+                  </div>
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <h6 class="mb-3">Activar Voucher</h6>
+                      <div class="row g-3">
+                        <div class="col-md-4">
+                          <label class="form-label">Certificación</label>
+                          <select id="activate-course-id" class="form-control">
+                            <option value="">Selecciona una certificación</option>
+                          </select>
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Nombre</label>
+                          <input id="activate-firstname" class="form-control" placeholder="Nombre(s)">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Apellidos</label>
+                          <input id="activate-lastname" class="form-control" placeholder="Apellidos">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Email del Usuario</label>
+                          <input id="activate-email" class="form-control" placeholder="usuario@ejemplo.com">
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Cliente Final (destinatario)</label>
+                          <select id="activate-final-client" class="form-control">
+                            <option value="">Selecciona un cliente final</option>
+                          </select>
+                          <div class="form-text">Gestiona tus clientes en la sección <strong>Clientes</strong>.</div>
+                        </div>
+                        <div class="col-md-4">
+                          <label class="form-label">Disponibilidad (meses) <span id="activate-months-max-label" class="text-muted small"></span></label>
+                          <select id="activate-months" class="form-control">
+                            <option value="12">12 meses (1 año)</option>
+                          </select>
+                        </div>
+                        <div class="col-12">
+                          <button id="activate-btn" class="btn btn-primary">✓ Activar Voucher</button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Activación masiva por Excel -->
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <h6 class="mb-1">Activación Masiva por Excel / CSV</h6>
+                      <p class="text-muted small mb-3">Sube un archivo con múltiples activaciones. Columnas requeridas: <code>course_id</code>, <code>user_name</code>, <code>user_email</code>, <code>final_client</code>. Columna opcional: <code>activation_months</code>.</p>
+                      <div class="mb-3">
+                        <button id="download-activation-template" class="btn btn-outline-secondary btn-sm">⬇ Descargar plantilla CSV</button>
+                      </div>
+                      <div class="row g-3 align-items-end">
+                        <div class="col-md-8">
+                          <label class="form-label">Archivo Excel (.xlsx, .xls) o CSV</label>
+                          <input id="activate-excel-file" type="file" class="form-control" accept=".xlsx,.xls,.csv">
+                        </div>
+                        <div class="col-md-4">
+                          <button id="activate-bulk-btn" class="btn btn-success w-100">📤 Procesar archivo</button>
+                        </div>
+                      </div>
+                      <div id="bulk-activate-progress" class="mt-3" style="display:none;">
+                        <div class="progress mb-1" style="height:20px;">
+                          <div id="bulk-progress-bar" class="progress-bar progress-bar-striped progress-bar-animated" role="progressbar" style="width:0%">0%</div>
+                        </div>
+                        <div id="bulk-progress-text" class="small text-muted"></div>
+                      </div>
+                      <div id="bulk-activate-results" class="mt-3"></div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            </div><!-- /admin-content-area -->
+            </div><!-- /admin-layout -->
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/dompurify@3.0.6/dist/purify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js"></script>
+    <script src="/static/app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+    <!-- Toast container -->
+    <div id="toast-container" aria-live="polite"></div>
+
+    <!-- Modal Permisos del Rol -->
+    <div class="modal fade" id="modalUserPermissions" tabindex="-1" aria-labelledby="modalUserPermissionsLabel" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="modalUserPermissionsLabel">🔐 Permisos del Rol</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
+          </div>
+          <div class="modal-body">
+            <p class="text-muted small mb-3" id="perm-modal-user-info">—</p>
+            <input type="hidden" id="perm-modal-role-name">
+            <p class="small mb-3">Define qué módulos puede ver, editar o desactivar para este rol.</p>
+            <div class="table-responsive">
+              <table class="table table-bordered align-middle">
+                <thead class="table-light">
+                  <tr>
+                    <th>Módulo</th>
+                    <th class="text-center">Sin acceso</th>
+                    <th class="text-center">Solo ver</th>
+                    <th class="text-center">Ver y editar</th>
+                  </tr>
+                </thead>
+                <tbody id="perm-modules-table">
+                  <!-- filas generadas por JS -->
+                </tbody>
+              </table>
+            </div>
+            <div id="perm-modal-msg" class="mt-2"></div>
+          </div>
+          <div class="modal-footer" id="perm-modal-footer-normal">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="btn-save-permissions">💾 Guardar Permisos</button>
+          </div>
+          <div class="modal-footer" id="perm-modal-footer-confirm" style="display:none;">
+            <span class="me-auto text-muted small">¿Confirmas guardar los cambios?</span>
+            <button type="button" class="btn btn-secondary" id="btn-cancel-save-perms">✗ No, seguir editando</button>
+            <button type="button" class="btn btn-success" id="btn-do-save-perms">✓ Sí, guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Crear Rol (con permisos) -->
+    <div class="modal fade" id="createRoleModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">➕ Crear Nuevo Rol</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="create-role-modal-msg"></div>
+            <div class="row g-3 mb-4">
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">Nombre técnico <span class="text-danger">*</span></label>
+                <input id="new-role-name" class="form-control" placeholder="ej: supervisor">
+                <div class="form-text">Identificador único, solo letras y guiones</div>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label fw-semibold">Nombre visible <span class="text-danger">*</span></label>
+                <input id="new-role-display-name" class="form-control" placeholder="Ej: Supervisor de Planta">
+              </div>
+            </div>
+            <h6 class="fw-bold mb-3" style="border-top:1px solid var(--border);padding-top:1rem;">Permisos del rol</h6>
+            <div class="table-responsive">
+              <table class="table table-bordered align-middle table-sm">
+                <thead class="table-light">
+                  <tr>
+                    <th>Módulo</th>
+                    <th class="text-center">Sin acceso</th>
+                    <th class="text-center">Solo ver</th>
+                    <th class="text-center">Ver y editar</th>
+                  </tr>
+                </thead>
+                <tbody id="new-role-perm-table"></tbody>
+              </table>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="btn-confirm-create-role">➕ Crear Rol</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Confirmar eliminar cliente final -->
+    <div class="modal fade" id="createFinalClientModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">➕ Confirmar cliente</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">¿Crear cliente final <strong id="create-client-name-label">—</strong>?</p>
+            <input type="hidden" id="create-client-name-value">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="btn-confirm-create-client">➕ Crear</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Confirmar eliminar cliente final -->
+    <div class="modal fade" id="deleteFinalClientModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title">🗑️ Eliminar cliente</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">¿Eliminar a <strong id="delete-client-name-label">—</strong>? Esta acción no se puede deshacer.</p>
+            <input type="hidden" id="delete-client-id">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="btn-confirm-delete-client">🗑️ Eliminar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Confirmar activación de voucher -->
+    <div class="modal fade" id="confirmActivateModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">✅ Confirmar activación</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-1">¿Confirmas activar el voucher para:</p>
+            <div id="confirm-activate-info" class="small text-muted"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-success" id="btn-do-activate">✅ Activar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Confirmar guardar permisos -->
+    <div class="modal fade" id="confirmSavePermsModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">💾 Guardar permisos</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-0">¿Confirmas guardar los permisos del rol <strong id="confirm-save-perms-role">—</strong>?</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="btn-do-save-perms">💾 Guardar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Confirmar CRUD de cursos -->
+    <div class="modal fade" id="confirmCourseCrudModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">✅ Confirmar cambio</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p id="confirm-course-crud-text" class="mb-0">¿Deseas continuar?</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="btn-confirm-course-crud">Confirmar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Nuevo Usuario -->
+    <div class="modal fade" id="newUserModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">➕ Nuevo Usuario</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="admin-user-message"></div>
+            <div class="row g-3">
+              <div class="col-6">
+                <label class="form-label">Nombre</label>
+                <input id="admin-user-first-name" class="form-control" placeholder="Nombre">
+              </div>
+              <div class="col-6">
+                <label class="form-label">Apellido</label>
+                <input id="admin-user-last-name" class="form-control" placeholder="Apellido">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Email <span class="text-danger">*</span></label>
+                <input id="admin-user-email" class="form-control" placeholder="usuario@ejemplo.com">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Contraseña temporal <span class="text-danger">*</span></label>
+                <input id="admin-user-password" type="password" class="form-control" placeholder="••••••••">
+                <div class="form-text">El usuario deberá cambiarla en su primer inicio de sesión.</div>
+              </div>
+              <div class="col-12">
+                <label class="form-label">Rol</label>
+                <select id="admin-user-role" class="form-control">
+                  <option value="user">Usuario</option>
+                </select>
+              </div>
+
+              <!-- Separador seguridad -->
+              <div class="col-12">
+                <hr class="my-1">
+                <div class="small fw-semibold text-muted text-uppercase" style="letter-spacing:.06em;">Seguridad de contraseña</div>
+              </div>
+
+              <!-- Forzar cambio primer inicio (siempre activo, informativo) -->
+              <div class="col-12">
+                <div class="d-flex align-items-start gap-2 p-3 rounded" style="background:rgba(249,115,22,0.07);">
+                  <span style="font-size:1.2rem;margin-top:2px;">🔑</span>
+                  <div>
+                    <div class="fw-semibold small">Cambio de contraseña en primer inicio</div>
+                    <div class="text-muted" style="font-size:0.8rem;">El usuario recibirá la contraseña temporal y deberá cambiarla obligatoriamente al iniciar sesión por primera vez.</div>
+                  </div>
+                  <span class="badge bg-warning text-dark ms-auto mt-1" style="white-space:nowrap;">Siempre activo</span>
+                </div>
+              </div>
+
+              <!-- Caducidad de contraseña -->
+              <div class="col-12">
+                <label class="form-label fw-semibold">Caducidad de contraseña</label>
+                <select id="new-user-expiry-days" class="form-select">
+                  <option value="0">Usar política global del sistema</option>
+                  <option value="30">30 días</option>
+                  <option value="60">60 días</option>
+                  <option value="90">90 días</option>
+                  <option value="180">180 días</option>
+                  <option value="365">1 año</option>
+                  <option value="none">Sin caducidad (ignorar política)</option>
+                  <option value="custom">Personalizado…</option>
+                </select>
+                <div id="new-user-expiry-custom-wrap" class="mt-2" style="display:none;">
+                  <input id="new-user-expiry-custom" type="number" min="1" max="730" class="form-control" placeholder="Número de días">
+                </div>
+                <div id="new-user-expiry-info" class="form-text mt-1"></div>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="create-user">✓ Crear Usuario</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Desactivar/Activar Usuario -->
+    <div class="modal fade" id="toggleUserModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="toggleUserModalTitle">Desactivar usuario</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p id="toggleUserModalText" class="mb-0">¿Confirmas desactivar a este usuario? No podrá iniciar sesión.</p>
+            <input type="hidden" id="toggle-user-id">
+            <input type="hidden" id="toggle-user-active">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-warning" id="btn-confirm-toggle-user">Confirmar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Forzar Cambio de Contraseña -->
+    <div class="modal fade" id="forceChangeModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">🔑 Forzar cambio de contraseña</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-1">El usuario deberá cambiar su contraseña en el próximo inicio de sesión.</p>
+            <p class="small text-muted mb-0" id="force-change-user-info">—</p>
+            <input type="hidden" id="force-change-user-id">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-warning" id="btn-confirm-force-change">🔑 Confirmar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Eliminar Usuario -->
+    <div class="modal fade" id="deleteUserModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-sm">
+        <div class="modal-content">
+          <div class="modal-header bg-danger text-white">
+            <h5 class="modal-title">🗑️ Eliminar usuario</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <p class="mb-1 fw-semibold">Esta acción es irreversible.</p>
+            <p class="small text-muted mb-0" id="delete-user-info">—</p>
+            <input type="hidden" id="delete-user-id">
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="btn-confirm-delete-user">🗑️ Eliminar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal de Edición de Usuario -->
+    <div class="modal fade" id="editUserModal" tabindex="-1" aria-labelledby="editUserModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="editUserModalLabel">✏️ Editar Usuario</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+          </div>
+          <div class="modal-body">
+            <div id="edit-user-message"></div>
+            <div class="row g-3 mb-3">
+              <div class="col-6">
+                <label for="edit-user-first-name" class="form-label">Nombre</label>
+                <input type="text" class="form-control" id="edit-user-first-name" placeholder="Nombre">
+              </div>
+              <div class="col-6">
+                <label for="edit-user-last-name" class="form-label">Apellido</label>
+                <input type="text" class="form-control" id="edit-user-last-name" placeholder="Apellido">
+              </div>
+            </div>
+            <div class="mb-3">
+              <label for="edit-user-email" class="form-label">Email</label>
+              <input type="email" class="form-control" id="edit-user-email" readonly>
+              <small class="text-muted">El email no se puede cambiar</small>
+            </div>
+            <div class="mb-3">
+              <label for="edit-user-password" class="form-label">Nueva Contraseña (opcional)</label>
+              <input type="password" class="form-control" id="edit-user-password" placeholder="Dejar en blanco para no cambiar">
+            </div>
+            <div class="mb-3">
+              <label for="edit-user-role" class="form-label">Rol</label>
+              <select class="form-select" id="edit-user-role">
+                <option value="">Selecciona un rol</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="save-user-changes">💾 Guardar Cambios</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Compra Externa -->
+    <div class="modal fade" id="modal-external-purchase" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">+ Registrar Compra Externa</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="external-purchase-msg"></div>
+            <div class="row g-3">
+              <div class="col-md-6">
+                <label class="form-label">Partner <span class="text-danger">*</span></label>
+                <select id="ext-purchase-partner" class="form-select">
+                  <option value="">Selecciona un partner</option>
+                </select>
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Cantidad <span class="text-danger">*</span></label>
+                <input id="ext-purchase-qty" type="number" min="1" max="500" class="form-control" value="1">
+              </div>
+              <div class="col-md-3">
+                <label class="form-label">Precio Total (USD) <span class="text-danger">*</span></label>
+                <input id="ext-purchase-price" type="number" min="0" step="0.01" class="form-control" placeholder="0.00">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Método de pago <span class="text-danger">*</span></label>
+                <select id="ext-purchase-method" class="form-select">
+                  <option value="bank_transfer">🏦 Transferencia bancaria</option>
+                  <option value="cash">💵 Efectivo</option>
+                  <option value="invoice">📄 Factura</option>
+                </select>
+              </div>
+              <div class="col-md-8">
+                <label class="form-label">Referencia externa</label>
+                <input id="ext-purchase-ref" type="text" class="form-control" placeholder="Ej: N° comprobante, N° factura...">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Notas</label>
+                <textarea id="ext-purchase-notes" class="form-control" rows="2" placeholder="Observaciones adicionales..."></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-success" id="modal-external-purchase-submit">✓ Registrar Compra</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Dar Cortesía -->
+    <div class="modal fade" id="modal-complimentary" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">🎁 Emitir Vouchers de Cortesía</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="complimentary-msg"></div>
+            <div class="row g-3">
+              <div class="col-md-8">
+                <label class="form-label">Partner <span class="text-danger">*</span></label>
+                <select id="comp-partner" class="form-select">
+                  <option value="">Selecciona un partner</option>
+                </select>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Cantidad <span class="text-danger">*</span></label>
+                <input id="comp-qty" type="number" min="1" max="500" class="form-control" value="1">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Motivo <span class="text-danger">*</span></label>
+                <textarea id="comp-reason" class="form-control" rows="3" placeholder="Describe el motivo de esta cortesía (demo, compensación, promoción...)"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-warning" id="modal-complimentary-submit">🎁 Emitir Cortesía</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Ajustar Compra -->
+    <div class="modal fade" id="modal-adjust-purchase" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">✏️ Ajustar Compra</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="adjust-purchase-msg"></div>
+            <input type="hidden" id="adjust-purchase-id">
+            <div class="row g-3">
+              <div class="col-md-4">
+                <label class="form-label">ID Compra</label>
+                <input id="adjust-purchase-id-display" type="text" class="form-control" readonly>
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Precio Total (USD)</label>
+                <input id="adjust-purchase-price" type="number" min="0" step="0.01" class="form-control">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label">Método de pago</label>
+                <select id="adjust-purchase-method" class="form-select">
+                  <option value="bank_transfer">🏦 Transferencia</option>
+                  <option value="cash">💵 Efectivo</option>
+                  <option value="invoice">📄 Factura</option>
+                  <option value="complimentary">🎁 Cortesía</option>
+                </select>
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Referencia externa</label>
+                <input id="adjust-purchase-ref" type="text" class="form-control">
+              </div>
+              <div class="col-md-6">
+                <label class="form-label">Motivo cortesía</label>
+                <input id="adjust-purchase-comp-reason" type="text" class="form-control" placeholder="Solo aplica si es cortesía">
+              </div>
+              <div class="col-12">
+                <label class="form-label">Notas</label>
+                <textarea id="adjust-purchase-notes" class="form-control" rows="2"></textarea>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="modal-adjust-purchase-submit">💾 Guardar Ajuste</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </body>
+</html>

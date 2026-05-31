@@ -1,0 +1,44 @@
+# ── Entornos y secretos ──────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+servicios/**/.env
+servicios/**/.env.*
+
+# ── Dependencias ─────────────────────────────────────────────────────────────
+node_modules/
+**/node_modules/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+*.log
+npm-debug.log*
+
+# ── Producción / CI-CD (sin servidor activo) ─────────────────────────────────
+docker-compose.prod.yml
+docker-compose.staging.yml
+.github/workflows/deploy-*.yml
+
+# ── Scripts y colecciones de prueba locales ──────────────────────────────────
+scripts/
+postman/
+simulate_payment.ps1
+test-sync-events.ps1
+test_admin_login.js
+TEST_RESULTS_*.md
+
+# ── Artefactos de build ───────────────────────────────────────────────────────
+dist/
+build/
+.next/
+out/
+
+# ── Sistema operativo ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Editores ─────────────────────────────────────────────────────────────────
+.idea/
+*.swp
+*.swo
