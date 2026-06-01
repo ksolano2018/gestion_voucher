@@ -1,0 +1,67 @@
+name: Deploy QA
+
+on:
+  push:
+    branches:
+      - qa
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: qa
+
+    steps:
+      - name: Checkout código
+        uses: actions/checkout@v4
+
+      - name: Deploy en EC2
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            set -e
+
+            # Ir al directorio de la app
+            cd /home/ec2-user/app
+
+            # Actualizar código desde branch qa
+            git pull origin qa
+
+            # Crear el .env con los secrets de GitHub
+            cat > servicios/servicio-usuarios/.env << EOF
+            DB_HOST=postgres
+            DB_PORT=5432
+            DB_NAME=voucherdb
+            DB_USER=admin
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            ADMIN_EMAIL=admin@certjoin.com
+            ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+            PARTNER_EMAIL=partner@certjoin.com
+            PARTNER_PASSWORD=${{ secrets.PARTNER_PASSWORD }}
+            STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+            STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
+            STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
+            FRONTEND_URL=http://${{ secrets.EC2_HOST }}
+            PORT=8081
+            NODE_ENV=production
+            REFRESH_TOKEN_TTL_DAYS=7
+            SESSION_TIMEOUT_MINUTES=30
+            MAX_LOGIN_ATTEMPTS=10
+            RATE_LIMIT_WINDOW_MINUTES=15
+            RATE_LIMIT_MAX_REQUESTS=100
+            MOODLE_URL=http://moodle-mock:8082
+            MOODLE_TOKEN=b7e1f736de1ed7eb52b09ac6a8f18c60
+            MOODLE_ROLE_ID=5
+            MOODLE_MOCK=false
+            EOF
+
+            # Levantar contenedores
+            docker compose down --remove-orphans
+            docker compose pull
+            docker compose up -d --build
+
+            # Verificar que los contenedores están corriendo
+            docker compose ps
