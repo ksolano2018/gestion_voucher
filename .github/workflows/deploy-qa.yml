@@ -28,15 +28,18 @@ jobs:
             # Actualizar código
             git pull origin qa
 
-            # .env raíz — variables para docker-compose (postgres, healthcheck)
-            cat > .env << 'ENVEOF'
+            # Inyectar URL real del servidor en el frontend
+            sed -i "s|%API_URL%|http://${{ secrets.EC2_HOST }}:8080|g" frontend/public/index.html
+
+            # .env raíz para docker-compose (variables de postgres y healthcheck)
+            cat > .env << ENVEOF
             DB_NAME=voucherdb
             DB_USER=admin
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
             ENVEOF
 
             # .env del servicio Node.js
-            cat > servicios/servicio-usuarios/.env << 'ENVEOF'
+            cat > servicios/servicio-usuarios/.env << ENVEOF
             DB_HOST=postgres
             DB_PORT=5432
             DB_NAME=voucherdb
@@ -67,7 +70,7 @@ jobs:
             # Crear directorio de logs
             mkdir -p logs/usuarios
 
-            # Actualizar buildx si es necesario
+            # Actualizar buildx
             BUILDX_VER=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
             sudo mkdir -p /usr/local/lib/docker/cli-plugins
             sudo curl -SL "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/buildx-${BUILDX_VER}.linux-amd64" \
