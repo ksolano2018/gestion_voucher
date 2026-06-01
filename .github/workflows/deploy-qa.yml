@@ -20,17 +20,23 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 10m
           script: |
             set -e
-
-            # Ir al directorio de la app
             cd /home/ec2-user/app
 
-            # Actualizar código desde branch qa
+            # Actualizar código
             git pull origin qa
 
-            # Crear el .env con los secrets de GitHub
-            cat > servicios/servicio-usuarios/.env << EOF
+            # .env raíz — variables para docker-compose (postgres, healthcheck)
+            cat > .env << 'ENVEOF'
+            DB_NAME=voucherdb
+            DB_USER=admin
+            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            ENVEOF
+
+            # .env del servicio Node.js
+            cat > servicios/servicio-usuarios/.env << 'ENVEOF'
             DB_HOST=postgres
             DB_PORT=5432
             DB_NAME=voucherdb
@@ -56,12 +62,21 @@ jobs:
             MOODLE_TOKEN=b7e1f736de1ed7eb52b09ac6a8f18c60
             MOODLE_ROLE_ID=5
             MOODLE_MOCK=false
-            EOF
+            ENVEOF
+
+            # Crear directorio de logs
+            mkdir -p logs/usuarios
+
+            # Actualizar buildx si es necesario
+            BUILDX_VER=$(curl -s https://api.github.com/repos/docker/buildx/releases/latest | grep '"tag_name"' | cut -d'"' -f4)
+            sudo mkdir -p /usr/local/lib/docker/cli-plugins
+            sudo curl -SL "https://github.com/docker/buildx/releases/download/${BUILDX_VER}/buildx-${BUILDX_VER}.linux-amd64" \
+              -o /usr/local/lib/docker/cli-plugins/docker-buildx
+            sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
             # Levantar contenedores
             docker compose down --remove-orphans
-            docker compose pull
             docker compose up -d --build
 
-            # Verificar que los contenedores están corriendo
+            # Verificar estado
             docker compose ps
