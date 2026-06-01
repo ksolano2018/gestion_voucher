@@ -17,7 +17,7 @@ npm-debug.log*
 # ── Producción / CI-CD (sin servidor activo) ─────────────────────────────────
 docker-compose.prod.yml
 docker-compose.staging.yml
-.github/workflows/deploy-*.yml
+# .github/workflows/deploy-*.yml  # workflows are now tracked
 
 # ── Scripts y colecciones de prueba locales ──────────────────────────────────
 scripts/
