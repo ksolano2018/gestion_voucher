@@ -25,8 +25,9 @@ jobs:
             set -e
             cd /home/ec2-user/app
 
-            # Actualizar código
-            git pull origin qa
+            # Sincronizar código (reset fuerza limpieza de cambios locales como el sed de %API_URL%)
+            git fetch origin qa
+            git reset --hard origin/qa
 
             # Inyectar URL real del servidor en el frontend
             sed -i "s|%API_URL%|http://${{ secrets.EC2_HOST }}:8080|g" frontend/public/index.html
