@@ -3313,11 +3313,12 @@ document.addEventListener('DOMContentLoaded', () => {
               data-user-first-name="${safeFirst}" data-user-last-name="${safeLast}">✏️ Editar</button>
             <button class="btn btn-sm ${toggleClass} toggle-user-btn"
               data-user-id="${userId}" data-user-email="${safeEmail}" data-user-name="${fullName}"
-              data-user-active="${isActive}">${toggleLabel}</button>
+              data-user-active="${isActive}" data-user-role="${safeRole}">${toggleLabel}</button>
             <button class="btn btn-sm btn-outline-secondary force-change-btn"
               data-user-id="${userId}" data-user-name="${fullName}" data-user-email="${safeEmail}">🔑 Forzar cambio</button>
             <button class="btn btn-sm btn-outline-danger delete-user-btn"
-              data-user-id="${userId}" data-user-email="${safeEmail}" data-user-name="${fullName}">🗑️ Eliminar</button>
+              data-user-id="${userId}" data-user-email="${safeEmail}" data-user-name="${fullName}"
+              data-user-role="${safeRole}">🗑️ Eliminar</button>
           </div>
         </td>
       </tr>`;
@@ -3335,6 +3336,16 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.toggle-user-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const isActive = btn.dataset.userActive === 'true';
+
+        // Protección: no desactivar si es el último admin activo
+        if (isActive && btn.dataset.userRole === 'admin') {
+          const activeAdmins = _allUsersData.filter(u => u.role === 'admin' && u.active !== false);
+          if (activeAdmins.length <= 1) {
+            showToast('⚠️ No puedes desactivar al único administrador activo del sistema. Crea otro admin primero.', 'danger', 4000);
+            return;
+          }
+        }
+
         const title = isActive ? 'Desactivar usuario' : 'Activar usuario';
         const text = isActive
           ? `¿Desactivar a <strong>${escapeHTML(btn.dataset.userName||btn.dataset.userEmail)}</strong>? No podrá iniciar sesión.`
@@ -3358,6 +3369,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     document.querySelectorAll('.delete-user-btn').forEach(btn => {
       btn.addEventListener('click', () => {
+        // Protección: no eliminar si es el último admin activo
+        if (btn.dataset.userRole === 'admin') {
+          const activeAdmins = _allUsersData.filter(u => u.role === 'admin' && u.active !== false);
+          if (activeAdmins.length <= 1) {
+            showToast('⚠️ No puedes eliminar al único administrador del sistema. Crea otro admin primero.', 'danger', 4000);
+            return;
+          }
+        }
         const info = el('delete-user-info');
         if(info) info.textContent = `${btn.dataset.userName||''} — ${btn.dataset.userEmail||''}`;
         el('delete-user-id').value = btn.dataset.userId;
@@ -3396,8 +3415,75 @@ document.addEventListener('DOMContentLoaded', () => {
 
   on('btn-open-new-user', 'click', () => {
     loadAdminRoles(true).catch(()=>{});
+    // Resetear validador al abrir
+    const pwdInput = el('admin-user-password');
+    if(pwdInput) { pwdInput.value = ''; pwdInput.dispatchEvent(new Event('input')); }
     bootstrap.Modal.getOrCreateInstance(document.getElementById('newUserModal')).show();
   });
+
+  // Validador de contraseña en tiempo real
+  (function setupPasswordValidator() {
+    const input   = el('admin-user-password');
+    const rulesEl = el('admin-user-password-rules');
+    const createBtn = el('create-user');
+    if (!input || !rulesEl) return;
+
+    const rules = [
+      { id: 'pwd-rule-length',  test: v => v.length >= 8,            label: 'Mínimo 8 caracteres' },
+      { id: 'pwd-rule-upper',   test: v => /[A-Z]/.test(v),          label: 'Al menos una mayúscula' },
+      { id: 'pwd-rule-lower',   test: v => /[a-z]/.test(v),          label: 'Al menos una minúscula' },
+      { id: 'pwd-rule-number',  test: v => /[0-9]/.test(v),          label: 'Al menos un número' },
+      { id: 'pwd-rule-special', test: v => /[!@#$%^&*]/.test(v),     label: 'Al menos un carácter especial' }
+    ];
+
+    const strengthBar  = el('admin-user-pwd-strength-bar');
+    const strengthLabel = el('pwd-strength-label');
+    const bars = [1,2,3,4,5].map(i => document.getElementById('pwd-bar-' + i));
+
+    const LEVELS = [
+      { min: 0, max: 0, label: '',        color: '#e9ecef' },
+      { min: 1, max: 1, label: 'Débil',   color: '#ef4444' },
+      { min: 2, max: 2, label: 'Débil',   color: '#ef4444' },
+      { min: 3, max: 3, label: 'Regular', color: '#f97316' },
+      { min: 4, max: 4, label: 'Buena',   color: '#3b82f6' },
+      { min: 5, max: 5, label: 'Fuerte',  color: '#22c55e' }
+    ];
+
+    input.addEventListener('input', () => {
+      const val = input.value;
+      const hasValue = val.length > 0;
+      rulesEl.style.display = hasValue ? '' : 'none';
+      if (strengthBar) strengthBar.style.display = hasValue ? '' : 'none';
+
+      let passed = 0;
+      let allOk = true;
+      rules.forEach(rule => {
+        const ok = rule.test(val);
+        if (ok) passed++; else allOk = false;
+        const li = document.getElementById(rule.id);
+        if (!li) return;
+        const icon = li.querySelector('.rule-icon');
+        if (icon) icon.textContent = ok ? '✅' : '❌';
+        li.style.color = ok ? '#198754' : '#6c757d';
+      });
+
+      // Actualizar barra de fuerza
+      const level = LEVELS[passed] || LEVELS[0];
+      bars.forEach((bar, i) => {
+        if (bar) bar.style.background = i < passed ? level.color : '#e9ecef';
+      });
+      if (strengthLabel) {
+        strengthLabel.textContent = level.label;
+        strengthLabel.style.color = level.color;
+      }
+
+      // Deshabilitar botón hasta que todos los requisitos se cumplan
+      if (createBtn) {
+        createBtn.disabled = !allOk;
+        createBtn.title = allOk ? '' : 'Completa todos los requisitos de contraseña';
+      }
+    });
+  })();
 
   // Search/filter
   ['users-search-input','users-role-filter'].forEach(id => {

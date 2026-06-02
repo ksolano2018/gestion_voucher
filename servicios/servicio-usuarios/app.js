@@ -4422,8 +4422,18 @@ app.put('/admin/users/:id', authenticate, requireRole('admin'), async (req,res)=
       paramNum++;
     }
     if(active !== undefined){
+      const nextActive = active === true || active === 'true';
+      // Protección: no desactivar si es el único admin activo
+      if (!nextActive && currentUser.role === 'admin') {
+        const activeAdmins = await pool.query(
+          "SELECT COUNT(*) FROM users WHERE role='admin' AND active=TRUE AND id != $1", [userId]
+        );
+        if (parseInt(activeAdmins.rows[0].count, 10) === 0) {
+          return res.status(400).json({ error: 'No puedes desactivar al único administrador activo del sistema.' });
+        }
+      }
       updates.push(`active = $${paramNum}`);
-      params.push(active === true || active === 'true');
+      params.push(nextActive);
       paramNum++;
     }
     if(must_change_password !== undefined){
@@ -4602,9 +4612,21 @@ app.delete('/admin/users/:id', authenticate, requireRole('admin'), async (req,re
   try{
     console.log('Deleting user:', userId);
     
+    // Protección: no eliminar si es el único admin activo
+    const targetUser = await client.query('SELECT role, active FROM users WHERE id=$1', [userId]);
+    if (targetUser.rowCount > 0 && targetUser.rows[0].role === 'admin') {
+      const activeAdmins = await client.query(
+        "SELECT COUNT(*) FROM users WHERE role='admin' AND active=TRUE"
+      );
+      if (parseInt(activeAdmins.rows[0].count, 10) <= 1) {
+        client.release();
+        return res.status(400).json({ error: 'No puedes eliminar al único administrador activo del sistema.' });
+      }
+    }
+
     // Start transaction
     await client.query('BEGIN');
-    
+
     // First delete all refresh tokens for this user
     const delTokens = await client.query('DELETE FROM refresh_tokens WHERE user_id=$1',[userId]);
     console.log('Deleted refresh tokens:', delTokens.rowCount);
