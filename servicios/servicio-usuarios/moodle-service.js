@@ -279,6 +279,57 @@ function generateMoodlePassword() {
   return `M!${base}1a`;
 }
 
+/**
+ * Fetch all courses from Moodle.
+ * Returns { courses: [{ id, shortname, fullname, summary, visible }] } or { error }.
+ * Uses Moodle WS: core_course_get_courses (empty options = all courses, skips site course id=1)
+ */
+async function getCourses() {
+  if (MOODLE_MOCK) {
+    return {
+      courses: [
+        { id: 2, shortname: 'JAVA-01', fullname: 'Certificación Java Developer', summary: 'Curso de Java', visible: 1 },
+        { id: 3, shortname: 'AWS-01',  fullname: 'Certificación AWS Solutions Architect', summary: '', visible: 1 },
+        { id: 4, shortname: 'PMP-01',  fullname: 'Certificación PMP Project Management', summary: '', visible: 1 }
+      ]
+    };
+  }
+
+  try {
+    const result = await moodleRequest('core_course_get_courses', {});
+    if (!Array.isArray(result)) return { error: 'Respuesta inesperada de Moodle' };
+    // Filter out the site course (id=1)
+    const courses = result
+      .filter(c => c.id !== 1)
+      .map(c => ({
+        id:        c.id,
+        shortname: c.shortname,
+        fullname:  c.fullname,
+        summary:   c.summary ? c.summary.replace(/<[^>]*>/g, '').trim() : '',
+        visible:   c.visible
+      }));
+    return { courses };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+/**
+ * Test Moodle connection using core_webservice_get_site_info.
+ * Returns { ok: true, sitename, username } or { error }.
+ */
+async function testConnection() {
+  if (MOODLE_MOCK) {
+    return { ok: true, sitename: 'Moodle Mock', username: 'mock_user' };
+  }
+  try {
+    const info = await moodleRequest('core_webservice_get_site_info', {});
+    return { ok: true, sitename: info.sitename, username: info.username };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
 function isMockMode() {
   return MOODLE_MOCK;
 }
@@ -289,5 +340,7 @@ module.exports = {
   createUser,
   enrollUserInCourse,
   getCourseCompletionStatus,
+  getCourses,
+  testConnection,
   isMockMode
 };

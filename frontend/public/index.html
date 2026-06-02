@@ -3004,7 +3004,27 @@
                         <div class="small-muted">Crea, edita y elimina certificaciones disponibles para activación</div>
                       </div>
                     </div>
-                    <button id="admin-courses-refresh" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
+                    <div class="d-flex gap-2">
+                      <button id="admin-courses-refresh" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
+                      <button id="admin-moodle-sync-courses-btn" class="btn btn-outline-success btn-sm">🎓 Sincronizar desde Moodle</button>
+                    </div>
+                  </div>
+
+                  <!-- Panel de integración Moodle -->
+                  <div id="admin-moodle-sync-panel" class="card border-0 shadow-sm mb-4" style="display:none;">
+                    <div class="card-body py-3">
+                      <div class="d-flex align-items-center gap-2 mb-2">
+                        <span style="font-size:1.2rem;">🎓</span>
+                        <h6 class="mb-0">Sincronización desde Moodle</h6>
+                        <span id="admin-moodle-connection-badge" class="badge bg-secondary ms-2">Verificando...</span>
+                      </div>
+                      <div id="admin-moodle-sync-results" class="small mt-2"></div>
+                      <div class="d-flex gap-2 mt-3">
+                        <button id="admin-moodle-preview-btn" class="btn btn-outline-secondary btn-sm">👁 Ver certificaciones en Moodle</button>
+                        <button id="admin-moodle-do-sync-btn" class="btn btn-success btn-sm">⬇ Importar al sistema</button>
+                      </div>
+                      <div id="admin-moodle-preview-list" class="mt-3"></div>
+                    </div>
                   </div>
 
                   <div id="admin-courses-message"></div>
