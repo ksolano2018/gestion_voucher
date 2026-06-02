@@ -4582,5 +4582,28 @@
       </div>
     </div>
 
+    <!-- Modal de Confirmación Genérico (reutilizable para todas las acciones) -->
+    <div class="modal fade" id="modal-generic-confirm" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title d-flex align-items-center gap-2">
+              <span id="generic-confirm-icon" style="font-size:1.2rem;"></span>
+              <span id="generic-confirm-title"></span>
+            </h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="generic-confirm-alert" style="display:none;" class="alert alert-warning mb-3"></div>
+            <div id="generic-confirm-body"></div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="generic-confirm-btn">Confirmar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </body>
 </html>
