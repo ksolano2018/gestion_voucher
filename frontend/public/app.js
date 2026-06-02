@@ -184,6 +184,56 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Loading state for buttons
+  // ── Confirmación genérica reutilizable ──────────────────────────────────────
+  // rows: [{ label, value }]  — value puede ser string, número o HTML seguro
+  // alert: texto de advertencia opcional (fondo amarillo sobre la tabla)
+  function showConfirmAction({ title, icon = '⚠️', rows = [], alert = '', confirmLabel = 'Confirmar', confirmClass = 'btn-primary', onConfirm }) {
+    const modal = document.getElementById('modal-generic-confirm');
+    if (!modal) { onConfirm(); return; }
+
+    const titleEl = document.getElementById('generic-confirm-title');
+    const iconEl  = document.getElementById('generic-confirm-icon');
+    const bodyEl  = document.getElementById('generic-confirm-body');
+    const alertEl = document.getElementById('generic-confirm-alert');
+
+    if (titleEl) titleEl.textContent = title;
+    if (iconEl)  iconEl.textContent  = icon;
+
+    if (alertEl) {
+      alertEl.textContent = alert;
+      alertEl.style.display = alert ? '' : 'none';
+    }
+
+    if (bodyEl) {
+      bodyEl.innerHTML = rows.length
+        ? `<table class="table table-sm table-borderless mb-0">
+            <tbody>
+              ${rows.map(r => `<tr>
+                <td class="text-muted pe-3" style="white-space:nowrap;width:40%;font-size:.875rem;">${escapeHTML(String(r.label || ''))}</td>
+                <td class="fw-semibold" style="font-size:.875rem;">${escapeHTML(String(r.value !== undefined && r.value !== null && r.value !== '' ? r.value : '—'))}</td>
+              </tr>`).join('')}
+            </tbody>
+          </table>`
+        : '';
+    }
+
+    // Reemplazar botón para limpiar listeners anteriores
+    const oldBtn = document.getElementById('generic-confirm-btn');
+    if (oldBtn) {
+      const newBtn = oldBtn.cloneNode(false);
+      newBtn.textContent = confirmLabel;
+      newBtn.className = `btn ${confirmClass}`;
+      oldBtn.replaceWith(newBtn);
+      newBtn.addEventListener('click', () => {
+        bootstrap.Modal.getInstance(modal).hide();
+        onConfirm();
+      });
+    }
+
+    bootstrap.Modal.getOrCreateInstance(modal).show();
+  }
+  // ────────────────────────────────────────────────────────────────────────────
+
   function setButtonLoading(btn, loading) {
     if (!btn) return;
     if (loading) {
@@ -1229,36 +1279,41 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   on('save-pricing-profile', 'click', async () => {
-    const profileId = (el('pricing-profile-editor-select') || {}).value;
+    const profileId   = (el('pricing-profile-editor-select') || {}).value;
+    const profileName = (el('pricing-profile-name') || {}).value || '';
+    const rules       = getPricingRulesFromEditor();
     if(!profileId){
       showInlineAlert('pricing-profile-message', 'Selecciona un perfil para editar.', 'danger');
       return;
     }
-
-    try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/pricing/profiles/${profileId}`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify({
-          name: (el('pricing-profile-name') || {}).value || '',
-          description: (el('pricing-profile-description') || {}).value || '',
-          active: ((el('pricing-profile-active') || {}).value || 'true') === 'true',
-          rules: getPricingRulesFromEditor()
-        })
-      });
-      const data = await resp.json();
-      if(!resp.ok) throw new Error(data.error || 'No se pudo guardar el perfil');
-
-      showToast('Reglas de pricing guardadas correctamente', 'success');
-      showInlineAlert('pricing-profile-message', 'Reglas guardadas correctamente.', 'success');
-      await loadAdminPricingData();
-      if(el('pricing-profile-editor-select')) {
-        el('pricing-profile-editor-select').value = profileId;
-        loadPricingProfileIntoEditor(profileId);
+    showConfirmAction({
+      title: 'Guardar Perfil de Precios', icon: '🏷️',
+      rows: [
+        { label: 'Perfil:', value: profileName },
+        { label: 'Tramos configurados:', value: rules.length },
+        { label: 'Rango de precios:', value: rules.length ? `$${Math.min(...rules.map(r=>r.unit_price)).toFixed(2)} – $${Math.max(...rules.map(r=>r.unit_price)).toFixed(2)}` : '—' }
+      ],
+      confirmLabel: '💾 Guardar Perfil', confirmClass: 'btn-primary',
+      onConfirm: async () => {
+        try {
+          const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/pricing/profiles/${profileId}`, {
+            method: 'PUT', headers: authHeaders(),
+            body: JSON.stringify({
+              name: profileName,
+              description: (el('pricing-profile-description') || {}).value || '',
+              active: ((el('pricing-profile-active') || {}).value || 'true') === 'true',
+              rules
+            })
+          });
+          const data = await resp.json();
+          if(!resp.ok) throw new Error(data.error || 'No se pudo guardar el perfil');
+          showToast('Reglas de pricing guardadas correctamente', 'success');
+          showInlineAlert('pricing-profile-message', 'Reglas guardadas correctamente.', 'success');
+          await loadAdminPricingData();
+          if(el('pricing-profile-editor-select')) { el('pricing-profile-editor-select').value = profileId; loadPricingProfileIntoEditor(profileId); }
+        } catch (e) { showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
       }
-    } catch (e) {
-      showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger');
-    }
+    });
   });
 
   on('load-partner-pricing-config', 'click', () => loadPartnerPricingConfig());
@@ -1268,37 +1323,49 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   on('save-partner-pricing', 'click', async () => {
-    const partnerId = (el('pricing-partner-select') || {}).value;
-    const pricingProfileId = (el('partner-category-select') || {}).value;
-    const specialPricingProfileId = (el('partner-special-profile-select') || {}).value;
+    const partnerSel   = el('pricing-partner-select');
+    const partnerId    = (partnerSel || {}).value;
+    const partnerName  = partnerSel ? (partnerSel.options[partnerSel.selectedIndex] || {}).text || partnerId : partnerId;
+    const catSel       = el('partner-category-select');
+    const pricingProfileId = (catSel || {}).value;
+    const catName      = catSel ? (catSel.options[catSel.selectedIndex] || {}).text || pricingProfileId : pricingProfileId;
+    const specSel      = el('partner-special-profile-select');
+    const specialPricingProfileId = (specSel || {}).value;
+    const specName     = specSel && specialPricingProfileId ? (specSel.options[specSel.selectedIndex] || {}).text || specialPricingProfileId : 'Sin perfil especial';
 
     if(!partnerId || !pricingProfileId){
       showInlineAlert('partner-pricing-message', 'Selecciona partner y categoría base.', 'danger');
       return;
     }
-
-    try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/partners/${partnerId}/pricing`, {
-        method: 'PUT',
-        headers: authHeaders(),
-        body: JSON.stringify({
-          pricing_profile_id: parseInt(pricingProfileId, 10),
-          special_pricing_profile_id: specialPricingProfileId ? parseInt(specialPricingProfileId, 10) : null
-        })
-      });
-      const data = await resp.json();
-      if(!resp.ok) throw new Error(data.error || 'No se pudo guardar el pricing del partner');
-
-      showToast('Pricing del partner actualizado correctamente', 'success');
-      showInlineAlert('partner-pricing-message', 'Pricing del partner actualizado correctamente.', 'success');
-      await loadAdminPricingData();
-      if(el('pricing-partner-select')) el('pricing-partner-select').value = partnerId;
-      if(el('partner-category-select')) el('partner-category-select').value = data.pricing_profile_id || pricingProfileId;
-      if(el('partner-special-profile-select')) el('partner-special-profile-select').value = data.special_pricing_profile_id || '';
-      await loadPartnerPricingConfig();
-    } catch (e) {
-      showInlineAlert('partner-pricing-message', `Error: ${escapeHTML(e.message)}`, 'danger');
-    }
+    showConfirmAction({
+      title: 'Actualizar Pricing del Partner', icon: '💰',
+      rows: [
+        { label: 'Partner:', value: partnerName },
+        { label: 'Categoría base:', value: catName },
+        { label: 'Perfil especial:', value: specName }
+      ],
+      confirmLabel: '💾 Guardar Pricing', confirmClass: 'btn-primary',
+      onConfirm: async () => {
+        try {
+          const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/partners/${partnerId}/pricing`, {
+            method: 'PUT', headers: authHeaders(),
+            body: JSON.stringify({
+              pricing_profile_id: parseInt(pricingProfileId, 10),
+              special_pricing_profile_id: specialPricingProfileId ? parseInt(specialPricingProfileId, 10) : null
+            })
+          });
+          const data = await resp.json();
+          if(!resp.ok) throw new Error(data.error || 'No se pudo guardar el pricing del partner');
+          showToast('Pricing del partner actualizado correctamente', 'success');
+          showInlineAlert('partner-pricing-message', 'Pricing del partner actualizado correctamente.', 'success');
+          await loadAdminPricingData();
+          if(el('pricing-partner-select')) el('pricing-partner-select').value = partnerId;
+          if(el('partner-category-select')) el('partner-category-select').value = data.pricing_profile_id || pricingProfileId;
+          if(el('partner-special-profile-select')) el('partner-special-profile-select').value = data.special_pricing_profile_id || '';
+          await loadPartnerPricingConfig();
+        } catch (e) { showInlineAlert('partner-pricing-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
+      }
+    });
   });
 
   // ---- Admin Courses CRUD ----
@@ -1953,35 +2020,49 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   on('modal-external-purchase-submit', 'click', async () => {
-    const partnerId = (el('ext-purchase-partner') || {}).value || '';
-    const qty       = parseInt((el('ext-purchase-qty') || {}).value || '0');
-    const price     = parseFloat((el('ext-purchase-price') || {}).value || '0');
-    const method    = (el('ext-purchase-method') || {}).value || 'bank_transfer';
-    const ref       = (el('ext-purchase-ref') || {}).value || '';
-    const notes     = (el('ext-purchase-notes') || {}).value || '';
-    const msgEl     = el('external-purchase-msg');
+    const partnerSel = el('ext-purchase-partner');
+    const partnerId  = (partnerSel || {}).value || '';
+    const partnerName = partnerSel ? (partnerSel.options[partnerSel.selectedIndex] || {}).text || partnerId : partnerId;
+    const qty    = parseInt((el('ext-purchase-qty') || {}).value || '0');
+    const price  = parseFloat((el('ext-purchase-price') || {}).value || '0');
+    const method = (el('ext-purchase-method') || {}).value || 'bank_transfer';
+    const ref    = (el('ext-purchase-ref') || {}).value || '';
+    const notes  = (el('ext-purchase-notes') || {}).value || '';
+    const msgEl  = el('external-purchase-msg');
     const setMsg = (txt, type='danger') => { if(msgEl) msgEl.innerHTML = `<div class="alert alert-${type} py-1 mb-2">${escapeHTML(txt)}</div>`; };
     if (!partnerId) return setMsg('Selecciona un partner');
     if (!qty || qty < 1) return setMsg('Cantidad inválida');
     if (isNaN(price) || price < 0) return setMsg('Precio inválido');
-    const btn = el('modal-external-purchase-submit');
-    try {
-      setButtonLoading(btn, true);
-      const base = apiUrl.replace(':8080', ':8081');
-      const resp = await safeFetch(`${base}/admin/partners/${partnerId}/purchases/external`, {
-        method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ qty, total_price: price, payment_method: method, external_reference: ref || undefined, notes: notes || undefined })
-      });
-      const data = await resp.json();
-      setButtonLoading(btn, false);
-      if (!resp.ok) return setMsg(data.error || 'Error al registrar compra');
-      bootstrap.Modal.getInstance(document.getElementById('modal-external-purchase')).hide();
-      showToast(`✅ Compra externa registrada — ${data.vouchers_created} voucher(s) generados`, 'success');
-      loadAdminPurchases();
-    } catch(e) {
-      setButtonLoading(btn, false);
-      setMsg(e.message);
-    }
+    const methodLabels = { bank_transfer: '🏦 Transferencia', cash: '💵 Efectivo', invoice: '📄 Factura' };
+    showConfirmAction({
+      title: 'Registrar Compra Externa', icon: '🛒',
+      rows: [
+        { label: 'Partner:', value: partnerName },
+        { label: 'Cantidad vouchers:', value: qty },
+        { label: 'Precio total:', value: `$${price.toFixed(2)}` },
+        { label: 'Método de pago:', value: methodLabels[method] || method },
+        { label: 'Referencia:', value: ref || '—' },
+        { label: 'Notas:', value: notes || '—' }
+      ],
+      confirmLabel: '✓ Registrar Compra', confirmClass: 'btn-success',
+      onConfirm: async () => {
+        const btn = el('modal-external-purchase-submit');
+        try {
+          setButtonLoading(btn, true);
+          const base = apiUrl.replace(':8080', ':8081');
+          const resp = await safeFetch(`${base}/admin/partners/${partnerId}/purchases/external`, {
+            method: 'POST', headers: authHeaders(),
+            body: JSON.stringify({ qty, total_price: price, payment_method: method, external_reference: ref || undefined, notes: notes || undefined })
+          });
+          const data = await resp.json();
+          setButtonLoading(btn, false);
+          if (!resp.ok) return setMsg(data.error || 'Error al registrar compra');
+          bootstrap.Modal.getInstance(document.getElementById('modal-external-purchase')).hide();
+          showToast(`✅ Compra externa registrada — ${data.vouchers_created} voucher(s) generados`, 'success');
+          loadAdminPurchases();
+        } catch(e) { setButtonLoading(btn, false); setMsg(e.message); }
+      }
+    });
   });
 
   // ── Modal Dar Cortesía ──
@@ -1994,32 +2075,43 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   on('modal-complimentary-submit', 'click', async () => {
-    const partnerId = (el('comp-partner') || {}).value || '';
-    const qty       = parseInt((el('comp-qty') || {}).value || '0');
-    const reason    = (el('comp-reason') || {}).value.trim();
-    const msgEl     = el('complimentary-msg');
+    const partnerSel  = el('comp-partner');
+    const partnerId   = (partnerSel || {}).value || '';
+    const partnerName = partnerSel ? (partnerSel.options[partnerSel.selectedIndex] || {}).text || partnerId : partnerId;
+    const qty    = parseInt((el('comp-qty') || {}).value || '0');
+    const reason = (el('comp-reason') || {}).value.trim();
+    const msgEl  = el('complimentary-msg');
     const setMsg = (txt, type='danger') => { if(msgEl) msgEl.innerHTML = `<div class="alert alert-${type} py-1 mb-2">${escapeHTML(txt)}</div>`; };
     if (!partnerId) return setMsg('Selecciona un partner');
     if (!qty || qty < 1) return setMsg('Cantidad inválida');
     if (!reason) return setMsg('El motivo es obligatorio');
-    const btn = el('modal-complimentary-submit');
-    try {
-      setButtonLoading(btn, true);
-      const base = apiUrl.replace(':8080', ':8081');
-      const resp = await safeFetch(`${base}/admin/partners/${partnerId}/vouchers/complimentary`, {
-        method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ quantity: qty, reason })
-      });
-      const data = await resp.json();
-      setButtonLoading(btn, false);
-      if (!resp.ok) return setMsg(data.error || 'Error al emitir cortesía');
-      bootstrap.Modal.getInstance(document.getElementById('modal-complimentary')).hide();
-      showToast(`🎁 ${data.vouchers_created} voucher(s) de cortesía emitidos`, 'success');
-      loadAdminPurchases();
-    } catch(e) {
-      setButtonLoading(btn, false);
-      setMsg(e.message);
-    }
+    showConfirmAction({
+      title: 'Emitir Vouchers de Cortesía', icon: '🎁',
+      rows: [
+        { label: 'Partner:', value: partnerName },
+        { label: 'Cantidad vouchers:', value: qty },
+        { label: 'Precio total:', value: '$0.00 (cortesía)' },
+        { label: 'Motivo:', value: reason }
+      ],
+      confirmLabel: '🎁 Emitir Cortesía', confirmClass: 'btn-warning',
+      onConfirm: async () => {
+        const btn = el('modal-complimentary-submit');
+        try {
+          setButtonLoading(btn, true);
+          const base = apiUrl.replace(':8080', ':8081');
+          const resp = await safeFetch(`${base}/admin/partners/${partnerId}/vouchers/complimentary`, {
+            method: 'POST', headers: authHeaders(),
+            body: JSON.stringify({ quantity: qty, reason })
+          });
+          const data = await resp.json();
+          setButtonLoading(btn, false);
+          if (!resp.ok) return setMsg(data.error || 'Error al emitir cortesía');
+          bootstrap.Modal.getInstance(document.getElementById('modal-complimentary')).hide();
+          showToast(`🎁 ${data.vouchers_created} voucher(s) de cortesía emitidos`, 'success');
+          loadAdminPurchases();
+        } catch(e) { setButtonLoading(btn, false); setMsg(e.message); }
+      }
+    });
   });
 
   // ── Modal Ajustar Compra ──
@@ -2053,24 +2145,36 @@ document.addEventListener('DOMContentLoaded', () => {
     if (ref)    body.external_reference = ref;
     if (notes)  body.notes = notes;
     if (reason) body.complimentary_reason = reason;
-    const btn = el('modal-adjust-purchase-submit');
-    try {
-      setButtonLoading(btn, true);
-      const base = apiUrl.replace(':8080', ':8081');
-      const resp = await safeFetch(`${base}/admin/purchases/${purchaseId}/adjust`, {
-        method: 'PUT', headers: authHeaders(),
-        body: JSON.stringify(body)
-      });
-      const data = await resp.json();
-      setButtonLoading(btn, false);
-      if (!resp.ok) return setMsg(data.error || 'Error al ajustar compra');
-      bootstrap.Modal.getInstance(document.getElementById('modal-adjust-purchase')).hide();
-      showToast('✅ Compra ajustada correctamente', 'success');
-      loadAdminPurchases();
-    } catch(e) {
-      setButtonLoading(btn, false);
-      setMsg(e.message);
-    }
+    const methodLabels = { bank_transfer: '🏦 Transferencia', cash: '💵 Efectivo', invoice: '📄 Factura', complimentary: '🎁 Cortesía' };
+    showConfirmAction({
+      title: `Ajustar Compra #${purchaseId}`, icon: '✏️',
+      rows: [
+        { label: 'Compra ID:', value: '#' + purchaseId },
+        ...(!isNaN(price) ? [{ label: 'Precio total:', value: `$${price.toFixed(2)}` }] : []),
+        ...(method ? [{ label: 'Método pago:', value: methodLabels[method] || method }] : []),
+        ...(ref    ? [{ label: 'Referencia:', value: ref }] : []),
+        ...(notes  ? [{ label: 'Notas:', value: notes }] : []),
+        ...(reason ? [{ label: 'Motivo cortesía:', value: reason }] : [])
+      ],
+      confirmLabel: '💾 Guardar Ajuste', confirmClass: 'btn-primary',
+      onConfirm: async () => {
+        const btn = el('modal-adjust-purchase-submit');
+        try {
+          setButtonLoading(btn, true);
+          const base = apiUrl.replace(':8080', ':8081');
+          const resp = await safeFetch(`${base}/admin/purchases/${purchaseId}/adjust`, {
+            method: 'PUT', headers: authHeaders(),
+            body: JSON.stringify(body)
+          });
+          const data = await resp.json();
+          setButtonLoading(btn, false);
+          if (!resp.ok) return setMsg(data.error || 'Error al ajustar compra');
+          bootstrap.Modal.getInstance(document.getElementById('modal-adjust-purchase')).hide();
+          showToast('✅ Compra ajustada correctamente', 'success');
+          loadAdminPurchases();
+        } catch(e) { setButtonLoading(btn, false); setMsg(e.message); }
+      }
+    });
   });
 
   // ──────────────────────────────────────────────────────────
@@ -3156,7 +3260,6 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   on('create-user', 'click', async () => {
-    const btn = el('create-user');
     const firstName = ((el('admin-user-first-name') || {}).value || '').trim();
     const lastName  = ((el('admin-user-last-name')  || {}).value || '').trim();
     const email     = (el('admin-user-email')    || {}).value || '';
@@ -3164,13 +3267,25 @@ document.addEventListener('DOMContentLoaded', () => {
     const role      = (el('admin-user-role')     || {}).value || 'user';
     clearAdminUserMessage();
     if(!email || !password){ showLoginMessage('Completa email y contraseña', 'danger', 3000); return; }
-    // Leer caducidad seleccionada
     const expirySelect = (el('new-user-expiry-days') || {}).value || '0';
     let passwordExpiresDays = 0;
-    if(expirySelect === 'none')        passwordExpiresDays = -1;   // sin caducidad explícita
+    if(expirySelect === 'none')        passwordExpiresDays = -1;
     else if(expirySelect === 'custom') passwordExpiresDays = parseInt((el('new-user-expiry-custom') || {}).value || '0') || 0;
     else                               passwordExpiresDays = parseInt(expirySelect) || 0;
+    const expiryLabel = expirySelect === '0' ? 'Política global' : expirySelect === 'none' ? 'Sin caducidad' : expirySelect === 'custom' ? `${passwordExpiresDays} días` : `${expirySelect} días`;
 
+    showConfirmAction({
+      title: 'Crear Nuevo Usuario', icon: '👤',
+      rows: [
+        { label: 'Nombre completo:', value: [firstName, lastName].filter(Boolean).join(' ') || '—' },
+        { label: 'Email:', value: email },
+        { label: 'Rol:', value: role },
+        { label: 'Caducidad contraseña:', value: expiryLabel },
+        { label: 'Primer inicio:', value: 'Deberá cambiar contraseña' }
+      ],
+      confirmLabel: '✓ Crear Usuario', confirmClass: 'btn-primary',
+      onConfirm: async () => {
+    const btn = el('create-user');
     try{
       await loadAdminRoles();
       setButtonLoading(btn, true);
@@ -3215,6 +3330,8 @@ document.addEventListener('DOMContentLoaded', () => {
       setButtonLoading(btn, false);
       showAdminUserMessage('Error: ' + escapeHTML(e.message), 'danger');
     }
+      } // end onConfirm
+    }); // end showConfirmAction
   });
 
   // Colores de avatar por rol
@@ -3628,6 +3745,16 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const changes = [];
+    if (nameChanged)  changes.push({ label: 'Nombre completo:', value: [firstName, lastName].filter(Boolean).join(' ') });
+    if (newRole)      changes.push({ label: 'Nuevo rol:', value: newRole });
+    if (password)     changes.push({ label: 'Contraseña:', value: '(nueva contraseña)' });
+
+    showConfirmAction({
+      title: 'Guardar cambios de usuario', icon: '✏️',
+      rows: [{ label: 'Usuario ID:', value: '#' + userId }, ...changes],
+      confirmLabel: '✓ Guardar cambios', confirmClass: 'btn-primary',
+      onConfirm: async () => {
     try{
       setButtonLoading(btn, true);
       const payload = {};
@@ -3659,6 +3786,8 @@ document.addEventListener('DOMContentLoaded', () => {
       setButtonLoading(btn, false);
       messageEl.innerHTML = `<div class="alert alert-danger">Error: ${escapeHTML(e.message)}</div>`;
     }
+      } // end onConfirm
+    }); // end showConfirmAction
   });
 
   async function deleteUser(userId){
@@ -5079,6 +5208,24 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoginMessage(`Columnas faltantes: ${missing.join(', ')}`, 'danger', 6000);
         if(btn) btn.disabled = false; return;
       }
+
+      // Confirmación antes de procesar
+      if(btn) btn.disabled = false;
+      await new Promise((resolve, reject) => {
+        showConfirmAction({
+          title: 'Confirmar Activación Masiva', icon: '📋',
+          alert: 'Esta acción activará vouchers de forma masiva e irreversible.',
+          rows: [
+            { label: 'Archivo:', value: file.name },
+            { label: 'Registros a procesar:', value: rows.length },
+            { label: 'Primera fila:', value: `${rows[0].user_name || '—'} — ${rows[0].user_email || '—'}` }
+          ],
+          confirmLabel: `▶ Activar ${rows.length} vouchers`, confirmClass: 'btn-warning',
+          onConfirm: () => { if(btn) btn.disabled = true; resolve(); }
+        });
+        // Si se cancela el modal, no continuamos
+        document.getElementById('modal-generic-confirm').addEventListener('hidden.bs.modal', () => reject(new Error('cancelled')), { once: true });
+      }).catch(() => { return; });
 
       const results = [];
       for(let i = 0; i < rows.length; i++){
