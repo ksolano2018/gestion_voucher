@@ -3813,6 +3813,91 @@ app.post('/admin/moodle/sync-completions',
   }
 );
 
+// Admin: test Moodle connection
+app.get('/admin/moodle/test-connection',
+  authenticate, requireRole('admin'), apiLimiter,
+  async (req, res) => {
+    const result = await moodleService.testConnection();
+    if (result.error) return res.status(502).json({ ok: false, error: result.error });
+    res.json({ ok: true, sitename: result.sitename, username: result.username, mock: moodleService.isMockMode() });
+  }
+);
+
+// Admin: preview courses available in Moodle (no DB changes)
+app.get('/admin/moodle/courses',
+  authenticate, requireRole('admin'), apiLimiter,
+  async (req, res) => {
+    const result = await moodleService.getCourses();
+    if (result.error) return res.status(502).json({ ok: false, error: result.error });
+    res.json({ ok: true, courses: result.courses, total: result.courses.length });
+  }
+);
+
+// Shared sync logic (used by endpoint and auto-sync)
+async function syncMoodleCourses() {
+  const result = await moodleService.getCourses();
+  if (result.error) return { ok: false, error: result.error };
+
+  const created = [], updated = [], deactivated = [], skipped = [];
+  const activeMoodleIds = new Set();
+
+  for (const mc of result.courses) {
+    if (!mc.visible) { skipped.push({ moodle_id: mc.id, reason: 'hidden' }); continue; }
+    const name = (mc.fullname || mc.shortname || '').trim();
+    if (!name) { skipped.push({ moodle_id: mc.id, reason: 'no_name' }); continue; }
+    activeMoodleIds.add(mc.id);
+
+    const existing = await pool.query(
+      'SELECT id, name, active FROM courses WHERE moodle_course_id = $1', [mc.id]
+    );
+
+    if (existing.rowCount > 0) {
+      const row = existing.rows[0];
+      const nameChanged   = row.name !== name;
+      const needsActivate = !row.active;
+      if (nameChanged || needsActivate) {
+        await pool.query('UPDATE courses SET name=$1, active=TRUE WHERE moodle_course_id=$2', [name, mc.id]);
+        updated.push({ moodle_id: mc.id, name, reactivated: needsActivate });
+      } else {
+        skipped.push({ moodle_id: mc.id, reason: 'unchanged' });
+      }
+    } else {
+      const ins = await pool.query(
+        'INSERT INTO courses (name, moodle_course_id, active) VALUES ($1,$2,TRUE) RETURNING id',
+        [name, mc.id]
+      );
+      created.push({ id: ins.rows[0].id, moodle_id: mc.id, name });
+    }
+  }
+
+  // Deactivate courses that no longer exist in Moodle
+  // (only affects courses that have a moodle_course_id — manual courses are untouched)
+  const linkedCourses = await pool.query(
+    'SELECT id, name, moodle_course_id FROM courses WHERE moodle_course_id IS NOT NULL AND active = TRUE'
+  );
+  for (const c of linkedCourses.rows) {
+    if (!activeMoodleIds.has(c.moodle_course_id)) {
+      await pool.query('UPDATE courses SET active=FALSE WHERE id=$1', [c.id]);
+      deactivated.push({ id: c.id, moodle_id: c.moodle_course_id, name: c.name });
+    }
+  }
+
+  return { ok: true, created, updated, deactivated, skipped, total_moodle: result.courses.length };
+}
+
+// Admin: sync Moodle courses into platform courses table
+app.post('/admin/moodle/sync-courses',
+  authenticate, requireRole('admin'), apiLimiter,
+  async (req, res) => {
+    const result = await syncMoodleCourses();
+    if (!result.ok) return res.status(502).json(result);
+    await logSystemEvent('MOODLE_COURSES_SYNCED', 'MOODLE', req.user.sub, null, null,
+      { created: result.created.length, updated: result.updated.length, deactivated: result.deactivated.length },
+      'SUCCESS', null, req);
+    res.json(result);
+  }
+);
+
 // Admin: map a platform course to a Moodle course ID
 app.put('/admin/courses/:id/moodle-mapping',
   authenticate, requireRole('admin'), apiLimiter,
@@ -5569,4 +5654,38 @@ if (require.main === module) app.listen(PORT, ()=> {
   console.log('  - CORS protection');
   console.log('  - Security logging');
   console.log('═══════════════════════════════════════════════════════\n');
+
+  // ── Auto-sync de certificaciones desde Moodle ──────────────────────────────
+  const MOODLE_SYNC_MINUTES = Math.max(5, parseInt(process.env.MOODLE_SYNC_INTERVAL_MINUTES || '60', 10));
+
+  if (!moodleService.isMockMode()) {
+    // Primera sincronización al arrancar (30 seg de delay para que la BD esté lista)
+    setTimeout(async () => {
+      console.log('🎓 [MOODLE] Sincronización inicial de certificaciones...');
+      const r = await syncMoodleCourses();
+      if (r.ok) {
+        console.log(`🎓 [MOODLE] Sync inicial: +${r.created.length} nuevas, ~${r.updated.length} actualizadas, -${r.deactivated.length} desactivadas`);
+      } else {
+        console.warn(`⚠️ [MOODLE] Sync inicial falló: ${r.error}`);
+      }
+    }, 30_000);
+
+    // Sincronización periódica
+    setInterval(async () => {
+      console.log(`🎓 [MOODLE] Auto-sync periódico (cada ${MOODLE_SYNC_MINUTES} min)...`);
+      const r = await syncMoodleCourses();
+      if (r.ok) {
+        if (r.created.length || r.updated.length || r.deactivated.length) {
+          console.log(`🎓 [MOODLE] Auto-sync: +${r.created.length} nuevas, ~${r.updated.length} actualizadas, -${r.deactivated.length} desactivadas`);
+        }
+      } else {
+        console.warn(`⚠️ [MOODLE] Auto-sync falló: ${r.error}`);
+      }
+    }, MOODLE_SYNC_MINUTES * 60 * 1000);
+
+    console.log(`✓ Moodle auto-sync activo: cada ${MOODLE_SYNC_MINUTES} min`);
+  } else {
+    console.log('ℹ️ Moodle auto-sync desactivado (MOODLE_MOCK=true)');
+  }
+  // ────────────────────────────────────────────────────────────────────────────
 })

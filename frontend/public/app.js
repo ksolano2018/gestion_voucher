@@ -1481,6 +1481,107 @@ document.addEventListener('DOMContentLoaded', () => {
 
   on('admin-courses-refresh', 'click', () => loadAdminCourses());
 
+  // ── Sincronización desde Moodle ──────────────────────────────────────────────
+  on('admin-moodle-sync-courses-btn', 'click', async () => {
+    const panel = el('admin-moodle-sync-panel');
+    const badge = el('admin-moodle-connection-badge');
+    const resultsEl = el('admin-moodle-sync-results');
+    const previewList = el('admin-moodle-preview-list');
+    if (panel) panel.style.display = '';
+    if (previewList) previewList.innerHTML = '';
+    if (resultsEl) resultsEl.innerHTML = '';
+    if (badge) { badge.textContent = 'Verificando...'; badge.className = 'badge bg-secondary ms-2'; }
+
+    try {
+      const base = apiUrl.replace(':8080', ':8081');
+      const resp = await safeFetch(`${base}/admin/moodle/test-connection`, { headers: authHeaders() });
+      const data = await resp.json();
+      if (resp.ok && data.ok) {
+        const label = data.mock ? '🟡 Modo Mock' : `🟢 Conectado — ${escapeHTML(data.sitename || '')}`;
+        if (badge) { badge.textContent = label; badge.className = data.mock ? 'badge bg-warning text-dark ms-2' : 'badge bg-success ms-2'; }
+        if (resultsEl) resultsEl.innerHTML = data.mock
+          ? '<div class="text-warning small">⚠️ MOODLE_MOCK=true — los datos mostrados son ficticios. Para conectar al Moodle real, configura MOODLE_URL, MOODLE_TOKEN y MOODLE_MOCK=false en el .env.</div>'
+          : `<div class="text-success small">✅ Conectado a <strong>${escapeHTML(data.sitename)}</strong> como <strong>${escapeHTML(data.username)}</strong></div>`;
+      } else {
+        if (badge) { badge.textContent = '🔴 Sin conexión'; badge.className = 'badge bg-danger ms-2'; }
+        if (resultsEl) resultsEl.innerHTML = `<div class="text-danger small">❌ ${escapeHTML(data.error || 'No se pudo conectar a Moodle')}<br><span class="text-muted">Verifica MOODLE_URL y MOODLE_TOKEN en el .env del servidor.</span></div>`;
+      }
+    } catch(e) {
+      if (badge) { badge.textContent = '🔴 Error'; badge.className = 'badge bg-danger ms-2'; }
+      if (resultsEl) resultsEl.innerHTML = `<div class="text-danger small">❌ ${escapeHTML(e.message)}</div>`;
+    }
+  });
+
+  on('admin-moodle-preview-btn', 'click', async () => {
+    const previewList = el('admin-moodle-preview-list');
+    if (!previewList) return;
+    previewList.innerHTML = '<div class="text-muted small">Cargando certificaciones desde Moodle...</div>';
+    try {
+      const base = apiUrl.replace(':8080', ':8081');
+      const resp = await safeFetch(`${base}/admin/moodle/courses`, { headers: authHeaders() });
+      const data = await resp.json();
+      if (!resp.ok) { previewList.innerHTML = `<div class="text-danger small">❌ ${escapeHTML(data.error || 'Error')}</div>`; return; }
+      if (!data.courses.length) { previewList.innerHTML = '<div class="text-muted small">No se encontraron certificaciones en Moodle.</div>'; return; }
+      previewList.innerHTML = `
+        <div class="small fw-semibold mb-2">${data.total} certificaciones encontradas en Moodle:</div>
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered mb-0">
+            <thead class="table-light"><tr><th>ID Moodle</th><th>Nombre completo</th><th>Shortname</th></tr></thead>
+            <tbody>
+              ${data.courses.map(c => `<tr>
+                <td><code>${escapeHTML(String(c.id))}</code></td>
+                <td>${escapeHTML(c.fullname)}</td>
+                <td><span class="text-muted">${escapeHTML(c.shortname)}</span></td>
+              </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    } catch(e) {
+      previewList.innerHTML = `<div class="text-danger small">❌ ${escapeHTML(e.message)}</div>`;
+    }
+  });
+
+  on('admin-moodle-do-sync-btn', 'click', async () => {
+    const previewList = el('admin-moodle-preview-list');
+    showConfirmAction({
+      title: 'Importar certificaciones desde Moodle', icon: '⬇️',
+      rows: [
+        { label: 'Acción:', value: 'Crear o actualizar certificaciones' },
+        { label: 'Criterio:', value: 'Solo certificaciones visibles en Moodle' },
+        { label: 'Existentes:', value: 'Se actualiza el nombre si cambió' }
+      ],
+      confirmLabel: '⬇ Importar', confirmClass: 'btn-success',
+      onConfirm: async () => {
+        try {
+          const base = apiUrl.replace(':8080', ':8081');
+          const resp = await safeFetch(`${base}/admin/moodle/sync-courses`, { method: 'POST', headers: authHeaders() });
+          const data = await resp.json();
+          if (!resp.ok) { showToast(`❌ ${data.error || 'Error al sincronizar'}`, 'danger'); return; }
+          showToast(`✅ Sync completado — ${data.created.length} nuevas, ${data.updated.length} actualizadas, ${(data.deactivated||[]).length} desactivadas`, 'success', 5000);
+          if (previewList) {
+            const deactHtml = (data.deactivated||[]).length
+              ? `<hr class="my-2"><strong>⚠️ Desactivadas (ya no existen en Moodle):</strong> ${data.deactivated.map(c => escapeHTML(c.name)).join(', ')}`
+              : '';
+            previewList.innerHTML = `
+              <div class="alert alert-success mb-0 small">
+                <strong>✅ Sincronización completada</strong><br>
+                📥 Nuevas: <strong>${data.created.length}</strong> &nbsp;
+                🔄 Actualizadas: <strong>${data.updated.length}</strong> &nbsp;
+                🔴 Desactivadas: <strong>${(data.deactivated||[]).length}</strong> &nbsp;
+                ⏭ Sin cambios: <strong>${data.skipped.length}</strong>
+                ${data.created.length ? '<hr class="my-2"><strong>Nuevas:</strong> ' + data.created.map(c => escapeHTML(c.name)).join(', ') : ''}
+                ${deactHtml}
+              </div>`;
+          }
+          loadAdminCourses();
+        } catch(e) {
+          showToast(`❌ ${e.message}`, 'danger');
+        }
+      }
+    });
+  });
+  // ────────────────────────────────────────────────────────────────────────────
+
   on('admin-course-cancel', 'click', () => {
     resetAdminCourseForm();
     setAdminCoursesMessage('', 'info');
