@@ -4260,8 +4260,30 @@
               </div>
               <div class="col-12">
                 <label class="form-label">Contraseña temporal <span class="text-danger">*</span></label>
-                <input id="admin-user-password" type="password" class="form-control" placeholder="••••••••">
+                <input id="admin-user-password" type="password" class="form-control" placeholder="••••••••" autocomplete="new-password">
                 <div class="form-text">El usuario deberá cambiarla en su primer inicio de sesión.</div>
+                <!-- Barra de fuerza -->
+                <div id="admin-user-pwd-strength-bar" style="display:none;margin-top:6px;">
+                  <div style="display:flex;gap:4px;height:5px;border-radius:3px;overflow:hidden;">
+                    <div id="pwd-bar-1" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                    <div id="pwd-bar-2" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                    <div id="pwd-bar-3" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                    <div id="pwd-bar-4" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                    <div id="pwd-bar-5" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                  </div>
+                  <div id="pwd-strength-label" style="font-size:0.75rem;font-weight:600;margin-top:3px;"></div>
+                </div>
+                <!-- Validador en tiempo real -->
+                <div id="admin-user-password-rules" class="mt-2 p-2 rounded" style="background:#f8f9fa;display:none;">
+                  <div class="small fw-semibold text-muted mb-1">La contraseña debe tener:</div>
+                  <ul class="list-unstyled mb-0 small" style="line-height:1.8;">
+                    <li id="pwd-rule-length">  <span class="rule-icon">⬜</span> Mínimo 8 caracteres</li>
+                    <li id="pwd-rule-upper">   <span class="rule-icon">⬜</span> Al menos una mayúscula (A-Z)</li>
+                    <li id="pwd-rule-lower">   <span class="rule-icon">⬜</span> Al menos una minúscula (a-z)</li>
+                    <li id="pwd-rule-number">  <span class="rule-icon">⬜</span> Al menos un número (0-9)</li>
+                    <li id="pwd-rule-special"> <span class="rule-icon">⬜</span> Al menos un carácter especial (!@#$%^&*)</li>
+                  </ul>
+                </div>
               </div>
               <div class="col-12">
                 <label class="form-label">Rol</label>
