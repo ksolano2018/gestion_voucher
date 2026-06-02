@@ -315,16 +315,19 @@ async function getCourses() {
 }
 
 /**
- * Test Moodle connection using core_webservice_get_site_info.
- * Returns { ok: true, sitename, username } or { error }.
+ * Test Moodle connection by calling core_course_get_courses.
+ * Uses the same function as the sync — if it works, the token is valid.
+ * Returns { ok: true, sitename, course_count } or { error }.
  */
 async function testConnection() {
   if (MOODLE_MOCK) {
-    return { ok: true, sitename: 'Moodle Mock', username: 'mock_user' };
+    return { ok: true, sitename: 'Moodle Mock (modo prueba)', username: 'mock_user' };
   }
   try {
-    const info = await moodleRequest('core_webservice_get_site_info', {});
-    return { ok: true, sitename: info.sitename, username: info.username };
+    const result = await moodleRequest('core_course_get_courses', {});
+    if (!Array.isArray(result)) return { error: 'Respuesta inesperada de Moodle' };
+    const visible = result.filter(c => c.id !== 1);
+    return { ok: true, sitename: MOODLE_URL, username: 'token_válido', course_count: visible.length };
   } catch (err) {
     return { error: err.message };
   }
