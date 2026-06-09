@@ -184,12 +184,27 @@ const DEFAULT_PRICING_PROFILES = [
   }
 ];
 
-const ROLE_PERMISSION_MODULES = ['dashboard', 'purchases', 'users', 'courses', 'pricing', 'stats', 'audit', 'reports', 'financial_ops'];
+const ROLE_TYPES = ['system_role', 'client_role'];
+const ROLE_TYPE_LABELS = { system_role: 'Sistema', client_role: 'Cliente' };
+
+// Each module declares which role types may hold a non-'none' permission.
+// Add new modules here — nowhere else needs to change.
+const ROLE_PERMISSION_MODULES = [
+  { key: 'dashboard',     label: 'Dashboard',          types: ['system_role', 'client_role'] },
+  { key: 'purchases',     label: 'Compras',            types: ['system_role', 'client_role'] },
+  { key: 'users',         label: 'Usuarios',           types: ['system_role'] },
+  { key: 'courses',       label: 'Certificaciones',    types: ['system_role', 'client_role'] },
+  { key: 'pricing',       label: 'Pricing',            types: ['system_role'] },
+  { key: 'stats',         label: 'Estadísticas',       types: ['system_role', 'client_role'] },
+  { key: 'audit',         label: 'Auditoría',          types: ['system_role'] },
+  { key: 'reports',       label: 'Reportería',         types: ['system_role'] },
+  { key: 'financial_ops', label: 'Ops Financieras',    types: ['system_role'] },
+];
 const ROLE_PERMISSION_LEVELS = ['none', 'view', 'edit'];
 
 function buildRolePermissionsDefault(level = 'none') {
-  return ROLE_PERMISSION_MODULES.reduce((acc, moduleKey) => {
-    acc[moduleKey] = level;
+  return ROLE_PERMISSION_MODULES.reduce((acc, mod) => {
+    acc[mod.key] = level;
     return acc;
   }, {});
 }
@@ -199,12 +214,14 @@ function getDefaultPermissionsForRole(roleName) {
   return buildRolePermissionsDefault('none');
 }
 
-function sanitizeRolePermissions(permissions) {
+// roleType controls which modules may hold non-'none' values.
+function sanitizeRolePermissions(permissions, roleType = 'system_role') {
   const source = permissions && typeof permissions === 'object' && !Array.isArray(permissions) ? permissions : {};
   const sanitized = {};
-  for (const moduleKey of ROLE_PERMISSION_MODULES) {
-    const value = source[moduleKey] || 'none';
-    sanitized[moduleKey] = ROLE_PERMISSION_LEVELS.includes(value) ? value : 'none';
+  for (const mod of ROLE_PERMISSION_MODULES) {
+    const value = source[mod.key] || 'none';
+    const allowed = mod.types.includes(roleType);
+    sanitized[mod.key] = (allowed && ROLE_PERMISSION_LEVELS.includes(value)) ? value : 'none';
   }
   return sanitized;
 }
@@ -1032,6 +1049,7 @@ async function initDb(){
         permissions JSONB DEFAULT '{}'::jsonb,
         active BOOLEAN DEFAULT TRUE,
         is_system BOOLEAN DEFAULT FALSE,
+        role_type VARCHAR(20) DEFAULT 'system_role' NOT NULL,
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
@@ -1076,6 +1094,8 @@ async function initDb(){
     ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE roles ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
     ALTER TABLE roles ADD COLUMN IF NOT EXISTS is_system BOOLEAN DEFAULT FALSE;
+    ALTER TABLE roles ADD COLUMN IF NOT EXISTS role_type VARCHAR(20) DEFAULT 'system_role';
+    UPDATE roles SET role_type = 'system_role' WHERE role_type IS NULL;
     ALTER TABLE roles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
     ALTER TABLE partners ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(200) UNIQUE;
@@ -1186,26 +1206,31 @@ async function initDb(){
   `);
 
   const roleSeeds = [
-    { name: 'admin', display_name: 'Administrador', is_system: true },
-    { name: 'partner', display_name: 'Partner', is_system: true },
-    { name: 'user', display_name: 'Usuario', is_system: true }
+    { name: 'admin',   display_name: 'Administrador', is_system: true, role_type: 'system_role' },
+    { name: 'partner', display_name: 'Partner',        is_system: true, role_type: 'client_role' },
+    { name: 'user',    display_name: 'Usuario',        is_system: true, role_type: 'client_role' }
   ];
 
   for (const role of roleSeeds) {
-    const permissions = sanitizeRolePermissions(getDefaultPermissionsForRole(role.name));
+    const permissions = sanitizeRolePermissions(getDefaultPermissionsForRole(role.name), role.role_type);
     await pool.query(
-      `INSERT INTO roles (name, display_name, permissions, active, is_system, updated_at)
-       VALUES ($1, $2, $3::jsonb, TRUE, $4, NOW())
+      `INSERT INTO roles (name, display_name, permissions, active, is_system, role_type, updated_at)
+       VALUES ($1, $2, $3::jsonb, TRUE, $4, $5, NOW())
        ON CONFLICT (name) DO NOTHING`,
-      [role.name, role.display_name, JSON.stringify(permissions), role.is_system]
+      [role.name, role.display_name, JSON.stringify(permissions), role.is_system, role.role_type]
     );
-    // Fill any missing module keys for existing roles (added when new modules are introduced)
-    const existing = await pool.query('SELECT permissions FROM roles WHERE name=$1', [role.name]);
+    // Backfill role_type for existing rows and fill any missing module keys
+    const existing = await pool.query('SELECT permissions, role_type FROM roles WHERE name=$1', [role.name]);
     if (existing.rows.length > 0) {
       const existingPerms = existing.rows[0].permissions || {};
       const merged = { ...permissions, ...existingPerms };
-      if (Object.keys(merged).length !== Object.keys(existingPerms).length) {
-        await pool.query('UPDATE roles SET permissions=$1::jsonb WHERE name=$2', [JSON.stringify(merged), role.name]);
+      const needsPermUpdate = Object.keys(merged).length !== Object.keys(existingPerms).length;
+      const needsTypeUpdate = !existing.rows[0].role_type;
+      if (needsPermUpdate || needsTypeUpdate) {
+        await pool.query(
+          `UPDATE roles SET permissions=$1::jsonb, role_type=COALESCE(NULLIF(role_type,''), $2) WHERE name=$3`,
+          [JSON.stringify(merged), role.role_type, role.name]
+        );
       }
     }
   }
@@ -3679,6 +3704,8 @@ app.post('/admin/partners/:id/purchases/external',
 app.put('/admin/purchases/:id/adjust',
   authenticate, requirePermission('financial_ops', 'edit'), apiLimiter,
   param('id').isInt({ min: 1 }),
+  body('partner_id').optional().isInt({ min: 1 }),
+  body('qty').optional().isInt({ min: 1, max: 10000 }),
   body('total_price').optional().isFloat({ min: 0 }),
   body('payment_method').optional().isIn(ADJUSTABLE_PAYMENT_METHODS),
   body('external_reference').optional().trim(),
@@ -3689,7 +3716,7 @@ app.put('/admin/purchases/:id/adjust',
     const purchaseId = parseInt(req.params.id, 10);
     try {
       const existing = await pool.query(
-        'SELECT id, payment_method, total_price, external_reference, notes FROM purchases WHERE id=$1',
+        'SELECT id, payment_method, qty, total_price, external_reference, notes FROM purchases WHERE id=$1',
         [purchaseId]
       );
       if (existing.rowCount === 0) return res.status(404).json({ error: 'Compra no encontrada' });
@@ -3699,10 +3726,18 @@ app.put('/admin/purchases/:id/adjust',
         return res.status(400).json({ error: 'Solo se pueden ajustar compras externas o de cortesía, no las de Stripe' });
       }
 
-      const { total_price, payment_method, external_reference, notes, complimentary_reason } = req.body;
+      const { partner_id, qty, total_price, payment_method, external_reference, notes, complimentary_reason } = req.body;
+
+      // Validar partner si se proveyó
+      if (partner_id !== undefined) {
+        const partnerCheck = await pool.query('SELECT id FROM partners WHERE id=$1', [partner_id]);
+        if (partnerCheck.rowCount === 0) return res.status(400).json({ error: 'Partner no encontrado' });
+      }
 
       // Construir diff solo con los campos provistos
       const changes = {};
+      if (partner_id       !== undefined) changes.partner_id       = { from: current.partner_id,       to: partner_id };
+      if (qty              !== undefined) changes.qty              = { from: current.qty,              to: qty };
       if (total_price      !== undefined) changes.total_price      = { from: current.total_price,      to: total_price };
       if (payment_method   !== undefined) changes.payment_method   = { from: current.payment_method,   to: payment_method };
       if (external_reference !== undefined) changes.external_reference = { from: current.external_reference, to: external_reference };
@@ -3715,13 +3750,17 @@ app.put('/admin/purchases/:id/adjust',
       // UPDATE compra
       await pool.query(
         `UPDATE purchases SET
-           total_price       = COALESCE($1, total_price),
-           payment_method    = COALESCE($2, payment_method),
-           external_reference = COALESCE($3, external_reference),
-           notes             = COALESCE($4, notes),
+           partner_id        = COALESCE($1, partner_id),
+           qty               = COALESCE($2, qty),
+           total_price       = COALESCE($3, total_price),
+           payment_method    = COALESCE($4, payment_method),
+           external_reference = COALESCE($5, external_reference),
+           notes             = COALESCE($6, notes),
            updated_at        = NOW()
-         WHERE id=$5`,
+         WHERE id=$7`,
         [
+          partner_id       !== undefined ? partner_id       : null,
+          qty              !== undefined ? qty              : null,
           total_price      !== undefined ? total_price      : null,
           payment_method   !== undefined ? payment_method   : null,
           external_reference !== undefined ? external_reference : null,
@@ -4179,7 +4218,7 @@ app.post('/oauth/token',
   try{
     console.log('🔐 Login attempt:', username);
     const u = await pool.query(
-      `SELECT u.*, COALESCE(r.permissions, '{}'::jsonb) AS role_permissions
+      `SELECT u.*, COALESCE(r.permissions, '{}'::jsonb) AS role_permissions, COALESCE(r.role_type, 'system_role') AS role_type
        FROM users u
        LEFT JOIN roles r ON r.name = u.role
        WHERE u.email=$1`,
@@ -4223,9 +4262,10 @@ app.post('/oauth/token',
 
     await pool.query('UPDATE users SET first_login_at = COALESCE(first_login_at, NOW()), updated_at=NOW() WHERE id=$1', [user.id]);
     
-    const token = jwt.sign({ 
-      sub:user.id, 
-      role:user.role, 
+    const token = jwt.sign({
+      sub:user.id,
+      role:user.role,
+      role_type: user.role_type || 'system_role',
       partner_id:user.partner_id,
       permissions: user.role_permissions || {},
       must_change_password: user.must_change_password
@@ -4332,7 +4372,7 @@ app.post('/oauth/refresh', authLimiter, async (req,res)=>{
     }
     
     const u = await pool.query(
-      `SELECT u.*, COALESCE(r.permissions, '{}'::jsonb) AS role_permissions
+      `SELECT u.*, COALESCE(r.permissions, '{}'::jsonb) AS role_permissions, COALESCE(r.role_type, 'system_role') AS role_type
        FROM users u
        LEFT JOIN roles r ON r.name = u.role
        WHERE u.id=$1`,
@@ -4344,14 +4384,15 @@ app.post('/oauth/refresh', authLimiter, async (req,res)=>{
       return res.status(401).json({error:'user_not_found'});
     }
     const user = u.rows[0];
-    const token = jwt.sign({ 
-      sub:user.id, 
-      role:user.role, 
+    const token = jwt.sign({
+      sub:user.id,
+      role:user.role,
+      role_type: user.role_type || 'system_role',
       partner_id:user.partner_id,
       permissions: user.role_permissions || {},
       must_change_password:user.must_change_password
     }, JWT_SECRET, { expiresIn: `${SESSION_TIMEOUT_MINUTES}m` });
-    
+
     logSecurityEvent('REFRESH_SUCCESS', { userId: user.id, email: user.email, ip: req.ip });
     await logSystemEvent('REFRESH_SUCCESS', 'AUTH', user.id, user.stripe_customer_id || null, null, { email: user.email }, 'SUCCESS', null, req);
     return res.json({ access_token: token, token_type: 'bearer', expires_in: SESSION_TIMEOUT_MINUTES * 60 });
@@ -4707,10 +4748,23 @@ app.put('/admin/settings/activation', authenticate, requireRole('admin'), async 
 });
 
 // Roles and permissions (admin only)
+
+// Config endpoint — frontend lee esto para construir la UI de permisos dinámicamente
+app.get('/admin/roles/config', authenticate, requireRole('admin'), apiLimiter, (req, res) => {
+  res.json({
+    types:       ROLE_TYPES,
+    type_labels: ROLE_TYPE_LABELS,
+    modules:     ROLE_PERMISSION_MODULES,
+    levels:      ROLE_PERMISSION_LEVELS
+  });
+});
+
 app.get('/admin/roles', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT name, display_name, active, is_system, COALESCE(permissions, '{}'::jsonb) AS permissions
+      `SELECT name, display_name, active, is_system,
+              COALESCE(role_type, 'system_role') AS role_type,
+              COALESCE(permissions, '{}'::jsonb) AS permissions
        FROM roles
        ORDER BY is_system DESC, name ASC`
     );
@@ -4724,23 +4778,26 @@ app.get('/admin/roles', authenticate, requireRole('admin'), apiLimiter, async (r
 app.post('/admin/roles', authenticate, requireRole('admin'), apiLimiter,
   body('name').trim().isLength({ min: 2, max: 50 }).withMessage('Nombre de rol inválido'),
   body('display_name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Nombre visible inválido'),
+  body('role_type').optional().isIn(ROLE_TYPES).withMessage('Tipo de rol inválido'),
   handleValidationErrors,
   async (req, res) => {
-    const name = normalizeRoleName(req.body.name);
+    const name      = normalizeRoleName(req.body.name);
     const displayName = (req.body.display_name || name).toString().trim();
-    const permissions = sanitizeRolePermissions(req.body.permissions || getDefaultPermissionsForRole(name));
+    const roleType  = ROLE_TYPES.includes(req.body.role_type) ? req.body.role_type : 'client_role';
+    const permissions = sanitizeRolePermissions(req.body.permissions || getDefaultPermissionsForRole(name), roleType);
 
     if (!name) return res.status(400).json({ error: 'Nombre de rol inválido' });
     try {
       const created = await pool.query(
-        `INSERT INTO roles (name, display_name, permissions, active, is_system, updated_at)
-         VALUES ($1, $2, $3::jsonb, TRUE, FALSE, NOW())
-         RETURNING name, display_name, active, is_system, permissions`,
-        [name, displayName, JSON.stringify(permissions)]
+        `INSERT INTO roles (name, display_name, permissions, active, is_system, role_type, updated_at)
+         VALUES ($1, $2, $3::jsonb, TRUE, FALSE, $4, NOW())
+         RETURNING name, display_name, active, is_system, role_type, permissions`,
+        [name, displayName, JSON.stringify(permissions), roleType]
       );
       await logSystemEvent('ROLE_CREATED', 'ROLE_MANAGEMENT', req.user.sub, null, null, {
         role_name: created.rows[0].name,
-        display_name: created.rows[0].display_name
+        display_name: created.rows[0].display_name,
+        role_type: roleType
       }, 'SUCCESS', null, req);
       res.status(201).json(created.rows[0]);
     } catch (e) {
@@ -4755,22 +4812,69 @@ app.post('/admin/roles', authenticate, requireRole('admin'), apiLimiter,
   }
 );
 
+app.put('/admin/roles/:name', authenticate, requireRole('admin'), apiLimiter,
+  body('display_name').optional().trim().isLength({ min: 1, max: 100 }),
+  body('role_type').optional().isIn(ROLE_TYPES).withMessage('Tipo de rol inválido'),
+  handleValidationErrors,
+  async (req, res) => {
+    const roleName = normalizeRoleName(req.params.name);
+    if (!roleName) return res.status(400).json({ error: 'Rol inválido' });
+    const { display_name, role_type } = req.body;
+    if (!display_name && !role_type) return res.status(400).json({ error: 'Nada que actualizar' });
+    try {
+      const existing = await pool.query('SELECT name, is_system, role_type, permissions FROM roles WHERE name=$1', [roleName]);
+      if (existing.rowCount === 0) return res.status(404).json({ error: 'Rol no encontrado' });
+      const cur = existing.rows[0];
+
+      // Si cambia role_type, re-sanitize permissions para limpiar módulos prohibidos
+      let newPermissions = cur.permissions;
+      if (role_type && role_type !== cur.role_type) {
+        newPermissions = sanitizeRolePermissions(cur.permissions, role_type);
+      }
+
+      const updated = await pool.query(
+        `UPDATE roles
+         SET display_name = COALESCE($1, display_name),
+             role_type    = COALESCE($2, role_type),
+             permissions  = $3::jsonb,
+             updated_at   = NOW()
+         WHERE name = $4
+         RETURNING name, display_name, active, is_system, role_type, permissions`,
+        [display_name || null, role_type || null, JSON.stringify(newPermissions), roleName]
+      );
+      await logSystemEvent('ROLE_UPDATED', 'ROLE_MANAGEMENT', req.user.sub, null, null, {
+        role_name: roleName, display_name, role_type, permissions_sanitized: !!role_type
+      }, 'SUCCESS', null, req);
+      res.json({ ok: true, role: updated.rows[0] });
+    } catch (e) {
+      console.error('❌ Error updating role:', e);
+      res.status(500).json({ error: 'Error al actualizar rol' });
+    }
+  }
+);
+
 app.put('/admin/roles/:name/permissions', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
   const roleName = normalizeRoleName(req.params.name);
-  const permissions = sanitizeRolePermissions(req.body.permissions);
   if (!roleName) return res.status(400).json({ error: 'Rol inválido' });
 
   try {
+    // Lee el role_type actual para aplicar las restricciones correctas
+    const roleRow = await pool.query('SELECT role_type FROM roles WHERE name=$1', [roleName]);
+    if (roleRow.rowCount === 0) return res.status(404).json({ error: 'Rol no encontrado' });
+    const roleType = roleRow.rows[0].role_type || 'system_role';
+
+    const permissions = sanitizeRolePermissions(req.body.permissions, roleType);
+
     const updated = await pool.query(
       `UPDATE roles
        SET permissions=$1::jsonb, updated_at=NOW()
        WHERE name=$2
-       RETURNING name, display_name, active, is_system, permissions`,
+       RETURNING name, display_name, active, is_system, role_type, permissions`,
       [JSON.stringify(permissions), roleName]
     );
-    if (updated.rowCount === 0) return res.status(404).json({ error: 'Rol no encontrado' });
     await logSystemEvent('ROLE_PERMISSIONS_UPDATED', 'ROLE_MANAGEMENT', req.user.sub, null, null, {
       role_name: roleName,
+      role_type: roleType,
       permissions
     }, 'SUCCESS', null, req);
     res.json({ ok: true, role: updated.rows[0] });

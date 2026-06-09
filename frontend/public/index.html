@@ -2097,7 +2097,12 @@
           padding: 0.5rem 0.65rem;
         }
       }
+      /* Oculto por defecto para evitar flash; el script inline lo muestra si no hay sesión */
+      #login-container { display: none; }
+      html.no-session #login-container { display: flex; }
     </style>
+    <!-- Anti-flash: muestra login solo si no hay token, antes del primer paint -->
+    <script>(function(){if(!localStorage.getItem('access_token'))document.documentElement.classList.add('no-session');}());</script>
   </head>
   <body>
     <span id="api-url" style="display:none;">%API_URL%</span>
@@ -2184,9 +2189,6 @@
           </div>
 
           <nav class="header-nav">
-            <button id="nav-home" class="nav-btn">🏠 Inicio</button>
-            <button id="nav-about" class="nav-btn">ℹ️ Quiénes Somos</button>
-            <button id="nav-location" class="nav-btn">📍 Ubicación</button>
             <button id="nav-admin" class="nav-btn" style="display:none;">⚙️ Administración</button>
             <button id="nav-partner" class="nav-btn" style="display:none;">🎟️ Vouchers</button>
           </nav>
@@ -2210,405 +2212,6 @@
       <div class="app-shell">
 
         <div id="main-app">
-          <!-- HOME SECTION -->
-          <div id="home" class="fade-in" style="display:none;">
-            <!-- Hero Section with Video Background -->
-            <div class="hero-section mb-5">
-              <div class="hero-video-container">
-                <video autoplay muted loop playsinline class="hero-video">
-                  <source src="https://assets.mixkit.co/videos/preview/mixkit-person-typing-on-a-laptop-4907-large.mp4" type="video/mp4">
-                </video>
-                <div class="hero-overlay"></div>
-              </div>
-              <div class="hero-content">
-                <h1 class="hero-title">Impulsa tu Carrera Profesional</h1>
-                <p class="hero-subtitle">Certificaciones tecnológicas reconocidas a nivel mundial</p>
-                <div class="hero-buttons">
-                  <button id="hero-go-partner" class="btn btn-lg btn-primary hero-btn">Ir a Vouchers</button>
-                  <button id="hero-go-about" class="btn btn-lg btn-outline-light hero-btn">Conocer Más</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Features Section -->
-            <div class="features-section mb-5">
-              <div class="text-center mb-5">
-                <h2 class="section-title mb-3">¿Por qué CertJOIN?</h2>
-                <p class="section-subtitle">La plataforma líder en certificaciones profesionales</p>
-              </div>
-              <div class="row g-4">
-                <div class="col-md-4">
-                  <div class="feature-card">
-                    <div class="feature-icon">🎓</div>
-                    <h4>Certificaciones Oficiales</h4>
-                    <p>Trabajamos con las principales organizaciones certificadoras del mundo tecnológico</p>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="feature-card">
-                    <div class="feature-icon">⚡</div>
-                    <h4>Proceso Rápido</h4>
-                    <p>Sistema de vouchers digital que agiliza tu proceso de certificación</p>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="feature-card">
-                    <div class="feature-icon">💼</div>
-                    <h4>Soluciones Empresariales</h4>
-                    <p>Programas de capacitación corporativa personalizados para tu equipo</p>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="feature-card">
-                    <div class="feature-icon">📊</div>
-                    <h4>Seguimiento Completo</h4>
-                    <p>Portal de administración para gestionar todas tus certificaciones</p>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="feature-card">
-                    <div class="feature-icon">🔒</div>
-                    <h4>Seguridad Total</h4>
-                    <p>Protección de datos con estándares internacionales y encriptación</p>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="feature-card">
-                    <div class="feature-icon">💰</div>
-                    <h4>Mejores Precios</h4>
-                    <p>Descuentos por volumen y planes flexibles para empresas</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Stats Counter Section -->
-            <div class="stats-counter-section mb-5">
-              <div class="row g-4 text-center">
-                <div class="col-md-3 col-6">
-                  <div class="counter-card">
-                    <div class="counter-number" data-target="5000">0</div>
-                    <div class="counter-label">Certificaciones Entregadas</div>
-                  </div>
-                </div>
-                <div class="col-md-3 col-6">
-                  <div class="counter-card">
-                    <div class="counter-number" data-target="200">0</div>
-                    <div class="counter-label">Empresas Asociadas</div>
-                  </div>
-                </div>
-                <div class="col-md-3 col-6">
-                  <div class="counter-card">
-                    <div class="counter-number" data-target="98">0</div>
-                    <div class="counter-label">% Satisfacción</div>
-                  </div>
-                </div>
-                <div class="col-md-3 col-6">
-                  <div class="counter-card">
-                    <div class="counter-number" data-target="15">0</div>
-                    <div class="counter-label">Países Atendidos</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Testimonials Section -->
-            <div class="testimonials-section mb-5">
-              <div class="text-center mb-5">
-                <h2 class="section-title mb-3">Lo que Dicen Nuestros Clientes</h2>
-                <p class="section-subtitle">Historias de éxito de profesionales certificados</p>
-              </div>
-              <div class="row g-4">
-                <div class="col-md-4">
-                  <div class="testimonial-card">
-                    <div class="testimonial-avatar">
-                      <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150&h=150&fit=crop" alt="Cliente 1">
-                    </div>
-                    <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
-                    <p class="testimonial-text">"Gracias a CertJOIN obtuve mi certificación en Python y conseguí trabajo en una startup tecnológica. El proceso fue muy profesional."</p>
-                    <div class="testimonial-author">
-                      <strong>María González</strong>
-                      <span>Desarrolladora Backend</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="testimonial-card">
-                    <div class="testimonial-avatar">
-                      <img src="https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150&h=150&fit=crop" alt="Cliente 2">
-                    </div>
-                    <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
-                    <p class="testimonial-text">"Excelente servicio para certificar a todo nuestro equipo de desarrollo. El sistema de vouchers es muy práctico y el soporte impecable."</p>
-                    <div class="testimonial-author">
-                      <strong>Carlos Ramírez</strong>
-                      <span>CTO en TechCorp</span>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-md-4">
-                  <div class="testimonial-card">
-                    <div class="testimonial-avatar">
-                      <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150&h=150&fit=crop" alt="Cliente 3">
-                    </div>
-                    <div class="testimonial-stars">⭐⭐⭐⭐⭐</div>
-                    <p class="testimonial-text">"La mejor inversión en mi carrera. Las certificaciones de CertJOIN son reconocidas internacionalmente y el precio es muy competitivo."</p>
-                    <div class="testimonial-author">
-                      <strong>Andrea Silva</strong>
-                      <span>Arquitecta de Software</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Partners Gallery Section -->
-            <div class="partners-section mb-5">
-              <div class="text-center mb-4">
-                <h2 class="section-title mb-3">Empresas que Confían en Nosotros</h2>
-                <p class="section-subtitle">Partners y clientes corporativos</p>
-              </div>
-              <div class="partners-grid">
-                <div class="partner-logo">Microsoft</div>
-                <div class="partner-logo">Amazon AWS</div>
-                <div class="partner-logo">Google Cloud</div>
-                <div class="partner-logo">Oracle</div>
-                <div class="partner-logo">IBM</div>
-                <div class="partner-logo">CompTIA</div>
-              </div>
-            </div>
-
-            <!-- Video Section -->
-            <div class="video-section mb-5">
-              <div class="card shadow-sm overflow-hidden">
-                <div class="row g-0">
-                  <div class="col-md-6">
-                    <div class="video-embed">
-                      <iframe width="100%" height="315" src="https://www.youtube.com/embed/dQw4w9WgXcQ" title="CertJOIN Promo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
-                    </div>
-                  </div>
-                  <div class="col-md-6">
-                    <div class="p-5">
-                      <h3 class="mb-4">Descubre CertJOIN</h3>
-                      <p class="mb-3">Mira cómo nuestra plataforma puede transformar el desarrollo profesional de tu equipo.</p>
-                      <ul class="feature-list">
-                        <li>✓ Proceso de certificación simplificado</li>
-                        <li>✓ Portal de gestión intuitivo</li>
-                        <li>✓ Soporte dedicado 24/7</li>
-                        <li>✓ Reportes y analytics en tiempo real</li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- CTA Section -->
-            <div class="cta-section">
-              <div class="text-center">
-                <h2 class="mb-3">¿Listo para Certificarte?</h2>
-                <p class="mb-4">Únete a miles de profesionales que han impulsado su carrera con CertJOIN</p>
-                <button id="cta-go-cart" class="btn btn-lg btn-primary">Comprar Vouchers</button>
-              </div>
-            </div>
-          </div>
-
-          <!-- ABOUT SECTION -->
-          <div id="about-section" class="fade-in" style="display:none;">
-            <div class="card shadow-sm mb-4">
-              <div class="card-body">
-                <!-- Hero Image Section -->
-                <div class="about-hero mb-5">
-                  <img src="https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=1200&auto=format&fit=crop" alt="Equipo CertJOIN" style="width:100%;height:400px;object-fit:cover;border-radius:var(--radius-lg);">
-                  <div class="about-hero-overlay">
-                    <h2 style="color:white;font-size:3rem;font-weight:900;text-shadow:0 4px 20px rgba(0,0,0,0.5);">Nuestra Historia</h2>
-                  </div>
-                </div>
-
-                <h4 class="section-title">Quienes Somos</h4>
-                <p class="section-subtitle" style="font-size:1.1rem;line-height:1.8;color:#555;margin-bottom:2rem;">
-                  <strong style="color:var(--primary);">CertJOIN</strong> es una firma líder especializada en certificación profesional y desarrollo de talento digital. 
-                  Con más de una década de experiencia en el mercado, nos dedicamos a impulsar el crecimiento profesional de individuos y organizaciones 
-                  a través de programas de certificación reconocidos internacionalmente.
-                </p>
-
-                <!-- Image Gallery -->
-                <div class="row g-3 mb-4">
-                  <div class="col-md-4">
-                    <img src="https://images.unsplash.com/photo-1531482615713-2afd69097998?q=80&w=400&auto=format&fit=crop" alt="Oficina" class="img-fluid rounded shadow-sm" style="height:250px;width:100%;object-fit:cover;">
-                  </div>
-                  <div class="col-md-4">
-                    <img src="https://images.unsplash.com/photo-1552581234-26160f608093?q=80&w=400&auto=format&fit=crop" alt="Equipo" class="img-fluid rounded shadow-sm" style="height:250px;width:100%;object-fit:cover;">
-                  </div>
-                  <div class="col-md-4">
-                    <img src="https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=400&auto=format&fit=crop" alt="Reunión" class="img-fluid rounded shadow-sm" style="height:250px;width:100%;object-fit:cover;">
-                  </div>
-                </div>
-
-                <div class="row g-4 mb-4">
-                  <div class="col-md-6">
-                    <div class="glass-panel p-4" style="height:100%;">
-                      <h5 style="color:var(--primary);margin-bottom:1rem;">📚 Nuestra Misión</h5>
-                      <p style="line-height:1.7;color:#666;">
-                        Democratizar el acceso a certificaciones profesionales de clase mundial, 
-                        brindando soluciones flexibles y accesibles que permitan a profesionales y empresas 
-                        alcanzar sus objetivos de capacitación y desarrollo continuo.
-                      </p>
-                    </div>
-                  </div>
-                  <div class="col-md-6">
-                    <div class="glass-panel p-4" style="height:100%;">
-                      <h5 style="color:var(--accent);margin-bottom:1rem;">🎯 Nuestra Visión</h5>
-                      <p style="line-height:1.7;color:#666;">
-                        Ser la plataforma líder en América Latina para certificaciones profesionales, 
-                        reconocida por nuestra excelencia, innovación y compromiso con el éxito de nuestros clientes, 
-                        transformando el panorama educativo y profesional de la región.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="row g-3 mb-4">
-                  <div class="col-md-3">
-                    <div class="stats-card">
-                      <h5>Experiencia</h5>
-                      <div class="stats-value">10+ años</div>
-                      <p style="font-size:0.85rem;color:#999;margin-top:0.5rem;">en el mercado</p>
-                    </div>
-                  </div>
-                  <div class="col-md-3">
-                    <div class="stats-card">
-                      <h5>Certificaciones</h5>
-                      <div class="stats-value">5000+</div>
-                      <p style="font-size:0.85rem;color:#999;margin-top:0.5rem;">entregadas</p>
-                    </div>
-                  </div>
-                  <div class="col-md-3">
-                    <div class="stats-card">
-                      <h5>Clientes</h5>
-                      <div class="stats-value">200+</div>
-                      <p style="font-size:0.85rem;color:#999;margin-top:0.5rem;">empresas asociadas</p>
-                    </div>
-                  </div>
-                  <div class="col-md-3">
-                    <div class="stats-card">
-                      <h5>Satisfacción</h5>
-                      <div class="stats-value">98%</div>
-                      <p style="font-size:0.85rem;color:#999;margin-top:0.5rem;">de nuestros clientes</p>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Team Section -->
-                <div class="team-section mb-4">
-                  <h5 style="color:var(--primary);margin-bottom:2rem;text-align:center;font-size:1.8rem;font-weight:700;">Nuestro Equipo</h5>
-                  <div class="row g-4">
-                    <div class="col-md-3 col-6">
-                      <div class="team-member">
-                        <img src="https://images.unsplash.com/photo-1560250097-0b93528c311a?w=300&h=300&fit=crop" alt="CEO">
-                        <h6>Juan Pérez</h6>
-                        <span>CEO & Fundador</span>
-                      </div>
-                    </div>
-                    <div class="col-md-3 col-6">
-                      <div class="team-member">
-                        <img src="https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=300&h=300&fit=crop" alt="CTO">
-                        <h6>Ana Martínez</h6>
-                        <span>CTO</span>
-                      </div>
-                    </div>
-                    <div class="col-md-3 col-6">
-                      <div class="team-member">
-                        <img src="https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=300&h=300&fit=crop" alt="Director">
-                        <h6>Carlos Rodríguez</h6>
-                        <span>Director de Ventas</span>
-                      </div>
-                    </div>
-                    <div class="col-md-3 col-6">
-                      <div class="team-member">
-                        <img src="https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=300&h=300&fit=crop" alt="Manager">
-                        <h6>Lucía Gómez</h6>
-                        <span>Customer Success</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="glass-panel p-4">
-                  <h5 style="color:var(--primary);margin-bottom:1.5rem;">💼 ¿Por qué elegir CertJOIN?</h5>
-                  <div class="row g-3">
-                    <div class="col-md-4">
-                      <div style="display:flex;gap:1rem;align-items:start;">
-                        <span style="font-size:2rem;">✅</span>
-                        <div>
-                          <strong style="color:#333;">Certificaciones Reconocidas</strong>
-                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Trabajamos con las principales organizaciones certificadoras a nivel mundial</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="col-md-4">
-                      <div style="display:flex;gap:1rem;align-items:start;">
-                        <span style="font-size:2rem;">🚀</span>
-                        <div>
-                          <strong style="color:#333;">Proceso Ágil</strong>
-                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Plataforma digital intuitiva para gestionar tus certificaciones fácilmente</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="col-md-4">
-                      <div style="display:flex;gap:1rem;align-items:start;">
-                        <span style="font-size:2rem;">💰</span>
-                        <div>
-                          <strong style="color:#333;">Precios Competitivos</strong>
-                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Sistema de vouchers flexible con descuentos para volumen</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="col-md-4">
-                      <div style="display:flex;gap:1rem;align-items:start;">
-                        <span style="font-size:2rem;">👥</span>
-                        <div>
-                          <strong style="color:#333;">Soporte Personalizado</strong>
-                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Equipo dedicado para resolver tus dudas en cada paso</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="col-md-4">
-                      <div style="display:flex;gap:1rem;align-items:start;">
-                        <span style="font-size:2rem;">📊</span>
-                        <div>
-                          <strong style="color:#333;">Reportes Detallados</strong>
-                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Seguimiento completo de certificaciones y renovaciones</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div class="col-md-4">
-                      <div style="display:flex;gap:1rem;align-items:start;">
-                        <span style="font-size:2rem;">🔒</span>
-                        <div>
-                          <strong style="color:#333;">Seguridad Garantizada</strong>
-                          <p style="color:#666;font-size:0.9rem;margin-top:0.5rem;">Protección de datos con estándares de seguridad internacionales</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- LOCATION SECTION -->
-          <div id="location-section" class="fade-in" style="display:none;">
-            <div class="card shadow-sm mb-4">
-              <div class="card-body">
-                <h4 class="section-title">Ubicacion</h4>
-                <p class="section-subtitle">Calle 100 #8A-55, World Trade Center, Bogota, Colombia.</p>
-                <div class="ratio ratio-16x9 mt-3">
-                  <iframe title="CertJOIN" src="https://maps.google.com/maps?q=Calle%20100%20%238A-55%20Bogota&t=&z=14&ie=UTF8&iwloc=&output=embed" style="border:0;"></iframe>
-                </div>
-              </div>
-            </div>
-          </div>
-
           <!-- CART SUMMARY -->
           <div id="cart-summary" class="fade-in" style="display:none;">
             <div class="card shadow-sm mb-4">
@@ -2739,7 +2342,6 @@
                           <th>Total</th>
                           <th>Estado</th>
                           <th>Payment Intent</th>
-                          <th>Productos</th>
                           <th>Fecha</th>
                           <th>Status DB</th>
                           <th>Método</th>
@@ -4081,8 +3683,9 @@
             <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Cerrar"></button>
           </div>
           <div class="modal-body">
-            <p class="text-muted small mb-3" id="perm-modal-user-info">—</p>
+            <p class="text-muted small mb-3" id="perm-modal-user-info">— <span id="perm-modal-role-type-badge" class="badge bg-secondary ms-2"></span></p>
             <input type="hidden" id="perm-modal-role-name">
+            <input type="hidden" id="perm-modal-role-type">
             <p class="small mb-3">Define qué módulos puede ver, editar o desactivar para este rol.</p>
             <div class="table-responsive">
               <table class="table table-bordered align-middle">
@@ -4114,6 +3717,43 @@
       </div>
     </div>
 
+    <!-- Modal Editar Rol -->
+    <div class="modal fade" id="editRoleModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-md">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">✏️ Editar Rol</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="edit-role-modal-msg"></div>
+            <input type="hidden" id="edit-role-name">
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Nombre técnico</label>
+              <input type="text" id="edit-role-technical" class="form-control" disabled>
+              <div class="form-text text-muted">El nombre técnico no se puede cambiar.</div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Nombre visible <span class="text-danger">*</span></label>
+              <input type="text" id="edit-role-display" class="form-control" placeholder="Ej: Supervisor de Planta">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Tipo de rol <span class="text-danger">*</span></label>
+              <select id="edit-role-type" class="form-select">
+                <option value="system_role">Sistema</option>
+                <option value="client_role">Cliente</option>
+              </select>
+              <div class="form-text text-muted">Cambiar el tipo re-sanitiza los permisos del rol.</div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-primary" id="btn-save-edit-role">Guardar cambios</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal Crear Rol (con permisos) -->
     <div class="modal fade" id="createRoleModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-lg">
@@ -4125,14 +3765,22 @@
           <div class="modal-body">
             <div id="create-role-modal-msg"></div>
             <div class="row g-3 mb-4">
-              <div class="col-md-6">
+              <div class="col-md-4">
                 <label class="form-label fw-semibold">Nombre técnico <span class="text-danger">*</span></label>
                 <input id="new-role-name" class="form-control" placeholder="ej: supervisor">
                 <div class="form-text">Identificador único, solo letras y guiones</div>
               </div>
-              <div class="col-md-6">
+              <div class="col-md-4">
                 <label class="form-label fw-semibold">Nombre visible <span class="text-danger">*</span></label>
                 <input id="new-role-display-name" class="form-control" placeholder="Ej: Supervisor de Planta">
+              </div>
+              <div class="col-md-4">
+                <label class="form-label fw-semibold">Tipo de rol <span class="text-danger">*</span></label>
+                <select id="new-role-type" class="form-select">
+                  <option value="system_role">🔧 Sistema</option>
+                  <option value="client_role">👤 Cliente</option>
+                </select>
+                <div class="form-text">Los roles Cliente tienen acceso restringido a módulos sensibles</div>
               </div>
             </div>
             <h6 class="fw-bold mb-3" style="border-top:1px solid var(--border);padding-top:1rem;">Permisos del rol</h6>
@@ -4557,41 +4205,57 @@
       <div class="modal-dialog modal-lg">
         <div class="modal-content">
           <div class="modal-header">
-            <h5 class="modal-title">✏️ Ajustar Compra</h5>
+            <h5 class="modal-title" id="adjust-purchase-modal-title">✏️ Ajustar Compra</h5>
             <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
           </div>
           <div class="modal-body">
             <div id="adjust-purchase-msg"></div>
             <input type="hidden" id="adjust-purchase-id">
             <div class="row g-3">
+              <!-- Siempre visible -->
               <div class="col-md-4">
                 <label class="form-label">ID Compra</label>
                 <input id="adjust-purchase-id-display" type="text" class="form-control" readonly>
               </div>
               <div class="col-md-4">
-                <label class="form-label">Precio Total (USD)</label>
-                <input id="adjust-purchase-price" type="number" min="0" step="0.01" class="form-control">
-              </div>
-              <div class="col-md-4">
-                <label class="form-label">Método de pago</label>
-                <select id="adjust-purchase-method" class="form-select">
-                  <option value="bank_transfer">🏦 Transferencia</option>
-                  <option value="cash">💵 Efectivo</option>
-                  <option value="invoice">📄 Factura</option>
-                  <option value="complimentary">🎁 Cortesía</option>
+                <label class="form-label">Partner <span class="text-danger">*</span></label>
+                <select id="adjust-purchase-partner" class="form-select">
+                  <option value="">Selecciona un partner</option>
                 </select>
               </div>
-              <div class="col-md-6">
-                <label class="form-label">Referencia externa</label>
-                <input id="adjust-purchase-ref" type="text" class="form-control">
+              <div class="col-md-4">
+                <label class="form-label">Cantidad <span class="text-danger">*</span></label>
+                <input id="adjust-purchase-qty" type="number" min="1" max="10000" class="form-control">
               </div>
-              <div class="col-md-6">
-                <label class="form-label">Motivo cortesía</label>
-                <input id="adjust-purchase-comp-reason" type="text" class="form-control" placeholder="Solo aplica si es cortesía">
+              <!-- Campos solo para cortesía -->
+              <div id="adjust-fields-comp" class="col-12" style="display:none;">
+                <label class="form-label">Motivo cortesía <span class="text-danger">*</span></label>
+                <textarea id="adjust-purchase-comp-reason" class="form-control" rows="3"></textarea>
               </div>
-              <div class="col-12">
-                <label class="form-label">Notas</label>
-                <textarea id="adjust-purchase-notes" class="form-control" rows="2"></textarea>
+              <!-- Campos solo para compra externa -->
+              <div id="adjust-fields-external" style="display:none;" class="col-12">
+                <div class="row g-3">
+                  <div class="col-md-4">
+                    <label class="form-label">Precio Total (USD)</label>
+                    <input id="adjust-purchase-price" type="number" min="0" step="0.01" class="form-control">
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Método de pago</label>
+                    <select id="adjust-purchase-method" class="form-select">
+                      <option value="bank_transfer">🏦 Transferencia</option>
+                      <option value="cash">💵 Efectivo</option>
+                      <option value="invoice">📄 Factura</option>
+                    </select>
+                  </div>
+                  <div class="col-md-4">
+                    <label class="form-label">Referencia externa</label>
+                    <input id="adjust-purchase-ref" type="text" class="form-control">
+                  </div>
+                  <div class="col-12">
+                    <label class="form-label">Notas</label>
+                    <textarea id="adjust-purchase-notes" class="form-control" rows="2"></textarea>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

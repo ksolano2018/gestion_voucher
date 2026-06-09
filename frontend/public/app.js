@@ -251,9 +251,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const navAdmin = el('nav-admin');
   const navPartner = el('nav-partner');
-  const navHome = el('nav-home');
-  const navAbout = el('nav-about');
-  const navLocation = el('nav-location');
   const navCart = el('nav-cart');
   const logoutBtn = el('logout-btn');
   const userInfoDisplay = el('user-info-display');
@@ -273,18 +270,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const sAdmin = el('admin');
   const sPartner = el('partner');
-  const sHome = el('home');
-  const sAbout = el('about-section');
-  const sLocation = el('location-section');
   const sCartSummary = el('cart-summary');
 
   function show(section){
     if(!section) return;
     if(sAdmin) sAdmin.style.display = 'none';
     if(sPartner) sPartner.style.display = 'none';
-    if(sHome) sHome.style.display = 'none';
-    if(sAbout) sAbout.style.display = 'none';
-    if(sLocation) sLocation.style.display = 'none';
     if(sCartSummary) sCartSummary.style.display = 'none';
     
     // Remove active class from all nav buttons
@@ -301,7 +292,6 @@ document.addEventListener('DOMContentLoaded', () => {
   if(navPartner) navPartner.style.display = 'none';
   if(userDropdownWrap) userDropdownWrap.style.display = 'none';
 
-  if(navHome) navHome.onclick = () => { show(sHome); navHome.classList.add('active'); };
   if(navAdmin) navAdmin.onclick = () => {
     show(sAdmin);
     navAdmin.classList.add('active');
@@ -323,8 +313,6 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAdminDashboard();
   };
   if(navPartner) navPartner.onclick = () => { show(sPartner); navPartner.classList.add('active'); refreshVoucherPricingPreview(); };
-  if(navAbout) navAbout.onclick = () => { show(sAbout); navAbout.classList.add('active'); };
-  if(navLocation) navLocation.onclick = () => { show(sLocation); navLocation.classList.add('active'); };
   if(navCart) navCart.onclick = () => { show(sCartSummary); navCart.classList.add('active'); };
   on('user-dropdown-go-stats', 'click', () => {
     const t = getToken();
@@ -353,33 +341,6 @@ document.addEventListener('DOMContentLoaded', () => {
       loadAdminDashboard();
     }
   });
-  on('hero-go-partner', 'click', () => {
-    const token = getToken();
-    const d = token ? decodeJwt(token) : null;
-    if(d && d.role === 'partner'){
-      show(sPartner);
-      if(navPartner) navPartner.classList.add('active');
-      loadPartnerStats(false);
-      loadCoursesForActivation();
-      return;
-    }
-    showLoginMessage('Inicia sesión como Partner para gestionar vouchers.', 'warning', 3500);
-  });
-  on('cta-go-cart', 'click', () => {
-    const token = getToken();
-    const d = token ? decodeJwt(token) : null;
-    if(d && d.role === 'partner'){
-      show(sCartSummary);
-      if(navCart) navCart.classList.add('active');
-      return;
-    }
-    showLoginMessage('Inicia sesión como Partner para comprar vouchers.', 'warning', 3500);
-  });
-  on('hero-go-about', 'click', () => {
-    show(sAbout);
-    if(navAbout) navAbout.classList.add('active');
-  });
-
   function showLoginMessage(msg, type='info', timeout=3500){
     const loginMessageEl = el('login-message');
     if(!loginMessageEl) return;
@@ -466,23 +427,14 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     const d = decodeJwt(t);
     if(d && d.role){
+      const isClientRole = d.role_type === 'client_role';
       const hasPermissions = d.permissions && Object.values(d.permissions).some(v => v && v !== 'none');
       const isAdmin = d.role === 'admin';
-      const showAdmin = isAdmin || hasPermissions;
+      // Roles cliente nunca acceden a Administración, sin importar permisos
+      const showAdmin = !isClientRole && (isAdmin || hasPermissions);
       if(navAdmin) navAdmin.style.display = showAdmin ? 'inline-block' : 'none';
       if(navPartner) navPartner.style.display = (d.role === 'partner') ? 'inline-block' : 'none';
-      // Solo mostrar carrito para usuarios Partner (no para Admin)
       if(navCart) navCart.style.display = (d.role === 'partner') ? 'inline-block' : 'none';
-      
-      // Para admin: solo mostrar Inicio y Administración
-      if(isAdmin || showAdmin){
-        if(navAbout) navAbout.style.display = 'none';
-        if(navLocation) navLocation.style.display = 'none';
-      } else {
-        // Para otros roles, mostrar menús públicos
-        if(navAbout) navAbout.style.display = 'inline-block';
-        if(navLocation) navLocation.style.display = 'inline-block';
-      }
 
       // Mostrar/ocultar tarjetas del menú admin según permisos
       if(!isAdmin){
@@ -539,6 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showLoginScreen(){
+    document.documentElement.classList.add('no-session');
     if(loginContainer) loginContainer.style.display = 'flex';
     if(appShellWrapper) appShellWrapper.style.display = 'none';
     document.body.classList.remove('authenticated');
@@ -546,6 +499,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function showAppScreen(){
+    document.documentElement.classList.remove('no-session');
     if(loginContainer) loginContainer.style.display = 'none';
     if(appShellWrapper) appShellWrapper.style.display = 'block';
     document.body.classList.add('authenticated');
@@ -674,8 +628,6 @@ document.addEventListener('DOMContentLoaded', () => {
           show(sPartner);
           loadCoursesForActivation();
           refreshVoucherPricingPreview();
-        } else {
-          show(sHome);
         }
         showLoginMessage('Bienvenido', 'success', 2000);
       } else {
@@ -1697,7 +1649,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbody = el('purchases-table-body');
     if (!tbody) return;
     if (currentPurchasesDisplayData.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted p-4">No hay compras para los filtros seleccionados</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted p-4">No hay compras para los filtros seleccionados</td></tr>';
       renderPurchasesPagination();
       return;
     }
@@ -1716,13 +1668,7 @@ document.addEventListener('DOMContentLoaded', () => {
           : '<span class="badge bg-warning text-dark">⏳ Pendiente</span>');
       const created = p.created_at ? new Date(p.created_at).toLocaleDateString('es-ES') : '-';
       const paymentId = p.payment_intent_id ? escapeHTML(p.payment_intent_id.substring(0, 22) + '...') : '-';
-      const lineItemsHtml = (p.line_items && p.line_items.length > 0)
-        ? '<ul class="list-unstyled mb-0 small">' +
-            p.line_items.map(item =>
-              `<li>📦 ${escapeHTML(item.product_name)} (x${item.quantity}) — $${parseFloat(item.total_amount).toFixed(2)}</li>`
-            ).join('') + '</ul>'
-        : '<small class="text-muted">—</small>';
-      const method = (p.payment_method || 'stripe');
+      const method =(p.payment_method || 'stripe');
       const isComp = method === 'complimentary';
       const isAdjustable = method !== 'stripe';
       const adjustBtn = (canAdjust && isAdjustable)
@@ -1748,7 +1694,6 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${totalHtml}</td>
         <td>${statusBadge}</td>
         <td title="${escapeHTML(p.payment_intent_id || 'Sin pago')}"><small class="text-muted">${paymentId}</small></td>
-        <td>${lineItemsHtml}</td>
         <td>${created}</td>
         <td><small class="text-muted">${escapeHTML(p.status || '—')}</small></td>
         <td>${paymentMethodBadge(method)}${compDetailHtml}</td>
@@ -2100,7 +2045,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── Helper: poblar selects de partner en modales financieros ──
   async function populateFinancialPartnerSelects() {
-    const ids = ['ext-purchase-partner', 'comp-partner'];
+    const ids = ['ext-purchase-partner', 'comp-partner', 'adjust-purchase-partner'];
     const anyEmpty = ids.some(id => { const s = el(id); return s && s.options.length <= 1; });
     if (!anyEmpty) return;
     try {
@@ -2216,47 +2161,86 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // ── Modal Ajustar Compra ──
-  window.openAdjustPurchaseModal = function(purchaseId) {
+  window.openAdjustPurchaseModal = async function(purchaseId) {
     const purchase = allPurchasesData.find(p => p.id === purchaseId);
     if (!purchase) return;
-    const idEl  = el('adjust-purchase-id');       if (idEl)  idEl.value  = purchaseId;
-    const disp  = el('adjust-purchase-id-display'); if (disp)  disp.value  = '#' + purchaseId;
-    const price = el('adjust-purchase-price');     if (price) price.value = parseFloat(purchase.total_price || 0).toFixed(2);
-    const meth  = el('adjust-purchase-method');   if (meth)  meth.value  = purchase.payment_method || 'bank_transfer';
-    const ref   = el('adjust-purchase-ref');       if (ref)   ref.value   = purchase.external_reference || '';
-    const notes = el('adjust-purchase-notes');     if (notes) notes.value = purchase.notes || '';
-    const crEl  = el('adjust-purchase-comp-reason'); if (crEl) crEl.value = purchase.complimentary_reason || '';
-    const msg   = el('adjust-purchase-msg');       if (msg)   msg.innerHTML = '';
+    const isComp = purchase.payment_method === 'complimentary';
+
+    await populateFinancialPartnerSelects();
+
+    // Campos comunes
+    const idEl   = el('adjust-purchase-id');         if (idEl)   idEl.value   = purchaseId;
+    const disp   = el('adjust-purchase-id-display'); if (disp)   disp.value   = '#' + purchaseId;
+    const partSel = el('adjust-purchase-partner');
+    if (partSel) partSel.value = purchase.partner_id || '';
+    const qtyEl  = el('adjust-purchase-qty');        if (qtyEl)  qtyEl.value  = purchase.qty || 1;
+    const msg    = el('adjust-purchase-msg');        if (msg)    msg.innerHTML = '';
+
+    // Mostrar/ocultar grupos según tipo
+    const compFields = el('adjust-fields-comp');
+    const extFields  = el('adjust-fields-external');
+    if (compFields) compFields.style.display = isComp ? '' : 'none';
+    if (extFields)  extFields.style.display  = isComp ? 'none' : '';
+
+    // Título del modal
+    const titleEl = el('adjust-purchase-modal-title');
+    if (titleEl) titleEl.textContent = isComp ? '🎁 Ajustar Cortesía' : '✏️ Ajustar Compra Externa';
+
+    if (isComp) {
+      const crEl = el('adjust-purchase-comp-reason'); if (crEl) crEl.value = purchase.complimentary_reason || '';
+    } else {
+      const price = el('adjust-purchase-price');   if (price) price.value = parseFloat(purchase.total_price || 0).toFixed(2);
+      const meth  = el('adjust-purchase-method');  if (meth)  meth.value  = purchase.payment_method || 'bank_transfer';
+      const ref   = el('adjust-purchase-ref');     if (ref)   ref.value   = purchase.external_reference || '';
+      const notes = el('adjust-purchase-notes');   if (notes) notes.value = purchase.notes || '';
+    }
+
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-adjust-purchase')).show();
   };
 
   on('modal-adjust-purchase-submit', 'click', async () => {
     const purchaseId = (el('adjust-purchase-id') || {}).value || '';
-    const price  = parseFloat((el('adjust-purchase-price') || {}).value || '');
-    const method = (el('adjust-purchase-method') || {}).value || '';
-    const ref    = (el('adjust-purchase-ref') || {}).value || '';
-    const notes  = (el('adjust-purchase-notes') || {}).value || '';
-    const reason = (el('adjust-purchase-comp-reason') || {}).value || '';
     const msgEl  = el('adjust-purchase-msg');
     const setMsg = (txt, type='danger') => { if(msgEl) msgEl.innerHTML = `<div class="alert alert-${type} py-1 mb-2">${escapeHTML(txt)}</div>`; };
     if (!purchaseId) return setMsg('ID de compra inválido');
-    const body = {};
-    if (!isNaN(price)) body.total_price = price;
-    if (method) body.payment_method = method;
-    if (ref)    body.external_reference = ref;
-    if (notes)  body.notes = notes;
-    if (reason) body.complimentary_reason = reason;
-    const methodLabels = { bank_transfer: '🏦 Transferencia', cash: '💵 Efectivo', invoice: '📄 Factura', complimentary: '🎁 Cortesía' };
+
+    const purchase = allPurchasesData.find(p => String(p.id) === String(purchaseId));
+    const isComp = purchase && purchase.payment_method === 'complimentary';
+
+    const partnerId = parseInt((el('adjust-purchase-partner') || {}).value || '', 10);
+    const qty       = parseInt((el('adjust-purchase-qty') || {}).value || '', 10);
+    const body      = {};
+    const confirmRows = [{ label: 'Compra ID:', value: '#' + purchaseId }];
+
+    if (!isNaN(partnerId) && partnerId > 0) {
+      body.partner_id = partnerId;
+      const partSel = el('adjust-purchase-partner');
+      const partName = partSel ? (partSel.options[partSel.selectedIndex] || {}).text : partnerId;
+      confirmRows.push({ label: 'Partner:', value: partName });
+    }
+    if (!isNaN(qty) && qty > 0) { body.qty = qty; confirmRows.push({ label: 'Cantidad:', value: qty }); }
+
+    if (isComp) {
+      const reason = (el('adjust-purchase-comp-reason') || {}).value.trim();
+      if (!reason) return setMsg('El motivo de cortesía es requerido');
+      body.complimentary_reason = reason;
+      confirmRows.push({ label: 'Motivo:', value: reason });
+    } else {
+      const price  = parseFloat((el('adjust-purchase-price') || {}).value || '');
+      const method = (el('adjust-purchase-method') || {}).value || '';
+      const ref    = (el('adjust-purchase-ref') || {}).value.trim();
+      const notes  = (el('adjust-purchase-notes') || {}).value.trim();
+      const methodLabels = { bank_transfer: '🏦 Transferencia', cash: '💵 Efectivo', invoice: '📄 Factura' };
+      if (!isNaN(price)) { body.total_price = price; confirmRows.push({ label: 'Precio total:', value: `$${price.toFixed(2)}` }); }
+      if (method) { body.payment_method = method; confirmRows.push({ label: 'Método pago:', value: methodLabels[method] || method }); }
+      if (ref)    { body.external_reference = ref;  confirmRows.push({ label: 'Referencia:', value: ref }); }
+      if (notes)  { body.notes = notes;             confirmRows.push({ label: 'Notas:', value: notes }); }
+    }
+
     showConfirmAction({
-      title: `Ajustar Compra #${purchaseId}`, icon: '✏️',
-      rows: [
-        { label: 'Compra ID:', value: '#' + purchaseId },
-        ...(!isNaN(price) ? [{ label: 'Precio total:', value: `$${price.toFixed(2)}` }] : []),
-        ...(method ? [{ label: 'Método pago:', value: methodLabels[method] || method }] : []),
-        ...(ref    ? [{ label: 'Referencia:', value: ref }] : []),
-        ...(notes  ? [{ label: 'Notas:', value: notes }] : []),
-        ...(reason ? [{ label: 'Motivo cortesía:', value: reason }] : [])
-      ],
+      title: isComp ? `Ajustar Cortesía #${purchaseId}` : `Ajustar Compra #${purchaseId}`,
+      icon: isComp ? '🎁' : '✏️',
+      rows: confirmRows,
       confirmLabel: '💾 Guardar Ajuste', confirmClass: 'btn-primary',
       onConfirm: async () => {
         const btn = el('modal-adjust-purchase-submit');
@@ -3049,18 +3033,56 @@ document.addEventListener('DOMContentLoaded', () => {
   on('btn-refresh-dashboard', 'click', () => loadAdminDashboard());
 
   // ===== ROLES Y PERMISOS =====
-  const PERM_MODULES = [
-    { key: 'dashboard',     label: '🏠 Dashboard' },
-    { key: 'purchases',     label: '🛒 Compras' },
-    { key: 'users',         label: '👤 Usuarios' },
-    { key: 'courses',       label: '📚 Certificaciones' },
-    { key: 'pricing',       label: '🏷️ Pricing' },
-    { key: 'stats',         label: '📊 Estadísticas' },
-    { key: 'audit',         label: '🧾 Auditoría' },
-    { key: 'reports',       label: '📈 Reportería' },
-    { key: 'financial_ops', label: '💰 Ops Financieras' },
-  ];
-  let _adminRoles = [];
+  // Config dinámica de módulos y tipos cargada desde el backend
+  let _rolesConfig = null;
+  let _adminRoles  = [];
+
+  async function loadRolesConfig() {
+    if (_rolesConfig) return _rolesConfig;
+    try {
+      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/roles/config', { headers: authHeaders() });
+      if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+      _rolesConfig = await safeJson(resp);
+    } catch(e) {
+      console.error('❌ No se pudo cargar configuración de roles:', e.message);
+      _rolesConfig = null;
+    }
+    return _rolesConfig;
+  }
+
+  // Devuelve los módulos visibles para un role_type dado
+  function modulesForType(roleType) {
+    if (!_rolesConfig || !Array.isArray(_rolesConfig.modules)) return [];
+    return _rolesConfig.modules.filter(m => Array.isArray(m.types) && m.types.includes(roleType));
+  }
+
+  function renderPermTable(tbody, roleType, prefix, currentPerms = {}) {
+    if (!tbody) return;
+    const modules = modulesForType(roleType);
+    if (!modules.length) {
+      tbody.innerHTML = `<tr><td colspan="4" class="text-center text-danger py-3 small">
+        No se pudieron cargar los módulos. Recarga la página o reinicia el servicio.
+      </td></tr>`;
+      return;
+    }
+    tbody.innerHTML = modules.map(m => {
+      const cur = currentPerms[m.key] || 'none';
+      return `<tr>
+        <td>${escapeHTML(moduleLabel(m))}</td>
+        <td class="text-center"><input type="radio" name="${prefix}_${m.key}" value="none" ${cur==='none'?'checked':''}></td>
+        <td class="text-center"><input type="radio" name="${prefix}_${m.key}" value="view" ${cur==='view'?'checked':''}></td>
+        <td class="text-center"><input type="radio" name="${prefix}_${m.key}" value="edit" ${cur==='edit'?'checked':''}></td>
+      </tr>`;
+    }).join('');
+  }
+
+  const PERM_MODULE_ICONS = {
+    dashboard: '🏠', purchases: '🛒', users: '👤', courses: '📚',
+    pricing: '🏷️', stats: '📊', audit: '🧾', reports: '📈', financial_ops: '💰'
+  };
+  function moduleLabel(mod) {
+    return (PERM_MODULE_ICONS[mod.key] || '') + ' ' + mod.label;
+  }
 
   function ensureRoleOption(selectId, roleValue, roleLabel){
     const select = el(selectId);
@@ -3175,6 +3197,7 @@ document.addEventListener('DOMContentLoaded', () => {
       throw new Error('Sesión no disponible. Inicia sesión nuevamente.');
     }
     if(!force && _adminRoles.length) return _adminRoles;
+    await loadRolesConfig();
     const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/roles', { headers: authHeaders() });
     const data = await safeJson(resp);
     if(!resp.ok) throw new Error(data.error || 'No se pudieron cargar roles');
@@ -3198,28 +3221,62 @@ document.addEventListener('DOMContentLoaded', () => {
       });
       return;
     }
+    const typeLabels = (_rolesConfig && _rolesConfig.type_labels) || { system_role: 'Sistema', client_role: 'Cliente' };
     container.innerHTML = `<div class="table-responsive"><table class="table table-hover align-middle">
       <thead style="font-size:0.78rem;text-transform:uppercase;letter-spacing:0.05em;background:rgba(249,115,22,0.06);">
-        <tr><th>Rol</th><th>Nombre técnico</th><th>Sistema</th><th>Estado</th><th>Acciones</th></tr>
+        <tr><th>Rol</th><th>Nombre técnico</th><th>Tipo</th><th>Estado</th><th>Acciones</th></tr>
       </thead>
       <tbody>
-        ${_adminRoles.map(r => `<tr>
-          <td><strong>${escapeHTML(r.display_name||r.name)}</strong></td>
-          <td><code style="font-size:0.82rem;">${escapeHTML(r.name)}</code></td>
-          <td>${r.is_system ? '<span class="badge bg-secondary">Sistema</span>' : ''}</td>
-          <td>${r.active ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-danger">Inactivo</span>'}</td>
-          <td>
-            <button class="btn btn-sm btn-outline-secondary role-manage-btn" data-role-name="${escapeHTML(r.name)}" data-role-display="${escapeHTML(r.display_name||r.name)}">
-              🔐 Permisos
-            </button>
-          </td>
-        </tr>`).join('')}
+        ${_adminRoles.map(r => {
+          const curType = r.role_type || 'system_role';
+          const typeLabel = typeLabels[curType] || curType;
+          const typeBadge = curType === 'system_role'
+            ? `<span class="badge bg-secondary">${escapeHTML(typeLabel)}</span>`
+            : `<span class="badge bg-info text-white">${escapeHTML(typeLabel)}</span>`;
+          return `<tr>
+            <td><strong>${escapeHTML(r.display_name||r.name)}</strong></td>
+            <td><code style="font-size:0.82rem;">${escapeHTML(r.name)}</code></td>
+            <td>${typeBadge}</td>
+            <td>${r.active ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-danger">Inactivo</span>'}</td>
+            <td class="d-flex gap-2">
+              <button class="btn btn-sm btn-outline-primary role-edit-btn"
+                data-role-name="${escapeHTML(r.name)}"
+                data-role-type="${escapeHTML(curType)}"
+                data-role-display="${escapeHTML(r.display_name||r.name)}">
+                ✏️ Editar
+              </button>
+              <button class="btn btn-sm btn-outline-secondary role-manage-btn"
+                data-role-name="${escapeHTML(r.name)}"
+                data-role-type="${escapeHTML(curType)}"
+                data-role-display="${escapeHTML(r.display_name||r.name)}">
+                🔐 Permisos
+              </button>
+            </td>
+          </tr>`;
+        }).join('')}
       </tbody>
     </table></div>`;
+
+    container.querySelectorAll('.role-edit-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const roleName    = btn.dataset.roleName;
+        const roleType    = btn.dataset.roleType;
+        const roleDisplay = btn.dataset.roleDisplay;
+        const msgEl = el('edit-role-modal-msg');
+        if (msgEl) msgEl.innerHTML = '';
+        el('edit-role-name').value      = roleName;
+        el('edit-role-technical').value = roleName;
+        el('edit-role-display').value   = roleDisplay;
+        el('edit-role-type').value      = roleType;
+        bootstrap.Modal.getOrCreateInstance(document.getElementById('editRoleModal')).show();
+      });
+    });
+
+
     container.querySelectorAll('.role-manage-btn').forEach(btn => {
       btn.addEventListener('click', () => {
         const roleObj = _adminRoles.find(r => r.name === btn.dataset.roleName);
-        if(roleObj) openPermissionsModal(roleObj.name, roleObj.permissions||{}, `Rol: ${roleObj.display_name||roleObj.name}`);
+        if(roleObj) openPermissionsModal(roleObj.name, roleObj.permissions||{}, roleObj.role_type||'system_role', `Rol: ${roleObj.display_name||roleObj.name}`);
       });
     });
   }
@@ -3237,23 +3294,23 @@ document.addEventListener('DOMContentLoaded', () => {
     _permModalEl.addEventListener('hidden.bs.modal', () => showPermConfirmFooter(false));
   }
 
-  function openPermissionsModal(roleName, permissions, contextLabel = ''){
+  async function openPermissionsModal(roleName, permissions, roleType = 'system_role', contextLabel = ''){
     cleanupModalBackdrops();
     showPermConfirmFooter(false);
-    const permObj = permissions || {};
-    el('perm-modal-role-name').value = roleName;
+    el('perm-modal-role-name').value       = roleName;
+    el('perm-modal-role-type').value       = roleType;
     el('perm-modal-user-info').textContent = contextLabel || `Rol: ${roleName}`;
-    el('perm-modal-msg').innerHTML = '';
-    const tbody = el('perm-modules-table');
-    tbody.innerHTML = PERM_MODULES.map(m => {
-      const cur = permObj[m.key] || 'none';
-      return `<tr>
-        <td>${escapeHTML(m.label)}</td>
-        <td class="text-center"><input type="radio" name="perm_${m.key}" value="none" ${cur === 'none' ? 'checked' : ''}></td>
-        <td class="text-center"><input type="radio" name="perm_${m.key}" value="view" ${cur === 'view' ? 'checked' : ''}></td>
-        <td class="text-center"><input type="radio" name="perm_${m.key}" value="edit" ${cur === 'edit' ? 'checked' : ''}></td>
-      </tr>`;
-    }).join('');
+    el('perm-modal-msg').innerHTML         = '';
+
+    const typeLabels  = (_rolesConfig && _rolesConfig.type_labels) || { system_role: 'Sistema', client_role: 'Cliente' };
+    const typeBadgeEl = el('perm-modal-role-type-badge');
+    if (typeBadgeEl) {
+      typeBadgeEl.textContent = typeLabels[roleType] || roleType;
+      typeBadgeEl.className   = roleType === 'system_role' ? 'badge bg-secondary ms-2' : 'badge bg-info text-white ms-2';
+    }
+
+    await loadRolesConfig();
+    renderPermTable(el('perm-modules-table'), roleType, 'perm', permissions || {});
     bootstrap.Modal.getOrCreateInstance(document.getElementById('modalUserPermissions')).show();
   }
 
@@ -3269,14 +3326,20 @@ document.addEventListener('DOMContentLoaded', () => {
   on('btn-cancel-save-perms', 'click', () => showPermConfirmFooter(false));
 
   on('btn-do-save-perms', 'click', async () => {
-    const btn = el('btn-do-save-perms');
+    const btn      = el('btn-do-save-perms');
     const roleName = (el('perm-modal-role-name').value || '').trim();
-    const msgEl  = el('perm-modal-msg');
+    const roleType = (el('perm-modal-role-type') || {}).value || 'system_role';
+    const msgEl    = el('perm-modal-msg');
     const permissions = {};
-    PERM_MODULES.forEach(m => {
+    modulesForType(roleType).forEach(m => {
       const checked = document.querySelector(`input[name="perm_${m.key}"]:checked`);
       permissions[m.key] = checked ? checked.value : 'none';
     });
+    if (!Object.keys(permissions).length) {
+      showToast('No hay módulos cargados. Recarga la página.', 'danger');
+      showPermConfirmFooter(false);
+      return;
+    }
     try {
       setButtonLoading(btn, true);
       const resp = await safeFetch(
@@ -3304,55 +3367,93 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // "Nuevo Rol" — abre modal con campos + permisos
-  function buildNewRolePermTable(){
-    const tbody = el('new-role-perm-table');
-    if(!tbody) return;
-    tbody.innerHTML = PERM_MODULES.map(m => `<tr>
-      <td>${escapeHTML(m.label)}</td>
-      <td class="text-center"><input type="radio" name="nr_perm_${m.key}" value="none" checked></td>
-      <td class="text-center"><input type="radio" name="nr_perm_${m.key}" value="view"></td>
-      <td class="text-center"><input type="radio" name="nr_perm_${m.key}" value="edit"></td>
-    </tr>`).join('');
+  function buildNewRolePermTable(roleType = 'client_role'){
+    renderPermTable(el('new-role-perm-table'), roleType, 'nr_perm');
   }
 
-  on('btn-open-create-role', 'click', () => {
-    buildNewRolePermTable();
+  on('btn-save-edit-role', 'click', async () => {
+    const btn         = el('btn-save-edit-role');
+    const msgEl       = el('edit-role-modal-msg');
+    const roleName    = (el('edit-role-name')?.value || '').trim();
+    const displayName = (el('edit-role-display')?.value || '').trim();
+    const roleType    = el('edit-role-type')?.value || 'system_role';
+    if (msgEl) msgEl.innerHTML = '';
+    if (!displayName) {
+      if (msgEl) msgEl.innerHTML = '<div class="alert alert-danger py-2">El nombre visible es obligatorio.</div>';
+      return;
+    }
+    setButtonLoading(btn, true);
+    try {
+      const resp = await safeFetch(
+        apiUrl.replace(':8080', ':8081') + '/admin/roles/' + encodeURIComponent(roleName),
+        { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ display_name: displayName, role_type: roleType }) }
+      );
+      const data = await safeJson(resp);
+      if (!resp.ok) throw new Error(data.error || 'Error al guardar');
+      setButtonLoading(btn, false);
+      bootstrap.Modal.getInstance(document.getElementById('editRoleModal'))?.hide();
+      showToast(`Rol "${displayName}" actualizado correctamente`, 'success');
+      await loadAdminRoles(true);
+      renderRolesList();
+    } catch(e) {
+      setButtonLoading(btn, false);
+      if (msgEl) msgEl.innerHTML = `<div class="alert alert-danger py-2">${escapeHTML(e.message)}</div>`;
+    }
+  });
+
+  on('btn-open-create-role', 'click', async () => {
+    const msgEl = el('create-role-modal-msg');
+    if(msgEl) msgEl.innerHTML = '';
+    await loadRolesConfig();
+    if (!_rolesConfig) {
+      if(msgEl) msgEl.innerHTML = '<div class="alert alert-danger py-2">No se pudo cargar la configuración de módulos. Reinicia el servicio e intenta de nuevo.</div>';
+      bootstrap.Modal.getOrCreateInstance(document.getElementById('createRoleModal')).show();
+      return;
+    }
+    const typeEl = el('new-role-type');
+    if (typeEl) typeEl.value = 'client_role';
+    buildNewRolePermTable('client_role');
     if(el('new-role-name')) el('new-role-name').value = '';
     if(el('new-role-display-name')) el('new-role-display-name').value = '';
-    if(el('create-role-modal-msg')) el('create-role-modal-msg').innerHTML = '';
     bootstrap.Modal.getOrCreateInstance(document.getElementById('createRoleModal')).show();
+  });
+
+  // Reconstruir tabla de permisos al cambiar el tipo
+  on('new-role-type', 'change', () => {
+    const roleType = (el('new-role-type') || {}).value || 'client_role';
+    buildNewRolePermTable(roleType);
   });
 
   on('btn-confirm-create-role', 'click', async () => {
     const btn = el('btn-confirm-create-role');
     const msgEl = el('create-role-modal-msg');
-    const roleName = ((el('new-role-name')||{}).value||'').trim().toLowerCase();
+    const roleName    = ((el('new-role-name')||{}).value||'').trim().toLowerCase();
     const displayName = ((el('new-role-display-name')||{}).value||'').trim();
+    const roleType    = ((el('new-role-type')||{}).value||'client_role');
     if(!roleName || !displayName){
       if(msgEl) msgEl.innerHTML = '<div class="alert alert-danger py-2">Completa el nombre técnico y el nombre visible.</div>';
       return;
     }
+    if (!_rolesConfig) {
+      if(msgEl) msgEl.innerHTML = '<div class="alert alert-danger py-2">Configuración de módulos no cargada. Recarga la página.</div>';
+      return;
+    }
     const permissions = {};
-    PERM_MODULES.forEach(m => {
+    modulesForType(roleType).forEach(m => {
       const checked = document.querySelector(`input[name="nr_perm_${m.key}"]:checked`);
       permissions[m.key] = checked ? checked.value : 'none';
     });
     try {
       setButtonLoading(btn, true);
-      // 1. Create role
       const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/roles', {
         method: 'POST', headers: authHeaders(),
-        body: JSON.stringify({ name: roleName, display_name: displayName })
+        body: JSON.stringify({ name: roleName, display_name: displayName, role_type: roleType, permissions })
       });
       const data = await safeJson(resp);
       if(!resp.ok){ setButtonLoading(btn, false); if(msgEl) msgEl.innerHTML = `<div class="alert alert-danger py-2">${escapeHTML(data.error||'No se pudo crear el rol')}</div>`; return; }
-      // 2. Set permissions
-      await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/roles/' + encodeURIComponent(roleName) + '/permissions', {
-        method: 'PUT', headers: authHeaders(), body: JSON.stringify({ permissions })
-      });
       setButtonLoading(btn, false);
       bootstrap.Modal.getInstance(document.getElementById('createRoleModal')).hide();
-      showToast(`Rol "${displayName}" creado con permisos configurados`, 'success');
+      showToast(`Rol "${displayName}" (${roleType === 'system_role' ? 'Sistema' : 'Cliente'}) creado`, 'success');
       await loadAdminRoles(true);
       renderRolesList();
     } catch(e) {
@@ -5424,8 +5525,6 @@ document.addEventListener('DOMContentLoaded', () => {
       loadActivationEligibility();
       loadPartnerPayments();
       refreshVoucherPricingPreview();
-    } else {
-      show(sHome);
     }
   } else {
     showLoginScreen();
