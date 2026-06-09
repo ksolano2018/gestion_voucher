@@ -148,6 +148,17 @@ app.post('/webservice/rest/server.php', (req, res) => {
     });
   }
 
+  // ── core_course_get_courses ────────────────────────────────────────────────
+  if (wsfunction === 'core_course_get_courses') {
+    log('core_course_get_courses → returning mock courses');
+    return res.json([
+      { id: 1, shortname: 'SITE',   fullname: 'Site', summary: '', visible: 0 },
+      { id: 2, shortname: 'JAVA-01', fullname: 'Certificación Java Developer',             summary: 'Curso de Java',  visible: 1 },
+      { id: 3, shortname: 'AWS-01',  fullname: 'Certificación AWS Solutions Architect',    summary: '',               visible: 1 },
+      { id: 4, shortname: 'PMP-01',  fullname: 'Certificación PMP Project Management',     summary: '',               visible: 1 }
+    ]);
+  }
+
   log(`wsfunction desconocida: ${wsfunction}`);
   res.status(400).json({ exception: 'invalid_parameter_exception', errorcode: 'invalidfunction', message: `Unknown wsfunction: ${wsfunction}` });
 });

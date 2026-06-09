@@ -104,16 +104,16 @@ services:
       timeout: 5s
       retries: 10
 
-  # Moodle LMS local (acceso: http://localhost:8090  admin/Admin1234!)
+  # Moodle LMS local (acceso: http://localhost:8095  admin/Admin1234!)
   # Solo arranca con: docker compose --profile local-moodle up -d
   moodle:
     image: erseco/alpine-moodle
     container_name: moodle
     profiles: [local-moodle]
     ports:
-      - "8090:8080"
+      - "8095:8080"
     environment:
-      - SITE_URL=http://localhost:8090
+      - SITE_URL=http://localhost:8095
       - DB_TYPE=mariadb
       - DB_HOST=moodle-db
       - DB_PORT=3306

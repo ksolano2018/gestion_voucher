@@ -333,6 +333,83 @@ async function testConnection() {
   }
 }
 
+/**
+ * Get quizzes in a course.
+ * Returns { quizzes: [{ id, coursemodule, name, gradepass }] } or { error }.
+ */
+async function getCourseQuizzes(moodleCourseId) {
+  if (MOODLE_MOCK) {
+    return { quizzes: [] };
+  }
+  try {
+    const result = await moodleRequest('mod_quiz_get_quizzes_by_courses', {
+      'courseids[0]': moodleCourseId
+    });
+    const quizzes = (result && result.quizzes) || (Array.isArray(result) ? result : []);
+    return {
+      quizzes: quizzes.map(q => ({
+        id:           q.id,
+        coursemodule: q.coursemodule,
+        name:         q.name,
+        gradepass:    parseFloat(q.gradepass || 0)
+      }))
+    };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+/**
+ * Get the best quiz grade for a user.
+ * Returns { hasgrade, grade, passed } or { error }.
+ * gradepass is the minimum passing grade (0-100 scale).
+ */
+async function getUserQuizBestGrade(moodleUserId, quizCourseModuleId, gradepass = 60) {
+  if (MOODLE_MOCK) {
+    return { hasgrade: false, grade: 0, passed: false };
+  }
+  try {
+    const result = await moodleRequest('mod_quiz_get_user_best_grade', {
+      quizid: quizCourseModuleId,
+      userid: moodleUserId
+    });
+    const hasgrade = Boolean(result && result.hasgrade);
+    const grade    = hasgrade ? parseFloat(result.grade || 0) : 0;
+    const maxgrade = hasgrade ? parseFloat(result.grademax || 100) : 100;
+    const pct      = maxgrade > 0 ? (grade / maxgrade) * 100 : 0;
+    return { hasgrade, grade: pct, passed: hasgrade && pct >= gradepass };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+/**
+ * Get activity completion status for a user in a course.
+ * Returns { activities: [{ cmid, modname, state }] } or { error }.
+ * state: 0=incomplete, 1=complete, 2=complete-pass, 3=complete-fail
+ */
+async function getActivitiesCompletion(moodleUserId, moodleCourseId) {
+  if (MOODLE_MOCK) {
+    return { activities: [] };
+  }
+  try {
+    const result = await moodleRequest('core_completion_get_activities_completion_status', {
+      courseid: moodleCourseId,
+      userid:   moodleUserId
+    });
+    const statuses = (result && result.statuses) || [];
+    return {
+      activities: statuses.map(s => ({
+        cmid:    s.cmid,
+        modname: s.modname,
+        state:   s.state  // 0=incomplete, 1=complete, 2=complete-pass, 3=complete-fail
+      }))
+    };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
 function isMockMode() {
   return MOODLE_MOCK;
 }
@@ -343,6 +420,9 @@ module.exports = {
   createUser,
   enrollUserInCourse,
   getCourseCompletionStatus,
+  getCourseQuizzes,
+  getUserQuizBestGrade,
+  getActivitiesCompletion,
   getCourses,
   testConnection,
   isMockMode

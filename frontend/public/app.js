@@ -2739,6 +2739,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const title = dateStr ? `Completado el ${dateStr}` : 'Certificación completada';
       return `<span class="badge bg-primary" title="${escapeHTML(title)}" style="cursor:default;">🎓 Completado</span>${dateStr ? `<div class="small text-muted mt-1">${dateStr}</div>` : ''}`;
     }
+    if(ms === 'COURSE_COMPLETED') return '<span class="badge bg-info text-white">📖 Curso Completado</span>';
     if(ms === 'ENROLLED') return '<span class="badge bg-success">✓ Matriculado</span>';
     if(ms === 'MOCKED')   return '<span class="badge bg-info text-white">Simulado</span>';
     if(ms === 'FAILED')   return `<span class="badge bg-danger" title="${escapeHTML(moodleError||'')}" style="cursor:help;">✗ Error</span>`;
@@ -2907,12 +2908,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const orig = btn.innerHTML;
     btn.innerHTML = '⏳ Sincronizando...';
     try {
-      const force = btn.dataset.force === 'true';
-      const url   = apiUrl.replace(':8080', ':8081') + '/admin/moodle/sync-completions' + (force ? '?force=true' : '');
+      // El sync manual siempre fuerza (ignora ventana de 4 h) para reflejar cambios inmediatos
+      const url   = apiUrl.replace(':8080', ':8081') + '/admin/moodle/sync-completions?force=true';
       const r = await safeFetch(url, { method: 'POST', headers: authHeaders() });
       const d = await safeJson(r);
       if(r.ok && d.ok) {
-        showToast(`Sync completado — revisados: ${d.checked}, completados: ${d.completed}, errores: ${d.errors}`, 'success');
+        showToast(`Sync completado — revisados: ${d.checked}, curso completado: ${d.course_completed ?? 0}, aprobados: ${d.completed}, errores: ${d.errors}`, 'success');
         loadAdminActivaciones(_adminActPage);
       } else {
         showToast(d.error || 'Error en sync', 'danger');
@@ -4485,6 +4486,7 @@ document.addEventListener('DOMContentLoaded', () => {
             : '';
           moodleBadge = `<span class="badge bg-primary" title="${dateStr ? 'Completado el ' + dateStr : 'Certificación completada'}">🎓 Completado</span>${dateStr ? `<div class="small text-muted mt-1">${dateStr}</div>` : ''}`;
         }
+        else if(ms === 'COURSE_COMPLETED') moodleBadge = '<span class="badge bg-info text-white">📖 Curso Completado</span>';
         else if(ms === 'ENROLLED')  moodleBadge = '<span class="badge bg-success">✓ Acceso activado</span>';
         else if(ms === 'MOCKED')    moodleBadge = '<span class="badge bg-info text-white">Simulado</span>';
         else if(ms === 'FAILED')    moodleBadge = `<span class="badge bg-danger" title="${escapeHTML(v.moodle_error||'')}">✗ Error</span>`;

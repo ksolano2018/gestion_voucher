@@ -46,8 +46,8 @@ const allowedOrigins = process.env.NODE_ENV === 'production'
   : ['http://localhost:3000', 'http://localhost:8080'];
 
 app.use((req, res, next) => {
-  // Skip CORS for Stripe webhook (comes from Stripe servers, not browsers)
-  if (req.originalUrl === '/webhook/stripe') {
+  // Skip CORS for server-to-server webhooks (Stripe, Moodle)
+  if (req.originalUrl === '/webhook/stripe' || req.originalUrl.startsWith('/webhook/moodle/')) {
     return next();
   }
   
@@ -2789,6 +2789,72 @@ app.get('/partner/:id/transaction-events', authenticate, apiLimiter, async (req,
   }
 });
 
+// ── Moodle webhook: receptor de eventos push de cursos ───────────────────────
+// Moodle llama este endpoint cuando crea, actualiza o elimina un curso.
+// Requiere configurar el plugin "local_webhooks" en Moodle y definir
+// MOODLE_WEBHOOK_SECRET en el .env (token Bearer que Moodle enviará en el header).
+app.post('/webhook/moodle/course-event', async (req, res) => {
+  const secret = process.env.MOODLE_WEBHOOK_SECRET;
+  const auth   = req.headers['authorization'];
+
+  if (secret) {
+    if (!auth || auth !== `Bearer ${secret}`) {
+      console.warn('⚠️ [MOODLE WEBHOOK] Token inválido o ausente');
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+  } else if (process.env.NODE_ENV === 'production') {
+    console.error('❌ [MOODLE WEBHOOK] MOODLE_WEBHOOK_SECRET no configurado en producción. Webhook rechazado.');
+    return res.status(500).json({ error: 'Webhook configuration error' });
+  } else {
+    console.warn('⚠️ [MOODLE WEBHOOK] MOODLE_WEBHOOK_SECRET no configurado (dev — verificación omitida)');
+  }
+
+  const { event } = req.body || {};
+  const eventStr  = typeof event === 'string' ? event : '';
+  console.log(`📨 [MOODLE WEBHOOK] Evento recibido: ${eventStr}`);
+
+  // Eventos de curso soportados (notación Moodle con namespace o simplificada)
+  const isCourseEvent = [
+    'course_created', 'course_updated', 'course_deleted',
+    '\\core\\event\\course_created', '\\core\\event\\course_updated', '\\core\\event\\course_deleted'
+  ].includes(eventStr);
+
+  if (!isCourseEvent) {
+    return res.json({ ok: true, action: 'ignored', event: eventStr });
+  }
+
+  // Re-sincroniza todos los cursos desde Moodle para reflejar el cambio
+  try {
+    const syncResult = await syncMoodleCourses();
+    if (!syncResult.ok) {
+      console.error(`❌ [MOODLE WEBHOOK] Sync falló: ${syncResult.error}`);
+      return res.status(502).json({ ok: false, error: syncResult.error });
+    }
+
+    console.log(`✓ [MOODLE WEBHOOK] Sync post-evento: +${syncResult.created.length} nuevas, ~${syncResult.updated.length} actualizadas, -${syncResult.deactivated.length} desactivadas`);
+
+    // Audit log (non-fatal)
+    logSystemEvent(
+      'MOODLE_WEBHOOK_COURSE_SYNC', 'MOODLE', null, null, null,
+      { event: eventStr, created: syncResult.created.length, updated: syncResult.updated.length, deactivated: syncResult.deactivated.length },
+      'SUCCESS', null, req
+    ).catch(() => {});
+
+    return res.json({
+      ok:          true,
+      action:      'synced',
+      event:       eventStr,
+      created:     syncResult.created.length,
+      updated:     syncResult.updated.length,
+      deactivated: syncResult.deactivated.length
+    });
+  } catch (e) {
+    console.error('❌ [MOODLE WEBHOOK] Error inesperado:', e.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Stripe webhook simulation (for testing without real Stripe): update purchase status
 app.post('/stripe/webhook', async (req,res)=>{
   const { purchase_id, status } = req.body; // status: PAID or FAILED
@@ -3726,10 +3792,9 @@ app.get('/admin/purchases/:id',
  * Safe to call concurrently — uses moodle_completion_synced_at to avoid hammering.
  */
 async function syncMoodleCompletions({ force = false } = {}) {
-  const result = { checked: 0, completed: 0, errors: 0, skipped: 0 };
+  const result = { checked: 0, course_completed: 0, completed: 0, errors: 0, skipped: 0 };
 
-  // Fetch all ENROLLED activations that have a moodle_user_id and moodle_course_id
-  // If force=false, skip those synced in the last 4 hours
+  // Chequea activaciones ENROLLED y COURSE_COMPLETED (ambas pendientes de avanzar)
   const minInterval = force ? null : new Date(Date.now() - 4 * 60 * 60 * 1000);
   const params = [];
   let whereExtra = '';
@@ -3739,10 +3804,10 @@ async function syncMoodleCompletions({ force = false } = {}) {
   }
 
   const rows = await pool.query(
-    `SELECT a.id, a.moodle_user_id, c.moodle_course_id
+    `SELECT a.id, a.moodle_user_id, a.moodle_status, c.moodle_course_id
      FROM activations a
      JOIN courses c ON c.id = a.course_id
-     WHERE a.moodle_status = 'ENROLLED'
+     WHERE a.moodle_status IN ('ENROLLED', 'COURSE_COMPLETED')
        AND a.moodle_user_id IS NOT NULL
        AND c.moodle_course_id IS NOT NULL
        ${whereExtra}
@@ -3752,41 +3817,69 @@ async function syncMoodleCompletions({ force = false } = {}) {
 
   for (const act of rows.rows) {
     result.checked++;
-    const compResult = await moodleService.getCourseCompletionStatus(
-      act.moodle_user_id,
-      act.moodle_course_id
-    );
 
-    if (compResult.error) {
-      result.errors++;
-      // Solo actualiza la marca de sincronización para no reintentar enseguida
-      await pool.query(
-        `UPDATE activations SET moodle_completion_synced_at=NOW() WHERE id=$1`,
-        [act.id]
+    // ── Nivel 2: ¿aprobó el quiz? → COMPLETED ──────────────────────────────
+    // Busca el quiz del curso en Moodle para obtener su ID
+    const quizResult = await moodleService.getCourseQuizzes(act.moodle_course_id);
+    if (!quizResult.error && quizResult.quizzes.length > 0) {
+      const quiz      = quizResult.quizzes[0];
+      const gradeResult = await moodleService.getUserQuizBestGrade(
+        act.moodle_user_id, quiz.id, 60
       );
-      continue;
+
+      if (gradeResult.error) {
+        result.errors++;
+        await pool.query(`UPDATE activations SET moodle_completion_synced_at=NOW() WHERE id=$1`, [act.id]);
+        continue;
+      }
+
+      if (gradeResult.passed) {
+        result.completed++;
+        await pool.query(
+          `UPDATE activations
+           SET moodle_status='COMPLETED',
+               moodle_completed_at=NOW(),
+               moodle_completion_synced_at=NOW()
+           WHERE id=$1`,
+          [act.id]
+        );
+        continue;
+      }
     }
 
-    if (compResult.completed) {
-      result.completed++;
-      const completedAt = compResult.timecompleted
-        ? new Date(compResult.timecompleted * 1000)
-        : new Date();
-      await pool.query(
-        `UPDATE activations
-         SET moodle_status='COMPLETED',
-             moodle_completed_at=$1,
-             moodle_completion_synced_at=NOW()
-         WHERE id=$2`,
-        [completedAt, act.id]
+    // ── Nivel 1: ¿vio el contenido del curso? → COURSE_COMPLETED ───────────
+    if (act.moodle_status === 'ENROLLED') {
+      const activitiesResult = await moodleService.getActivitiesCompletion(
+        act.moodle_user_id, act.moodle_course_id
       );
-    } else {
-      result.skipped++;
-      await pool.query(
-        `UPDATE activations SET moodle_completion_synced_at=NOW() WHERE id=$1`,
-        [act.id]
+
+      if (activitiesResult.error) {
+        result.errors++;
+        await pool.query(`UPDATE activations SET moodle_completion_synced_at=NOW() WHERE id=$1`, [act.id]);
+        continue;
+      }
+
+      // Busca si alguna actividad tipo 'page' está completada (state >= 1)
+      const pageCompleted = activitiesResult.activities.some(
+        a => a.modname === 'page' && a.state >= 1
       );
+
+      if (pageCompleted) {
+        result.course_completed++;
+        await pool.query(
+          `UPDATE activations
+           SET moodle_status='COURSE_COMPLETED',
+               moodle_completion_synced_at=NOW()
+           WHERE id=$1`,
+          [act.id]
+        );
+        continue;
+      }
     }
+
+    // Sin cambio aún
+    result.skipped++;
+    await pool.query(`UPDATE activations SET moodle_completion_synced_at=NOW() WHERE id=$1`, [act.id]);
   }
 
   return result;
