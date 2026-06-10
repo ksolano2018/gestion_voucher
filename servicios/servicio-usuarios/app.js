@@ -1009,7 +1009,8 @@ async function initDb(){
       id SERIAL PRIMARY KEY,
       name VARCHAR(200) NOT NULL,
       active BOOLEAN DEFAULT TRUE,
-      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 
     CREATE TABLE IF NOT EXISTS activations (
@@ -1111,6 +1112,7 @@ async function initDb(){
     ALTER TABLE purchases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS moodle_course_id INTEGER;
+    ALTER TABLE courses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
     ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS course_id INTEGER;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS course_id INTEGER;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS final_client VARCHAR(200);
@@ -2936,7 +2938,7 @@ app.get('/partner/:id/vouchers', authenticate, async (req,res)=>{
 // Admin: courses CRUD
 app.get('/admin/courses', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, COALESCE(active, TRUE) AS active, created_at FROM courses ORDER BY name ASC');
+    const result = await pool.query('SELECT id, name, COALESCE(active, TRUE) AS active, created_at, updated_at FROM courses ORDER BY name ASC');
     res.json(result.rows);
   } catch (e) {
     res.status(500).json({ error: 'Error al obtener cursos' });
@@ -2990,7 +2992,7 @@ app.put('/admin/courses/:id',
       }
 
       const updated = await pool.query(
-        'UPDATE courses SET name=$1 WHERE id=$2 RETURNING id, name, COALESCE(active, TRUE) AS active, created_at',
+        'UPDATE courses SET name=$1, updated_at=NOW() WHERE id=$2 RETURNING id, name, COALESCE(active, TRUE) AS active, created_at, updated_at',
         [name, courseId]
       );
 
@@ -3022,7 +3024,7 @@ app.patch('/admin/courses/:id/status',
     const active = req.body.active === true || req.body.active === 'true';
     try {
       const updated = await pool.query(
-        'UPDATE courses SET active=$1 WHERE id=$2 RETURNING id, name, COALESCE(active, TRUE) AS active, created_at',
+        'UPDATE courses SET active=$1, updated_at=NOW() WHERE id=$2 RETURNING id, name, COALESCE(active, TRUE) AS active, created_at, updated_at',
         [active, courseId]
       );
 
@@ -3988,7 +3990,7 @@ async function syncMoodleCourses() {
       const nameChanged   = row.name !== name;
       const needsActivate = !row.active;
       if (nameChanged || needsActivate) {
-        await pool.query('UPDATE courses SET name=$1, active=TRUE WHERE moodle_course_id=$2', [name, mc.id]);
+        await pool.query('UPDATE courses SET name=$1, active=TRUE, updated_at=NOW() WHERE moodle_course_id=$2', [name, mc.id]);
         updated.push({ moodle_id: mc.id, name, reactivated: needsActivate });
       } else {
         skipped.push({ moodle_id: mc.id, reason: 'unchanged' });
@@ -4009,7 +4011,7 @@ async function syncMoodleCourses() {
   );
   for (const c of linkedCourses.rows) {
     if (!activeMoodleIds.has(c.moodle_course_id)) {
-      await pool.query('UPDATE courses SET active=FALSE WHERE id=$1', [c.id]);
+      await pool.query('UPDATE courses SET active=FALSE, updated_at=NOW() WHERE id=$1', [c.id]);
       deactivated.push({ id: c.id, moodle_id: c.moodle_course_id, name: c.name });
     }
   }

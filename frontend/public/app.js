@@ -856,7 +856,10 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const pricing = await fetchPartnerPricingPreview(qty);
       if(previewEl){
-        previewEl.textContent = `Total: $${parseFloat(pricing.total_price || 0).toFixed(2)}`;
+        const sourceBadge = pricing.pricing_source === 'SPECIAL'
+          ? '<span class="badge bg-warning text-dark ms-2" style="font-size:0.7rem;">Precio especial</span>'
+          : '<span class="badge bg-secondary ms-2" style="font-size:0.7rem;">Categoría base</span>';
+        previewEl.innerHTML = `Total: $${parseFloat(pricing.total_price || 0).toFixed(2)}${sourceBadge}`;
       }
       if(cartNoteEl){
         cartNoteEl.textContent = pricing.cumulative_message || pricing.breakdown_message || '';
@@ -1065,8 +1068,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const editorSelect = el('pricing-profile-editor-select');
     if(editorSelect){
-      editorSelect.innerHTML = '<option value="">Selecciona un perfil</option>' +
-        profiles.map(profile => `<option value="${profile.id}">${escapeHTML(profile.name)} (${escapeHTML(profile.profile_type)})</option>`).join('');
+      const specialOpts = specials.map(p => `<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('');
+      editorSelect.innerHTML = specials.length
+        ? '<option value="">Selecciona un perfil especial</option>' + specialOpts
+        : '<option value="">Sin perfiles especiales</option>';
+    }
+
+    // Sección A: selector de categorías base
+    const baseEditorSelect = el('pricing-base-editor-select');
+    if(baseEditorSelect){
+      baseEditorSelect.innerHTML = categories.length
+        ? '<option value="">Selecciona categoría base</option>' + categories.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('')
+        : '<option value="">Sin categorías base</option>';
     }
   }
 
@@ -1102,12 +1115,45 @@ document.addEventListener('DOMContentLoaded', () => {
   function loadPricingProfileIntoEditor(profileId){
     const profile = pricingState.profiles.find(item => String(item.id) === String(profileId));
     if(!profile) return;
-
-    if(el('pricing-profile-name')) el('pricing-profile-name').value = profile.name || '';
-    if(el('pricing-profile-code')) el('pricing-profile-code').value = profile.code || '';
+    if(el('pricing-profile-name'))        el('pricing-profile-name').value        = profile.name        || '';
     if(el('pricing-profile-description')) el('pricing-profile-description').value = profile.description || '';
-    if(el('pricing-profile-active')) el('pricing-profile-active').value = profile.active === false ? 'false' : 'true';
     renderPricingRulesEditor(profile.rules || []);
+  }
+
+  function renderBasePricingRulesEditor(rules){
+    const tbody = el('pricing-base-rules-body');
+    if(!tbody) return;
+    const rows = Array.isArray(rules) && rules.length > 0 ? rules : [{ min_qty: 1, max_qty: '', unit_price: '' }];
+    tbody.innerHTML = rows.map(rule => `
+      <tr>
+        <td><input type="number" min="1" class="form-control base-rule-min" value="${escapeHTML(String(rule.min_qty ?? 1))}"></td>
+        <td><input type="number" min="1" class="form-control base-rule-max" value="${rule.max_qty === null || rule.max_qty === undefined ? '' : escapeHTML(String(rule.max_qty))}" placeholder="Sin límite"></td>
+        <td><input type="number" min="0.01" step="0.01" class="form-control base-rule-price" value="${escapeHTML(String(rule.unit_price ?? ''))}"></td>
+        <td><button type="button" class="btn btn-sm btn-outline-danger remove-base-rule">Eliminar</button></td>
+      </tr>
+    `).join('');
+    tbody.querySelectorAll('.remove-base-rule').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const row = btn.closest('tr');
+        if(row && tbody.children.length > 1) row.remove();
+      });
+    });
+  }
+
+  function getBasePricingRulesFromEditor(){
+    return Array.from(document.querySelectorAll('#pricing-base-rules-body tr')).map(row => ({
+      min_qty:    parseInt(row.querySelector('.base-rule-min').value   || '0',   10),
+      max_qty:    row.querySelector('.base-rule-max').value === '' ? null : parseInt(row.querySelector('.base-rule-max').value || '0', 10),
+      unit_price: parseFloat(row.querySelector('.base-rule-price').value || '0')
+    }));
+  }
+
+  function loadBasePricingProfileIntoEditor(profileId){
+    const profile = pricingState.profiles.find(item => String(item.id) === String(profileId));
+    if(!profile) return;
+    if(el('pricing-base-profile-name'))        el('pricing-base-profile-name').value        = profile.name        || '';
+    if(el('pricing-base-profile-description')) el('pricing-base-profile-description').value = profile.description || '';
+    renderBasePricingRulesEditor(profile.rules || []);
   }
 
   async function fetchPricingProfiles(){
@@ -1168,17 +1214,80 @@ document.addEventListener('DOMContentLoaded', () => {
       populatePricingProfileSelectors();
       populatePricingPartnerSelect();
 
+      const specials    = pricingState.profiles.filter(p => p.profile_type === 'SPECIAL');
+      const categories  = pricingState.profiles.filter(p => p.profile_type === 'CATEGORY');
+
+      // Auto-seleccionar primera categoría base
+      const selectedBase = (el('pricing-base-editor-select') || {}).value;
+      if(selectedBase){
+        loadBasePricingProfileIntoEditor(selectedBase);
+      } else if(categories.length > 0 && el('pricing-base-editor-select')){
+        el('pricing-base-editor-select').value = categories[0].id;
+        loadBasePricingProfileIntoEditor(categories[0].id);
+      }
+
+      // Auto-seleccionar primer perfil especial
       const selectedProfile = (el('pricing-profile-editor-select') || {}).value;
       if(selectedProfile){
         loadPricingProfileIntoEditor(selectedProfile);
-      } else if(pricingState.profiles.length > 0 && el('pricing-profile-editor-select')){
-        el('pricing-profile-editor-select').value = pricingState.profiles[0].id;
-        loadPricingProfileIntoEditor(pricingState.profiles[0].id);
+      } else if(specials.length > 0 && el('pricing-profile-editor-select')){
+        el('pricing-profile-editor-select').value = specials[0].id;
+        loadPricingProfileIntoEditor(specials[0].id);
       }
     } catch (e) {
       showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger');
     }
   }
+
+  on('pricing-base-editor-select', 'change', (event) => {
+    clearInlineAlert('pricing-base-message');
+    loadBasePricingProfileIntoEditor(event.target.value);
+  });
+
+  on('add-pricing-base-rule-row', 'click', () => {
+    const tbody = el('pricing-base-rules-body');
+    if(!tbody) return;
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td><input type="number" min="1" class="form-control base-rule-min" value="1"></td>
+      <td><input type="number" min="1" class="form-control base-rule-max" placeholder="Sin límite"></td>
+      <td><input type="number" min="0.01" step="0.01" class="form-control base-rule-price"></td>
+      <td><button type="button" class="btn btn-sm btn-outline-danger remove-base-rule">Eliminar</button></td>
+    `;
+    row.querySelector('.remove-base-rule').addEventListener('click', () => {
+      if(tbody.children.length > 1) row.remove();
+    });
+    tbody.appendChild(row);
+  });
+
+  on('save-pricing-base-profile', 'click', async () => {
+    const profileId   = (el('pricing-base-editor-select') || {}).value;
+    const profileName = (el('pricing-base-profile-name') || {}).value || '';
+    const rules       = getBasePricingRulesFromEditor();
+    if(!profileId){
+      showInlineAlert('pricing-base-message', 'Selecciona una categoría base para editar.', 'danger');
+      return;
+    }
+    try {
+      const resp = await safeFetch(
+        apiUrl.replace(':8080', ':8081') + '/admin/pricing/profiles/' + encodeURIComponent(profileId),
+        {
+          method: 'PUT', headers: authHeaders(),
+          body: JSON.stringify({
+            name: profileName,
+            description: (el('pricing-base-profile-description') || {}).value || '',
+            rules
+          })
+        }
+      );
+      const data = await resp.json();
+      if(!resp.ok) throw new Error(data.error || 'No se pudo guardar la categoría base');
+      showToast('Reglas de categoría base guardadas correctamente', 'success');
+      showInlineAlert('pricing-base-message', 'Reglas guardadas correctamente.', 'success');
+      await loadAdminPricingData();
+      if(el('pricing-base-editor-select')){ el('pricing-base-editor-select').value = profileId; loadBasePricingProfileIntoEditor(profileId); }
+    } catch(e) { showInlineAlert('pricing-base-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
+  });
 
   on('pricing-profile-editor-select', 'change', (event) => {
     clearInlineAlert('pricing-profile-message');
@@ -1202,23 +1311,21 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   on('create-special-profile', 'click', async () => {
-    const name = (el('special-profile-name') || {}).value || '';
-    const code = (el('special-profile-code') || {}).value || '';
+    const name        = (el('special-profile-name')        || {}).value || '';
     const description = (el('special-profile-description') || {}).value || '';
 
     try {
       const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/pricing/profiles', {
         method: 'POST',
         headers: authHeaders(),
-        body: JSON.stringify({ name, code, description, profile_type: 'SPECIAL' })
+        body: JSON.stringify({ name, description, profile_type: 'SPECIAL' })
       });
       const data = await resp.json();
       if(!resp.ok) throw new Error(data.error || 'No se pudo crear el perfil especial');
 
       showToast('Perfil especial creado correctamente', 'success');
       showInlineAlert('special-profile-message', 'Perfil especial creado correctamente.', 'success');
-      if(el('special-profile-name')) el('special-profile-name').value = '';
-      if(el('special-profile-code')) el('special-profile-code').value = '';
+      if(el('special-profile-name'))        el('special-profile-name').value = '';
       if(el('special-profile-description')) el('special-profile-description').value = '';
       await loadAdminPricingData();
       if(el('pricing-profile-editor-select')) {
@@ -1253,7 +1360,6 @@ document.addEventListener('DOMContentLoaded', () => {
             body: JSON.stringify({
               name: profileName,
               description: (el('pricing-profile-description') || {}).value || '',
-              active: ((el('pricing-profile-active') || {}).value || 'true') === 'true',
               rules
             })
           });
@@ -1352,7 +1458,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     tbody.innerHTML = _adminCourses.map(course => {
-      const createdAt = course.created_at ? new Date(course.created_at).toLocaleDateString('es-ES') : '-';
+      const createdAt  = course.created_at  ? new Date(course.created_at).toLocaleDateString('es-ES')  : '-';
+      const updatedAt  = course.updated_at  ? new Date(course.updated_at).toLocaleDateString('es-ES')  : '-';
       const isActive = course.active !== false;
       const statusBadge = isActive
         ? '<span class="badge bg-success">Habilitado</span>'
@@ -1362,13 +1469,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${escapeHTML(course.name || '')}</td>
         <td>${statusBadge}</td>
         <td>${escapeHTML(createdAt)}</td>
-        <td>
-          <div class="d-flex gap-2 flex-wrap">
-            <button class="btn btn-sm btn-outline-primary admin-course-edit-btn" data-id="${escapeHTML(String(course.id))}">✏️ Editar</button>
-            <button class="btn btn-sm ${isActive ? 'btn-outline-warning' : 'btn-outline-success'} admin-course-toggle-btn" data-id="${escapeHTML(String(course.id))}">${isActive ? '⛔ Deshabilitar' : '✅ Habilitar'}</button>
-            <button class="btn btn-sm btn-outline-danger admin-course-delete-btn" data-id="${escapeHTML(String(course.id))}">🗑️ Eliminar</button>
-          </div>
-        </td>
+        <td>${escapeHTML(updatedAt)}</td>
       </tr>`;
     }).join('');
 
@@ -3460,6 +3561,11 @@ document.addEventListener('DOMContentLoaded', () => {
       setButtonLoading(btn, false);
       if(msgEl) msgEl.innerHTML = `<div class="alert alert-danger py-2">${escapeHTML(e.message)}</div>`;
     }
+  });
+
+  on('admin-user-role', 'change', () => {
+    const note = el('new-user-partner-pricing-note');
+    if (note) note.style.display = (el('admin-user-role') || {}).value === 'partner' ? '' : 'none';
   });
 
   on('create-user', 'click', async () => {

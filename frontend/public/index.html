@@ -328,7 +328,7 @@
         align-items: center;
         gap: 0.25rem;
         flex: 1;
-        justify-content: center;
+        justify-content: flex-start;
       }
 
       .header-actions {
@@ -1668,6 +1668,31 @@
       .modal-title { font-weight: 700; font-size: 1.05rem; }
       .modal-footer { border-top: 1px solid var(--border); }
 
+      /* ===== POWERED BY FOOTER ===== */
+      .powered-by-footer {
+        position: fixed;
+        bottom: 0;
+        left: 0;
+        right: 0;
+        text-align: center;
+        padding: 0.4rem 0;
+        background: rgba(10,20,35,0.55);
+        backdrop-filter: blur(8px);
+        color: rgba(255,255,255,0.45);
+        font-size: 0.68rem;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        font-weight: 500;
+        user-select: none;
+        pointer-events: none;
+        z-index: 9999;
+      }
+
+      .powered-by-footer span {
+        color: #0d7070;
+        font-weight: 700;
+      }
+
       /* ===== SIDEBAR-MENU (legacy) ===== */
       .sidebar-menu { display: flex; flex-direction: column; gap: 0.5rem; }
 
@@ -2183,10 +2208,6 @@
       <!-- Modern Header Navigation -->
       <header class="modern-header">
         <div class="header-container">
-          <div style="display:flex;align-items:center;gap:1rem;">
-            <img class="header-logo" src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" onerror="this.style.display='none';this.nextElementSibling.style.display='block';" />
-            <span style="display:none;font-size:1.5rem;font-weight:800;background:linear-gradient(135deg, var(--primary), var(--accent));-webkit-background-clip:text;-webkit-text-fill-color:transparent;">CertJOIN</span>
-          </div>
 
           <nav class="header-nav">
             <button id="nav-admin" class="nav-btn" style="display:none;">⚙️ Administración</button>
@@ -2524,15 +2545,11 @@
                       <h6 class="mb-3">Crear Perfil Especial</h6>
                       <div id="special-profile-message"></div>
                       <div class="row g-3 align-items-end">
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                           <label class="form-label">Nombre</label>
                           <input id="special-profile-name" class="form-control" placeholder="Ej: Mayorista Q4">
                         </div>
-                        <div class="col-md-4">
-                          <label class="form-label">Código (opcional)</label>
-                          <input id="special-profile-code" class="form-control" placeholder="mayorista_q4">
-                        </div>
-                        <div class="col-md-4">
+                        <div class="col-md-6">
                           <label class="form-label">Descripción</label>
                           <input id="special-profile-description" class="form-control" placeholder="Condición especial temporal">
                         </div>
@@ -2543,38 +2560,71 @@
                     </div>
                   </div>
 
+                  <!-- SECCIÓN A: Categorías Base (editables) -->
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <div class="d-flex align-items-center gap-2 mb-3">
+                        <h6 class="mb-0">Categorías Base</h6>
+                        <span class="badge bg-secondary">Base</span>
+                      </div>
+                      <div id="pricing-base-message"></div>
+                      <div class="row g-3 align-items-end mb-3">
+                        <div class="col-md-6">
+                          <label class="form-label">Categoría</label>
+                          <select id="pricing-base-editor-select" class="form-control">
+                            <option value="">Selecciona categoría base</option>
+                          </select>
+                        </div>
+                        <div class="col-md-6">
+                          <label class="form-label">Nombre</label>
+                          <input id="pricing-base-profile-name" class="form-control" readonly>
+                        </div>
+                        <div class="col-12">
+                          <label class="form-label">Descripción</label>
+                          <input id="pricing-base-profile-description" class="form-control" placeholder="Describe esta categoría base">
+                        </div>
+                      </div>
+                      <div class="table-responsive">
+                        <table class="table table-sm table-hover">
+                          <thead>
+                            <tr>
+                              <th>Mín. cantidad</th>
+                              <th>Máx. cantidad</th>
+                              <th>Precio unitario</th>
+                              <th>Acción</th>
+                            </tr>
+                          </thead>
+                          <tbody id="pricing-base-rules-body"></tbody>
+                        </table>
+                      </div>
+                      <div class="d-flex gap-2 mt-3">
+                        <button id="add-pricing-base-rule-row" class="btn btn-outline-secondary">Agregar tramo</button>
+                        <button id="save-pricing-base-profile" class="btn btn-primary">Guardar reglas</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- SECCIÓN B: Perfiles Especiales (editables) -->
                   <div class="card shadow-sm">
                     <div class="card-body">
-                      <h6 class="mb-3">Reglas por Perfil</h6>
+                      <h6 class="mb-3">Reglas por Perfil Especial</h6>
                       <div id="pricing-profile-message"></div>
                       <div class="row g-3 align-items-end mb-3">
-                        <div class="col-md-3">
-                          <label class="form-label">Perfil</label>
+                        <div class="col-md-6">
+                          <label class="form-label">Perfil especial</label>
                           <select id="pricing-profile-editor-select" class="form-control">
-                            <option value="">Selecciona un perfil</option>
+                            <option value="">Selecciona un perfil especial</option>
                           </select>
                         </div>
-                        <div class="col-md-3">
+                        <div class="col-md-6">
                           <label class="form-label">Nombre</label>
                           <input id="pricing-profile-name" class="form-control">
-                        </div>
-                        <div class="col-md-3">
-                          <label class="form-label">Código</label>
-                          <input id="pricing-profile-code" class="form-control" readonly>
-                        </div>
-                        <div class="col-md-3">
-                          <label class="form-label">Activo</label>
-                          <select id="pricing-profile-active" class="form-control">
-                            <option value="true">Sí</option>
-                            <option value="false">No</option>
-                          </select>
                         </div>
                         <div class="col-12">
                           <label class="form-label">Descripción</label>
                           <input id="pricing-profile-description" class="form-control" placeholder="Describe cuándo aplica este pricing">
                         </div>
                       </div>
-
                       <div class="table-responsive">
                         <table class="table table-sm table-hover">
                           <thead>
@@ -2588,7 +2638,6 @@
                           <tbody id="pricing-rules-body"></tbody>
                         </table>
                       </div>
-
                       <div class="d-flex gap-2 mt-3">
                         <button id="add-pricing-rule-row" class="btn btn-outline-secondary">Agregar tramo</button>
                         <button id="save-pricing-profile" class="btn btn-primary">Guardar reglas</button>
@@ -2603,7 +2652,7 @@
                       <span style="font-size:2rem;">📚</span>
                       <div>
                         <h4 class="mb-0">Gestión de Certificaciones</h4>
-                        <div class="small-muted">Crea, edita y elimina certificaciones disponibles para activación</div>
+                        <div class="small-muted">Lista de Certificaciones disponibles</div>
                       </div>
                     </div>
                     <div class="d-flex gap-2">
@@ -2631,23 +2680,6 @@
 
                   <div id="admin-courses-message"></div>
 
-                  <div class="card shadow-sm mb-4">
-                    <div class="card-body">
-                      <h6 class="mb-3">Formulario de certificación</h6>
-                      <input type="hidden" id="admin-course-edit-id">
-                      <div class="row g-3 align-items-end">
-                        <div class="col-md-8">
-                          <label class="form-label">Nombre de la certificación</label>
-                          <input id="admin-course-name" class="form-control" maxlength="200" placeholder="Ej: Certificación Docker Avanzado">
-                        </div>
-                        <div class="col-md-4 d-flex gap-2">
-                          <button id="admin-course-save" class="btn btn-primary">💾 Guardar</button>
-                          <button id="admin-course-cancel" class="btn btn-outline-secondary" style="display:none;">Cancelar</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
                   <div class="card shadow-sm">
                     <div class="card-body p-0">
                       <div class="table-responsive">
@@ -2658,7 +2690,7 @@
                               <th>Certificación</th>
                               <th>Estado</th>
                               <th>Creado</th>
-                              <th>Acciones</th>
+                              <th>Actualizado</th>
                             </tr>
                           </thead>
                           <tbody id="admin-courses-tbody">
@@ -3959,6 +3991,10 @@
                 <select id="admin-user-role" class="form-control">
                   <option value="user">Usuario</option>
                 </select>
+                <div id="new-user-partner-pricing-note" class="alert alert-info py-2 small mt-2 mb-0" style="display:none;">
+                  Se asignará automáticamente la categoría base <strong>Estándar</strong>.
+                  Para configurar precio especial, usa el módulo <strong>Pricing</strong>.
+                </div>
               </div>
 
               <!-- Separador seguridad -->
@@ -4289,6 +4325,12 @@
         </div>
       </div>
     </div>
+    </div>
+
+    <!-- Powered by watermark — visible en todas las vistas -->
+    <footer class="powered-by-footer">
+      Powered by <span>Orkus</span>
+    </footer>
 
   </body>
 </html>
