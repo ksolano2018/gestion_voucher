@@ -150,36 +150,14 @@ const DEFAULT_CATALOG_COURSES = [
 
 const DEFAULT_PRICING_PROFILES = [
   {
-    code: 'silver',
-    name: 'Silver',
+    code: 'base',
+    name: 'Base',
     profile_type: 'CATEGORY',
-    description: 'Categoría base para partners Silver',
+    description: 'Categoría base para todos los partners',
     rules: [
       { min_qty: 1, max_qty: 5, unit_price: 100.00 },
       { min_qty: 6, max_qty: 20, unit_price: 90.00 },
       { min_qty: 21, max_qty: null, unit_price: 80.00 }
-    ]
-  },
-  {
-    code: 'plate',
-    name: 'Plate',
-    profile_type: 'CATEGORY',
-    description: 'Categoría comercial intermedia para partners Plate',
-    rules: [
-      { min_qty: 1, max_qty: 5, unit_price: 96.00 },
-      { min_qty: 6, max_qty: 20, unit_price: 86.00 },
-      { min_qty: 21, max_qty: null, unit_price: 76.00 }
-    ]
-  },
-  {
-    code: 'gold',
-    name: 'Gold',
-    profile_type: 'CATEGORY',
-    description: 'Categoría premium para partners Gold',
-    rules: [
-      { min_qty: 1, max_qty: 5, unit_price: 92.00 },
-      { min_qty: 6, max_qty: 20, unit_price: 82.00 },
-      { min_qty: 21, max_qty: null, unit_price: 72.00 }
     ]
   }
 ];
@@ -381,11 +359,18 @@ async function ensureDefaultPricingProfilesAndRules() {
     }
   }
 
-  const silverProfile = await pool.query('SELECT id FROM pricing_profiles WHERE code=$1 LIMIT 1', ['silver']);
-  if (silverProfile.rowCount > 0) {
+  // Migration: consolidate old CATEGORY profiles (silver/plate/gold) into single 'base'
+  const baseProfile = await pool.query('SELECT id FROM pricing_profiles WHERE code=$1 LIMIT 1', ['base']);
+  if (baseProfile.rowCount > 0) {
+    const baseId = baseProfile.rows[0].id;
     await pool.query(
-      'UPDATE partners SET pricing_profile_id=$1 WHERE pricing_profile_id IS NULL',
-      [silverProfile.rows[0].id]
+      `UPDATE partners SET pricing_profile_id=$1
+       WHERE pricing_profile_id IN (SELECT id FROM pricing_profiles WHERE code IN ('silver','plate','gold') AND id <> $1)
+          OR pricing_profile_id IS NULL`,
+      [baseId]
+    );
+    await pool.query(
+      `UPDATE pricing_profiles SET active=FALSE WHERE code IN ('silver','plate','gold')`
     );
   }
 }
@@ -448,7 +433,7 @@ async function getPartnerPricingAssignment(partnerId) {
 }
 
 async function getDefaultPricingProfileId() {
-  const result = await pool.query('SELECT id FROM pricing_profiles WHERE code=$1 LIMIT 1', ['silver']);
+  const result = await pool.query('SELECT id FROM pricing_profiles WHERE code=$1 LIMIT 1', ['base']);
   return result.rowCount > 0 ? result.rows[0].id : null;
 }
 
@@ -497,7 +482,7 @@ async function resolvePartnerPricing(partnerId, qty, cumulativeOverride = null) 
   const partner = await getPartnerPricingAssignment(partnerId);
   const defaultSilver = await pool.query(
     'SELECT id, code, name, profile_type FROM pricing_profiles WHERE code=$1 LIMIT 1',
-    ['silver']
+    ['base']
   );
 
   const candidates = [];
@@ -4854,6 +4839,29 @@ app.put('/admin/roles/:name', authenticate, requireRole('admin'), apiLimiter,
     }
   }
 );
+
+app.delete('/admin/roles/:name', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+  const roleName = normalizeRoleName(req.params.name);
+  if (!roleName) return res.status(400).json({ error: 'Rol inválido' });
+
+  try {
+    const existing = await pool.query('SELECT name FROM roles WHERE name=$1', [roleName]);
+    if (existing.rowCount === 0) return res.status(404).json({ error: 'Rol no encontrado' });
+    if (roleName === 'admin') return res.status(400).json({ error: 'No se puede eliminar el rol administrador' });
+
+    const usersWithRole = await pool.query('SELECT COUNT(*) FROM users WHERE role=$1', [roleName]);
+    if (parseInt(usersWithRole.rows[0].count, 10) > 0) {
+      return res.status(400).json({ error: 'No se puede eliminar el rol porque tiene usuarios asignados' });
+    }
+
+    await pool.query('DELETE FROM roles WHERE name=$1', [roleName]);
+    await logSystemEvent('ROLE_DELETED', 'ROLES', req.user.sub, null, null, { role_name: roleName }, 'SUCCESS', null, req);
+    res.json({ message: `Rol "${roleName}" eliminado correctamente` });
+  } catch (e) {
+    console.error('Error al eliminar rol:', e.message);
+    res.status(500).json({ error: 'Error al eliminar rol' });
+  }
+});
 
 app.put('/admin/roles/:name/permissions', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
   const roleName = normalizeRoleName(req.params.name);

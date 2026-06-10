@@ -1051,14 +1051,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function populatePricingProfileSelectors(){
     const profiles = Array.isArray(pricingState.profiles) ? pricingState.profiles : [];
-    const categories = profiles.filter(profile => profile.profile_type === 'CATEGORY');
     const specials = profiles.filter(profile => profile.profile_type === 'SPECIAL');
-
-    const categorySelect = el('partner-category-select');
-    if(categorySelect){
-      categorySelect.innerHTML = '<option value="">Selecciona categoría</option>' +
-        categories.map(profile => `<option value="${profile.id}">${escapeHTML(profile.name)}</option>`).join('');
-    }
 
     const specialSelect = el('partner-special-profile-select');
     if(specialSelect){
@@ -1072,14 +1065,6 @@ document.addEventListener('DOMContentLoaded', () => {
       editorSelect.innerHTML = specials.length
         ? '<option value="">Selecciona un perfil especial</option>' + specialOpts
         : '<option value="">Sin perfiles especiales</option>';
-    }
-
-    // Sección A: selector de categorías base
-    const baseEditorSelect = el('pricing-base-editor-select');
-    if(baseEditorSelect){
-      baseEditorSelect.innerHTML = categories.length
-        ? '<option value="">Selecciona categoría base</option>' + categories.map(c => `<option value="${c.id}">${escapeHTML(c.name)}</option>`).join('')
-        : '<option value="">Sin categorías base</option>';
     }
   }
 
@@ -1176,26 +1161,15 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await resp.json();
       if(!resp.ok) throw new Error(data.error || 'No se pudo cargar configuración del partner');
 
-      if(el('partner-category-select')) el('partner-category-select').value = data.partner.pricing_profile_id || '';
       if(el('partner-special-profile-select')) el('partner-special-profile-select').value = data.partner.special_pricing_profile_id || '';
 
-      const cumulativeQty = data.cumulative_qty || 0;
-      const samplesHtml = (data.samples || []).map(sample => `
-        <li>${escapeHTML(String(sample.quantity))} vouchers: <strong>$${parseFloat(sample.total_price || 0).toFixed(2)}</strong> <span class="small-muted">(${escapeHTML(sample.cumulative_message || sample.breakdown_message || '')})</span></li>
-      `).join('');
-
-      const baseName = data.partner.pricing_profile_name || '-';
+      const baseName = data.partner.pricing_profile_name || 'Base';
       const specialName = data.partner.special_pricing_profile_name || 'Sin perfil especial';
       if(el('partner-pricing-summary')){
         el('partner-pricing-summary').innerHTML = `
           <div class="alert alert-light border mb-0">
             <div><strong>Categoría base:</strong> ${escapeHTML(baseName)}</div>
             <div><strong>Perfil especial:</strong> ${escapeHTML(specialName)}</div>
-            <div><strong>Vouchers pagados históricos:</strong> ${escapeHTML(String(cumulativeQty))}</div>
-            <div class="small text-muted">Los precios de ejemplo aplican sobre la base acumulada de ${escapeHTML(String(cumulativeQty))} vouchers</div>
-            <hr class="my-2">
-            <div><strong>Ejemplos de precio aplicado</strong></div>
-            <ul class="mb-0">${samplesHtml}</ul>
           </div>`;
       }
     } catch (e) {
@@ -1217,12 +1191,8 @@ document.addEventListener('DOMContentLoaded', () => {
       const specials    = pricingState.profiles.filter(p => p.profile_type === 'SPECIAL');
       const categories  = pricingState.profiles.filter(p => p.profile_type === 'CATEGORY');
 
-      // Auto-seleccionar primera categoría base
-      const selectedBase = (el('pricing-base-editor-select') || {}).value;
-      if(selectedBase){
-        loadBasePricingProfileIntoEditor(selectedBase);
-      } else if(categories.length > 0 && el('pricing-base-editor-select')){
-        el('pricing-base-editor-select').value = categories[0].id;
+      // Auto-cargar la única categoría base
+      if(categories.length > 0){
         loadBasePricingProfileIntoEditor(categories[0].id);
       }
 
@@ -1238,11 +1208,6 @@ document.addEventListener('DOMContentLoaded', () => {
       showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger');
     }
   }
-
-  on('pricing-base-editor-select', 'change', (event) => {
-    clearInlineAlert('pricing-base-message');
-    loadBasePricingProfileIntoEditor(event.target.value);
-  });
 
   on('add-pricing-base-rule-row', 'click', () => {
     const tbody = el('pricing-base-rules-body');
@@ -1261,13 +1226,14 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   on('save-pricing-base-profile', 'click', async () => {
-    const profileId   = (el('pricing-base-editor-select') || {}).value;
-    const profileName = (el('pricing-base-profile-name') || {}).value || '';
-    const rules       = getBasePricingRulesFromEditor();
-    if(!profileId){
-      showInlineAlert('pricing-base-message', 'Selecciona una categoría base para editar.', 'danger');
+    const baseProfile = (pricingState.profiles || []).find(p => p.profile_type === 'CATEGORY');
+    if(!baseProfile){
+      showInlineAlert('pricing-base-message', 'No se encontró la categoría base.', 'danger');
       return;
     }
+    const profileId   = baseProfile.id;
+    const profileName = (el('pricing-base-profile-name') || {}).value || baseProfile.name;
+    const rules       = getBasePricingRulesFromEditor();
     try {
       const resp = await safeFetch(
         apiUrl.replace(':8080', ':8081') + '/admin/pricing/profiles/' + encodeURIComponent(profileId),
@@ -1285,7 +1251,6 @@ document.addEventListener('DOMContentLoaded', () => {
       showToast('Reglas de categoría base guardadas correctamente', 'success');
       showInlineAlert('pricing-base-message', 'Reglas guardadas correctamente.', 'success');
       await loadAdminPricingData();
-      if(el('pricing-base-editor-select')){ el('pricing-base-editor-select').value = profileId; loadBasePricingProfileIntoEditor(profileId); }
     } catch(e) { showInlineAlert('pricing-base-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
   });
 
@@ -1384,22 +1349,21 @@ document.addEventListener('DOMContentLoaded', () => {
     const partnerSel   = el('pricing-partner-select');
     const partnerId    = (partnerSel || {}).value;
     const partnerName  = partnerSel ? (partnerSel.options[partnerSel.selectedIndex] || {}).text || partnerId : partnerId;
-    const catSel       = el('partner-category-select');
-    const pricingProfileId = (catSel || {}).value;
-    const catName      = catSel ? (catSel.options[catSel.selectedIndex] || {}).text || pricingProfileId : pricingProfileId;
+    const baseProfile  = (pricingState.profiles || []).find(p => p.profile_type === 'CATEGORY');
+    const pricingProfileId = baseProfile ? baseProfile.id : null;
     const specSel      = el('partner-special-profile-select');
     const specialPricingProfileId = (specSel || {}).value;
     const specName     = specSel && specialPricingProfileId ? (specSel.options[specSel.selectedIndex] || {}).text || specialPricingProfileId : 'Sin perfil especial';
 
     if(!partnerId || !pricingProfileId){
-      showInlineAlert('partner-pricing-message', 'Selecciona partner y categoría base.', 'danger');
+      showInlineAlert('partner-pricing-message', 'No se pudo determinar el partner o la categoría base.', 'danger');
       return;
     }
     showConfirmAction({
       title: 'Actualizar Pricing del Partner', icon: '💰',
       rows: [
         { label: 'Partner:', value: partnerName },
-        { label: 'Categoría base:', value: catName },
+        { label: 'Categoría base:', value: 'Base' },
         { label: 'Perfil especial:', value: specName }
       ],
       confirmLabel: '💾 Guardar Pricing', confirmClass: 'btn-primary',
@@ -1418,7 +1382,6 @@ document.addEventListener('DOMContentLoaded', () => {
           showInlineAlert('partner-pricing-message', 'Pricing del partner actualizado correctamente.', 'success');
           await loadAdminPricingData();
           if(el('pricing-partner-select')) el('pricing-partner-select').value = partnerId;
-          if(el('partner-category-select')) el('partner-category-select').value = data.pricing_profile_id || pricingProfileId;
           if(el('partner-special-profile-select')) el('partner-special-profile-select').value = data.special_pricing_profile_id || '';
           await loadPartnerPricingConfig();
         } catch (e) { showInlineAlert('partner-pricing-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
@@ -3339,7 +3302,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <td><code style="font-size:0.82rem;">${escapeHTML(r.name)}</code></td>
             <td>${typeBadge}</td>
             <td>${r.active ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-danger">Inactivo</span>'}</td>
-            <td class="d-flex gap-2">
+            <td class="d-flex gap-2 flex-wrap">
               <button class="btn btn-sm btn-outline-primary role-edit-btn"
                 data-role-name="${escapeHTML(r.name)}"
                 data-role-type="${escapeHTML(curType)}"
@@ -3352,6 +3315,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 data-role-display="${escapeHTML(r.display_name||r.name)}">
                 🔐 Permisos
               </button>
+              ${r.name === 'admin' ? '' : `<button class="btn btn-sm btn-outline-danger role-delete-btn"
+                data-role-name="${escapeHTML(r.name)}"
+                data-role-display="${escapeHTML(r.display_name||r.name)}">
+                🗑️ Eliminar
+              </button>`}
             </td>
           </tr>`;
         }).join('')}
@@ -3378,6 +3346,33 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.addEventListener('click', () => {
         const roleObj = _adminRoles.find(r => r.name === btn.dataset.roleName);
         if(roleObj) openPermissionsModal(roleObj.name, roleObj.permissions||{}, roleObj.role_type||'system_role', `Rol: ${roleObj.display_name||roleObj.name}`);
+      });
+    });
+
+    container.querySelectorAll('.role-delete-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const roleName    = btn.dataset.roleName;
+        const roleDisplay = btn.dataset.roleDisplay;
+        showConfirmAction({
+          title: 'Eliminar Rol', icon: '🗑️',
+          rows: [{ label: 'Rol:', value: roleDisplay }],
+          confirmLabel: '🗑️ Eliminar', confirmClass: 'btn-danger',
+          onConfirm: async () => {
+            try {
+              const resp = await safeFetch(
+                apiUrl.replace(':8080', ':8081') + '/admin/roles/' + encodeURIComponent(roleName),
+                { method: 'DELETE', headers: authHeaders() }
+              );
+              const data = await safeJson(resp);
+              if(!resp.ok) throw new Error(data.error || 'No se pudo eliminar el rol');
+              showToast(`Rol "${roleDisplay}" eliminado correctamente`, 'success');
+              await loadAdminRoles(true);
+              renderRolesList();
+            } catch(e) {
+              showToast(e.message, 'danger');
+            }
+          }
+        });
       });
     });
   }
