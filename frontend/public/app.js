@@ -565,15 +565,16 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function safeFetch(url, options = {}){
-    let response = await fetch(url, options);
+    const mergedOptions = { cache: 'no-store', ...options };
+    let response = await fetch(url, mergedOptions);
 
     if(response.status === 401){
       const newToken = await refreshAccessToken();
       if(newToken){
         const newOptions = {
-          ...options,
+          ...mergedOptions,
           headers: {
-            ...options.headers,
+            ...mergedOptions.headers,
             'Authorization': 'Bearer ' + newToken
           }
         };
@@ -626,7 +627,10 @@ document.addEventListener('DOMContentLoaded', () => {
           loadAdminDashboard();
         } else if(d.role === 'partner'){
           show(sPartner);
+          loadPartnerStats(false);
           loadCoursesForActivation();
+          loadActivationEligibility();
+          loadPartnerPayments();
           refreshVoucherPricingPreview();
         }
         showLoginMessage('Bienvenido', 'success', 2000);

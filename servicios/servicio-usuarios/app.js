@@ -31,6 +31,14 @@ app.use(helmet({
 
 app.use(cookieParser());
 
+// Prevent browser/proxy caching on all API responses
+app.use((req, res, next) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '0');
+  next();
+});
+
 // Parse JSON for all routes EXCEPT /webhook/stripe (which needs raw body)
 app.use((req, res, next) => {
   if (req.originalUrl === '/webhook/stripe') {
@@ -2352,7 +2360,7 @@ app.post('/webhook/stripe', express.raw({ type: 'application/json' }), async (re
 });
 
 // Admin: list purchases (include partner info, stripe status, and line items)
-app.get('/admin/purchases', authenticate, requireRole('admin'), async (req, res) => {
+app.get('/admin/purchases', authenticate, requireAnyPermission(['purchases', 'financial_ops'], 'view'), async (req, res) => {
   try {
     const { payment_method, partner_id, status } = req.query;
     const conditions = [];
@@ -2921,7 +2929,7 @@ app.get('/partner/:id/vouchers', authenticate, async (req,res)=>{
 });
 
 // Admin: courses CRUD
-app.get('/admin/courses', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+app.get('/admin/courses', authenticate, requirePermission('courses', 'view'), apiLimiter, async (req, res) => {
   try {
     const result = await pool.query('SELECT id, name, COALESCE(active, TRUE) AS active, created_at, updated_at FROM courses ORDER BY name ASC');
     res.json(result.rows);
@@ -3734,6 +3742,24 @@ app.put('/admin/purchases/:id/adjust',
         return res.status(400).json({ error: 'No se proveyó ningún campo a actualizar' });
       }
 
+      // Reconciliación previa: validar que qty reducida sea alcanzable
+      if (qty !== undefined && qty < current.qty) {
+        const voucherCounts = await pool.query(
+          `SELECT COUNT(*) AS total,
+                  COUNT(*) FILTER (WHERE status='AVAILABLE') AS available
+           FROM vouchers WHERE purchase_id=$1`,
+          [purchaseId]
+        );
+        const totalVouchers = parseInt(voucherCounts.rows[0].total, 10);
+        const availableVouchers = parseInt(voucherCounts.rows[0].available, 10);
+        const toDelete = totalVouchers - qty;
+        if (toDelete > availableVouchers) {
+          return res.status(400).json({
+            error: `No se puede reducir a ${qty} vouchers: ${totalVouchers - availableVouchers} ya fueron consumidos y no se pueden eliminar`
+          });
+        }
+      }
+
       // UPDATE compra
       await pool.query(
         `UPDATE purchases SET
@@ -3765,14 +3791,77 @@ app.put('/admin/purchases/:id/adjust',
         );
       }
 
+      // Reconciliación de vouchers si qty cambió
+      if (qty !== undefined && qty !== current.qty) {
+        const voucherRow = await pool.query(
+          'SELECT COUNT(*) AS total FROM vouchers WHERE purchase_id=$1',
+          [purchaseId]
+        );
+        const currentVoucherCount = parseInt(voucherRow.rows[0].total, 10);
+        const effectivePartnerId = partner_id !== undefined ? partner_id : current.partner_id;
+        const effectiveMethod    = payment_method !== undefined ? payment_method : current.payment_method;
+
+        if (qty > currentVoucherCount) {
+          // Crear vouchers faltantes
+          const toCreate = qty - currentVoucherCount;
+          const isComplimentary = effectiveMethod === 'complimentary';
+
+          if (isComplimentary) {
+            const reasonRow = await pool.query(
+              'SELECT complimentary_reason, complimentary_issued_by FROM vouchers WHERE purchase_id=$1 LIMIT 1',
+              [purchaseId]
+            );
+            const reason   = complimentary_reason || (reasonRow.rowCount > 0 ? reasonRow.rows[0].complimentary_reason : 'Ajuste');
+            const issuedBy = reasonRow.rowCount > 0 ? reasonRow.rows[0].complimentary_issued_by : req.user.sub;
+            for (let i = 0; i < toCreate; i++) {
+              await pool.query(
+                `INSERT INTO vouchers (partner_id, purchase_id, code, status, voucher_type, complimentary_reason, complimentary_issued_by)
+                 VALUES ($1, $2, $3, 'AVAILABLE', 'COMPLIMENTARY', $4, $5)`,
+                [effectivePartnerId, purchaseId, generateVoucherCode(), reason, issuedBy]
+              );
+            }
+          } else {
+            for (let i = 0; i < toCreate; i++) {
+              await pool.query(
+                `INSERT INTO vouchers (partner_id, purchase_id, code, status, voucher_type)
+                 VALUES ($1, $2, $3, 'AVAILABLE', 'STANDARD')`,
+                [effectivePartnerId, purchaseId, generateVoucherCode()]
+              );
+            }
+          }
+          changes.vouchers_created = toCreate;
+
+        } else if (qty < currentVoucherCount) {
+          // Eliminar vouchers AVAILABLE sobrantes (los más recientes primero)
+          const toDelete = currentVoucherCount - qty;
+          const availableRows = await pool.query(
+            'SELECT id FROM vouchers WHERE purchase_id=$1 AND status=$2 ORDER BY id DESC LIMIT $3',
+            [purchaseId, 'AVAILABLE', toDelete]
+          );
+          const idsToDelete = availableRows.rows.map(r => r.id);
+          if (idsToDelete.length > 0) {
+            await pool.query('DELETE FROM vouchers WHERE id = ANY($1)', [idsToDelete]);
+          }
+          changes.vouchers_deleted = idsToDelete.length;
+        }
+      }
+
       await logSystemEvent('PURCHASE_ADJUSTED', 'PURCHASE', req.user.sub, null, purchaseId,
         { purchase_id: purchaseId, changes }, 'SUCCESS', null, req);
 
       const updated = await pool.query(
-        'SELECT id, partner_id, qty, total_price, status, payment_method, external_reference, notes FROM purchases WHERE id=$1',
+        `SELECT p.id, p.partner_id, p.qty, p.total_price, p.status, p.payment_method,
+                p.external_reference, p.notes,
+                COUNT(v.id)::int AS vouchers_total,
+                COUNT(v.id) FILTER (WHERE v.status='AVAILABLE')::int AS vouchers_available,
+                COUNT(v.id) FILTER (WHERE v.status='CONSUMED')::int  AS vouchers_consumed
+         FROM purchases p
+         LEFT JOIN vouchers v ON v.purchase_id = p.id
+         WHERE p.id=$1
+         GROUP BY p.id`,
         [purchaseId]
       );
-      res.json({ ok: true, purchase: updated.rows[0] });
+      res.json({ ok: true, purchase: updated.rows[0], changes });
     } catch (e) {
       console.error('❌ Error ajustando compra:', e);
       res.status(500).json({ error: 'Error al ajustar la compra' });
@@ -4998,6 +5087,7 @@ function requirePermission(module, level) {
   const LEVELS = { none: 0, view: 1, edit: 2 };
   return async (req, res, next) => {
     if (!req.user) return res.status(401).json({ error: 'missing_token' });
+    if (req.user.role === 'admin') return next();
     try {
       const roleRow = await pool.query('SELECT permissions FROM roles WHERE name=$1', [req.user.role]);
       const perms     = roleRow.rows[0]?.permissions || {};
@@ -5007,6 +5097,27 @@ function requirePermission(module, level) {
         userId: req.user.sub, role: req.user.role, module, requiredLevel: level, ip: req.ip, path: req.path
       });
       return res.status(403).json({ error: 'forbidden', module, required: level });
+    } catch (e) {
+      return res.status(500).json({ error: 'Error validando permisos' });
+    }
+  };
+}
+
+// Igual que requirePermission pero pasa si el usuario tiene el nivel en CUALQUIERA de los módulos.
+function requireAnyPermission(modules, level) {
+  const LEVELS = { none: 0, view: 1, edit: 2 };
+  return async (req, res, next) => {
+    if (!req.user) return res.status(401).json({ error: 'missing_token' });
+    if (req.user.role === 'admin') return next();
+    try {
+      const roleRow = await pool.query('SELECT permissions FROM roles WHERE name=$1', [req.user.role]);
+      const perms = roleRow.rows[0]?.permissions || {};
+      const hasAny = modules.some(mod => (LEVELS[perms[mod] || 'none'] ?? 0) >= LEVELS[level]);
+      if (hasAny) return next();
+      logSecurityEvent('AUTHZ_PERMISSION_DENIED', {
+        userId: req.user.sub, role: req.user.role, modules, requiredLevel: level, ip: req.ip, path: req.path
+      });
+      return res.status(403).json({ error: 'forbidden', modules, required: level });
     } catch (e) {
       return res.status(500).json({ error: 'Error validando permisos' });
     }
@@ -5030,7 +5141,7 @@ app.get('/health', (req, res) => {
 // ============ SYSTEM EVENTS - AUDITORÍA ============
 
 // Admin: Get all system events (with pagination and filters)
-app.get('/admin/events', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+app.get('/admin/events', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 50;
@@ -5094,7 +5205,7 @@ app.get('/admin/events', authenticate, requireRole('admin'), apiLimiter, async (
 });
 
 // Admin: Get events by user
-app.get('/admin/events/user/:userId', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+app.get('/admin/events/user/:userId', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
     const userId = req.params.userId;
     const page = parseInt(req.query.page) || 1;
@@ -5131,7 +5242,7 @@ app.get('/admin/events/user/:userId', authenticate, requireRole('admin'), apiLim
 });
 
 // Admin: Get event statistics
-app.get('/admin/events/stats/dashboard', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+app.get('/admin/events/stats/dashboard', authenticate, requireAnyPermission(['dashboard', 'audit'], 'view'), apiLimiter, async (req, res) => {
   try {
     const totalEvents = await pool.query('SELECT COUNT(*) FROM system_events');
     const successfulEvents = await pool.query(`SELECT COUNT(*) FROM system_events WHERE status='SUCCESS'`);
@@ -5177,7 +5288,7 @@ app.get('/admin/events/stats/dashboard', authenticate, requireRole('admin'), api
 });
 
 // Admin: Export events to CSV or JSON
-app.get('/admin/events/export/:format', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+app.get('/admin/events/export/:format', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
     const format = req.params.format.toLowerCase();
     const eventType = req.query.event_type;
@@ -5415,7 +5526,7 @@ function buildAuditFilters(req) {
 }
 
 // Admin: módulo de auditoría unificada (todos los movimientos)
-app.get('/admin/audit/movements', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+app.get('/admin/audit/movements', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
@@ -5472,7 +5583,7 @@ app.get('/admin/audit/movements', authenticate, requireRole('admin'), apiLimiter
 });
 
 // Admin: resumen de auditoría para dashboard
-app.get('/admin/audit/movements/summary', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+app.get('/admin/audit/movements/summary', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
     const cte = buildAuditMovementsCTE();
     const { whereClause, params } = buildAuditFilters(req);
@@ -5516,7 +5627,7 @@ app.get('/admin/audit/movements/summary', authenticate, requireRole('admin'), ap
 });
 
 // Admin: exportar auditoría unificada en CSV (único formato permitido)
-app.get('/admin/audit/movements/export/csv', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+app.get('/admin/audit/movements/export/csv', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
     const cte = buildAuditMovementsCTE();
     const { whereClause, params } = buildAuditFilters(req);
@@ -5558,7 +5669,7 @@ app.get('/admin/audit/movements/export/csv', authenticate, requireRole('admin'),
 // ─────────────────────────────────────────────
 
 // GET /admin/reports/summary  – KPIs globales
-app.get('/admin/reports/summary', authenticate, requireRole('admin'), async (req, res) => {
+app.get('/admin/reports/summary', authenticate, requireAnyPermission(['dashboard', 'stats', 'reports'], 'view'), async (req, res) => {
   try {
     const { start_date, end_date, partner_id } = req.query;
     const conditions = [];
@@ -5630,7 +5741,7 @@ app.get('/admin/reports/summary', authenticate, requireRole('admin'), async (req
 });
 
 // GET /admin/reports/monthly  – Compras y revenue agrupados por mes
-app.get('/admin/reports/monthly', authenticate, requireRole('admin'), async (req, res) => {
+app.get('/admin/reports/monthly', authenticate, requireAnyPermission(['dashboard', 'stats', 'reports'], 'view'), async (req, res) => {
   try {
     const { start_date, end_date, partner_id } = req.query;
     const conditions = [];
@@ -5662,7 +5773,7 @@ app.get('/admin/reports/monthly', authenticate, requireRole('admin'), async (req
 });
 
 // GET /admin/reports/top-partners  – Top partners por ingresos
-app.get('/admin/reports/top-partners', authenticate, requireRole('admin'), async (req, res) => {
+app.get('/admin/reports/top-partners', authenticate, requireAnyPermission(['dashboard', 'stats', 'reports'], 'view'), async (req, res) => {
   try {
     const { start_date, end_date } = req.query;
     const conditions = [];
@@ -5696,7 +5807,7 @@ app.get('/admin/reports/top-partners', authenticate, requireRole('admin'), async
 });
 
 // GET /admin/reports/top-courses  – Top cursos por activaciones
-app.get('/admin/reports/top-courses', authenticate, requireRole('admin'), async (req, res) => {
+app.get('/admin/reports/top-courses', authenticate, requireAnyPermission(['dashboard', 'stats', 'reports'], 'view'), async (req, res) => {
   try {
     const { start_date, end_date } = req.query;
     const conditions = [];
@@ -5729,7 +5840,7 @@ app.get('/admin/reports/top-courses', authenticate, requireRole('admin'), async 
 });
 
 // GET /admin/reports/purchases  – Listado de compras con nombre de partner y paginación
-app.get('/admin/reports/purchases', authenticate, requireRole('admin'), async (req, res) => {
+app.get('/admin/reports/purchases', authenticate, requireAnyPermission(['reports', 'purchases', 'financial_ops'], 'view'), async (req, res) => {
   try {
     const { start_date, end_date, partner_id, status, page = 1, limit = 25 } = req.query;
     const conditions = [];
@@ -5784,7 +5895,7 @@ app.get('/admin/reports/purchases', authenticate, requireRole('admin'), async (r
 });
 
 // GET /admin/reports/export/csv  – Exportar compras con filtros en CSV
-app.get('/admin/reports/export/csv', authenticate, requireRole('admin'), async (req, res) => {
+app.get('/admin/reports/export/csv', authenticate, requirePermission('reports', 'view'), async (req, res) => {
   try {
     const { start_date, end_date, partner_id, status } = req.query;
     const conditions = [];
