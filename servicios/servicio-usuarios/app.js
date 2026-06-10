@@ -71,13 +71,18 @@ app.use((req, res, next) => {
   })(req, res, next);
 });
 
-// Rate limiting for authentication endpoints
+// Rate limiting for authentication endpoints — clave por username para no bloquear toda la IP
 const authLimiter = rateLimit({
   windowMs: (parseInt(process.env.RATE_LIMIT_WINDOW_MINUTES) || 15) * 60 * 1000,
   max: parseInt(process.env.MAX_LOGIN_ATTEMPTS) || 5,
   message: { error: 'Demasiados intentos de inicio de sesión. Intenta de nuevo más tarde.' },
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
+  keyGenerator: (req) => {
+    const username = (req.body && (req.body.username || req.body.email || '')).toString().toLowerCase().trim();
+    return username || req.ip;
+  },
 });
 
 // Rate limiting for API endpoints
@@ -4664,12 +4669,12 @@ app.put('/admin/users/:id', authenticate, requireRole('admin'), async (req,res)=
   const { password, partner_id, first_name, last_name, active, must_change_password, password_expires_days } = req.body;
   const role = req.body.role !== undefined ? normalizeRoleName(req.body.role) : '';
   try{
-    const currentUserQ = await pool.query('SELECT id, role, partner_id FROM users WHERE id=$1', [userId]);
+    const currentUserQ = await pool.query('SELECT id, role, partner_id, email, first_name, last_name FROM users WHERE id=$1', [userId]);
     if(currentUserQ.rowCount === 0) return res.status(404).json({error:'User not found'});
 
     const currentUser = currentUserQ.rows[0];
     const nextRole = role || currentUser.role;
-    const nextPartnerId = partner_id !== undefined ? (partner_id || null) : currentUser.partner_id;
+    let nextPartnerId = partner_id !== undefined ? (partner_id || null) : currentUser.partner_id;
 
     if (role) {
       const roleExists = await pool.query('SELECT name FROM roles WHERE name=$1 AND active=TRUE', [role]);
@@ -4677,7 +4682,20 @@ app.put('/admin/users/:id', authenticate, requireRole('admin'), async (req,res)=
     }
 
     if (nextRole === 'partner' && !nextPartnerId) {
-      return res.status(400).json({error:'Partner ID es obligatorio para usuarios con rol partner'});
+      // Auto-crear registro de partner si no existe
+      const userEmail = currentUser.email;
+      const existingByEmail = await pool.query('SELECT id FROM partners WHERE email=$1 LIMIT 1', [userEmail]);
+      if(existingByEmail.rowCount > 0){
+        nextPartnerId = existingByEmail.rows[0].id;
+      } else {
+        const partnerName = [first_name || currentUser.first_name, last_name || currentUser.last_name].filter(Boolean).join(' ').trim() || userEmail.split('@')[0];
+        const defaultPricingProfileId = await getDefaultPricingProfileId();
+        const newPartner = await pool.query(
+          'INSERT INTO partners (name, email, pricing_profile_id) VALUES ($1, $2, $3) RETURNING id',
+          [partnerName, userEmail, defaultPricingProfileId]
+        );
+        nextPartnerId = newPartner.rows[0].id;
+      }
     }
 
     if(partner_id !== undefined && partner_id !== null){
@@ -4701,9 +4719,9 @@ app.put('/admin/users/:id', authenticate, requireRole('admin'), async (req,res)=
       params.push(role);
       paramNum++;
     }
-    if(partner_id !== undefined){
+    if(partner_id !== undefined || nextPartnerId !== currentUser.partner_id){
       updates.push(`partner_id = $${paramNum}`);
-      params.push(partner_id || null);
+      params.push(nextPartnerId || null);
       paramNum++;
     }
     if(first_name !== undefined){

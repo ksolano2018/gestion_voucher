@@ -2171,6 +2171,7 @@
               <p>Bienvenido de nuevo</p>
             </div>
 
+            <!-- Panel login normal -->
             <div id="auth" class="login-form">
               <div class="form-group">
                 <input id="login-username" class="form-control" placeholder="Email o usuario" autocomplete="username" />
@@ -2180,23 +2181,45 @@
               </div>
               <div id="login-message"></div>
               <button id="login-btn" class="btn btn-login">Iniciar sesión</button>
+            </div>
 
-              <div id="first-login-password-section" style="display:none;margin-top:1.25rem;">
-                <div class="alert alert-warning mb-3" style="font-size:0.88rem;">Primer acceso detectado. Cambia tu contraseña temporal para continuar.</div>
-                <div class="form-group">
-                  <input id="first-login-username" class="form-control" placeholder="Email" autocomplete="username" readonly />
-                </div>
-                <div class="form-group">
-                  <input id="first-login-current-password" type="password" class="form-control" placeholder="Contraseña temporal" autocomplete="current-password" />
-                </div>
-                <div class="form-group">
-                  <input id="first-login-new-password" type="password" class="form-control" placeholder="Nueva contraseña" autocomplete="new-password" />
-                </div>
-                <div class="form-group">
-                  <input id="first-login-confirm-password" type="password" class="form-control" placeholder="Confirmar contraseña" autocomplete="new-password" />
-                </div>
-                <button id="first-login-change-password-btn" class="btn btn-login" type="button">Cambiar contraseña</button>
+            <!-- Panel cambio de contraseña (primer acceso) -->
+            <div id="first-login-panel" class="login-form" style="display:none;">
+              <p class="text-center mb-3" style="font-size:0.85rem;color:#94a3b8;">Crea tu nueva contraseña para continuar</p>
+              <input id="first-login-username" class="form-control" style="display:none;" autocomplete="username" readonly />
+              <div class="form-group">
+                <input id="first-login-current-password" type="password" class="form-control" placeholder="Contraseña temporal" autocomplete="current-password" />
               </div>
+              <div class="form-group">
+                <input id="first-login-new-password" type="password" class="form-control" placeholder="Nueva contraseña" autocomplete="new-password" />
+                <!-- Barra de fuerza -->
+                <div id="fl-pwd-strength-bar" style="display:none;margin-top:6px;">
+                  <div style="display:flex;gap:4px;height:5px;border-radius:3px;overflow:hidden;">
+                    <div id="fl-bar-1" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                    <div id="fl-bar-2" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                    <div id="fl-bar-3" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                    <div id="fl-bar-4" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                    <div id="fl-bar-5" style="flex:1;border-radius:3px;background:#e9ecef;transition:background .2s;"></div>
+                  </div>
+                  <div id="fl-strength-label" style="font-size:0.75rem;font-weight:600;margin-top:3px;"></div>
+                </div>
+                <!-- Validador en tiempo real -->
+                <div id="fl-pwd-rules" class="mt-2 p-2 rounded" style="background:rgba(255,255,255,0.06);display:none;font-size:0.78rem;">
+                  <ul id="fl-rules-list" class="mb-0 ps-3" style="list-style:none;padding:0;">
+                    <li id="fl-rule-length"  style="color:#6c757d;"><span class="rule-icon">❌</span> Mínimo 8 caracteres</li>
+                    <li id="fl-rule-upper"   style="color:#6c757d;"><span class="rule-icon">❌</span> Al menos una mayúscula</li>
+                    <li id="fl-rule-lower"   style="color:#6c757d;"><span class="rule-icon">❌</span> Al menos una minúscula</li>
+                    <li id="fl-rule-number"  style="color:#6c757d;"><span class="rule-icon">❌</span> Al menos un número</li>
+                    <li id="fl-rule-special" style="color:#6c757d;"><span class="rule-icon">❌</span> Al menos un carácter especial (!@#$%^&*)</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="form-group">
+                <input id="first-login-confirm-password" type="password" class="form-control" placeholder="Confirmar contraseña" autocomplete="new-password" />
+              </div>
+              <div id="first-login-message"></div>
+              <button id="first-login-change-password-btn" class="btn btn-login" type="button" disabled>Cambiar contraseña</button>
+              <button id="first-login-back-btn" class="btn btn-link w-100 mt-2" style="color:#94a3b8;font-size:0.82rem;" type="button">← Volver al login</button>
             </div>
           </div>
         </div>

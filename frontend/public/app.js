@@ -341,13 +341,16 @@ document.addEventListener('DOMContentLoaded', () => {
       loadAdminDashboard();
     }
   });
+  let _loginMsgTimer = null;
   function showLoginMessage(msg, type='info', timeout=3500){
     const loginMessageEl = el('login-message');
     if(!loginMessageEl) return;
-    const cls = type === 'success' ? 'alert-success' : (type === 'danger' ? 'alert-danger' : 'alert-info');
+    const cls = type === 'success' ? 'alert-success' : (type === 'danger' ? 'alert-danger' : 'alert-warning');
     const safeMsg = sanitizeHTML(msg);
     loginMessageEl.innerHTML = `<div class="alert ${cls} p-2" role="alert">${safeMsg}</div>`;
-    if(timeout > 0) setTimeout(() => { if(loginMessageEl) loginMessageEl.innerHTML = ''; }, timeout);
+    if(_loginMsgTimer) clearTimeout(_loginMsgTimer);
+    _loginMsgTimer = null;
+    if(timeout > 0) _loginMsgTimer = setTimeout(() => { if(loginMessageEl) loginMessageEl.innerHTML = ''; _loginMsgTimer = null; }, timeout);
   }
 
   function showAdminUserMessage(msg, type='info'){
@@ -475,20 +478,76 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const loginContainer = el('login-container');
   const appShellWrapper = el('app-shell-wrapper');
-  const firstLoginPasswordSection = el('first-login-password-section');
   const firstLoginUsernameInput = el('first-login-username');
 
   function showFirstLoginPasswordChange(username){
     if(firstLoginUsernameInput) firstLoginUsernameInput.value = username || '';
-    if(firstLoginPasswordSection) firstLoginPasswordSection.style.display = 'block';
+    const authPanel = el('auth');
+    const flPanel   = el('first-login-panel');
+    if(authPanel) authPanel.style.display = 'none';
+    if(flPanel)   flPanel.style.display   = '';
+    // Reset fields and strength bar
+    ['first-login-current-password','first-login-new-password','first-login-confirm-password'].forEach(id => { const e = el(id); if(e) e.value = ''; });
+    const newPwdInput = el('first-login-new-password');
+    if(newPwdInput) newPwdInput.dispatchEvent(new Event('input'));
+    if(el('first-login-message')) el('first-login-message').innerHTML = '';
   }
 
   function hideFirstLoginPasswordChange(){
-    if(firstLoginPasswordSection) firstLoginPasswordSection.style.display = 'none';
-    if(el('first-login-current-password')) el('first-login-current-password').value = '';
-    if(el('first-login-new-password')) el('first-login-new-password').value = '';
-    if(el('first-login-confirm-password')) el('first-login-confirm-password').value = '';
+    const authPanel = el('auth');
+    const flPanel   = el('first-login-panel');
+    if(authPanel) authPanel.style.display = '';
+    if(flPanel)   flPanel.style.display   = 'none';
+    ['first-login-current-password','first-login-new-password','first-login-confirm-password'].forEach(id => { const e = el(id); if(e) e.value = ''; });
+    if(el('first-login-message')) el('first-login-message').innerHTML = '';
   }
+
+  // Semáforo de fuerza para primer login
+  (function setupFirstLoginPasswordStrength(){
+    const input  = el('first-login-new-password');
+    const btn    = el('first-login-change-password-btn');
+    if(!input) return;
+    const rules = [
+      { id: 'fl-rule-length',  test: v => v.length >= 8,            label: 'Mínimo 8 caracteres' },
+      { id: 'fl-rule-upper',   test: v => /[A-Z]/.test(v),          label: 'Al menos una mayúscula' },
+      { id: 'fl-rule-lower',   test: v => /[a-z]/.test(v),          label: 'Al menos una minúscula' },
+      { id: 'fl-rule-number',  test: v => /[0-9]/.test(v),          label: 'Al menos un número' },
+      { id: 'fl-rule-special', test: v => /[!@#$%^&*]/.test(v),     label: 'Carácter especial' }
+    ];
+    const LEVELS = [
+      { label: '',        color: '#e9ecef' },
+      { label: 'Débil',   color: '#ef4444' },
+      { label: 'Débil',   color: '#ef4444' },
+      { label: 'Regular', color: '#f97316' },
+      { label: 'Buena',   color: '#3b82f6' },
+      { label: 'Fuerte',  color: '#22c55e' }
+    ];
+    const bars = [1,2,3,4,5].map(i => el('fl-bar-' + i));
+    const strengthBar   = el('fl-pwd-strength-bar');
+    const strengthLabel = el('fl-strength-label');
+    const rulesBox      = el('fl-pwd-rules');
+
+    input.addEventListener('input', () => {
+      const val = input.value;
+      const hasValue = val.length > 0;
+      if(strengthBar) strengthBar.style.display = hasValue ? '' : 'none';
+      if(rulesBox)    rulesBox.style.display    = hasValue ? '' : 'none';
+      let passed = 0; let allOk = true;
+      rules.forEach(rule => {
+        const ok = rule.test(val);
+        if(ok) passed++; else allOk = false;
+        const li   = el(rule.id);
+        if(!li) return;
+        const icon = li.querySelector('.rule-icon');
+        if(icon) icon.textContent = ok ? '✅' : '❌';
+        li.style.color = ok ? '#22c55e' : '#6c757d';
+      });
+      const lvl = LEVELS[passed] || LEVELS[0];
+      bars.forEach((bar, i) => { if(bar) bar.style.background = i < passed ? lvl.color : '#e9ecef'; });
+      if(strengthLabel){ strengthLabel.textContent = lvl.label; strengthLabel.style.color = lvl.color; }
+      if(btn) btn.disabled = !allOk;
+    });
+  })();
 
   function showLoginScreen(){
     document.documentElement.classList.add('no-session');
@@ -632,10 +691,24 @@ document.addEventListener('DOMContentLoaded', () => {
           loadActivationEligibility();
           loadPartnerPayments();
           refreshVoucherPricingPreview();
+        } else {
+          // Rol staff con permisos granulares (no admin, no partner)
+          const isClientRole = d.role_type === 'client_role';
+          const hasPermissions = d.permissions && Object.values(d.permissions).some(v => v && v !== 'none');
+          if(!isClientRole && hasPermissions){
+            show(sAdmin);
+            document.querySelectorAll('.admin-menu-item').forEach(c => c.classList.remove('active'));
+            document.querySelectorAll('#admin .content-section').forEach(s => s.classList.remove('active'));
+            const dashCard = document.querySelector('.admin-menu-item[data-target="admin-dashboard"]');
+            if(dashCard){ dashCard.classList.add('active'); }
+            const dashSection = el('admin-dashboard');
+            if(dashSection){ dashSection.classList.add('active'); }
+            loadAdminDashboard();
+          }
         }
         showLoginMessage('Bienvenido', 'success', 2000);
       } else {
-        showLoginMessage('Login fallido: ' + (data.error || 'Credenciales invalidas'), 'danger', 4000);
+        showLoginMessage('Login fallido: ' + (data.error || 'Credenciales invalidas'), 'danger', 8000);
       }
     }catch(e){
       setButtonLoading(loginBtn, false);
@@ -643,21 +716,25 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  on('first-login-back-btn', 'click', () => { hideFirstLoginPasswordChange(); });
+
   on('first-login-change-password-btn', 'click', async () => {
     const btn = el('first-login-change-password-btn');
+    const msgEl = el('first-login-message');
+    const showMsg = (msg, type) => {
+      if(!msgEl) return;
+      msgEl.innerHTML = `<div class="alert alert-${type} py-2 mb-2" style="font-size:0.82rem;">${escapeHTML(msg)}</div>`;
+    };
     const username = (firstLoginUsernameInput || {}).value || (el('login-username') || {}).value || '';
     const currentPassword = (el('first-login-current-password') || {}).value || '';
     const newPassword = (el('first-login-new-password') || {}).value || '';
     const confirmPassword = (el('first-login-confirm-password') || {}).value || '';
 
     if(!username || !currentPassword || !newPassword || !confirmPassword){
-      showLoginMessage('Completa todos los campos para cambiar contraseña', 'danger', 4000);
-      return;
+      showMsg('Completa todos los campos', 'danger'); return;
     }
-
     if(newPassword !== confirmPassword){
-      showLoginMessage('La nueva contraseña y su confirmación no coinciden', 'danger', 4000);
-      return;
+      showMsg('Las contraseñas no coinciden', 'danger'); return;
     }
 
     try{
@@ -665,26 +742,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const resp = await fetch(apiUrl.replace(':8080', ':8081') + '/oauth/change-password-first', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          username,
-          current_password: currentPassword,
-          new_password: newPassword
-        })
+        body: JSON.stringify({ username, current_password: currentPassword, new_password: newPassword })
       });
-
       const data = await resp.json();
       setButtonLoading(btn, false);
-
       if(resp.ok){
         hideFirstLoginPasswordChange();
         if(el('login-password')) el('login-password').value = '';
         showLoginMessage('Contraseña actualizada. Inicia sesión con tu nueva contraseña.', 'success', 5000);
       } else {
-        showLoginMessage('Error: ' + (data.error || 'No se pudo cambiar la contraseña'), 'danger', 5000);
+        showMsg('Error: ' + (data.error || 'No se pudo cambiar la contraseña'), 'danger');
       }
     }catch(e){
       setButtonLoading(btn, false);
-      showLoginMessage('Error: ' + e.message, 'danger', 5000);
+      showMsg('Error: ' + e.message, 'danger');
     }
   });
 
@@ -3264,6 +3335,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!token){
       throw new Error('Sesión no disponible. Inicia sesión nuevamente.');
     }
+    const _rd = decodeJwt(token) || {};
+    if(_rd.role !== 'admin') return _adminRoles;
     if(!force && _adminRoles.length) return _adminRoles;
     await loadRolesConfig();
     const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/roles', { headers: authHeaders() });
@@ -4119,7 +4192,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if(getToken()){
-    loadAdminRoles().catch(() => {});
+    const _initD = decodeJwt(getToken()) || {};
+    if(_initD.role === 'admin') loadAdminRoles().catch(() => {});
   }
 
   let _adminVouchersAllData = [];
@@ -5630,6 +5704,20 @@ document.addEventListener('DOMContentLoaded', () => {
       loadActivationEligibility();
       loadPartnerPayments();
       refreshVoucherPricingPreview();
+    } else {
+      // Rol staff con permisos granulares (no admin, no partner)
+      const isClientRole = d.role_type === 'client_role';
+      const hasPermissions = d.permissions && Object.values(d.permissions).some(v => v && v !== 'none');
+      if(!isClientRole && hasPermissions){
+        show(sAdmin);
+        document.querySelectorAll('.admin-menu-item').forEach(c => c.classList.remove('active'));
+        document.querySelectorAll('#admin .content-section').forEach(s => s.classList.remove('active'));
+        const dashCard = document.querySelector('.admin-menu-item[data-target="admin-dashboard"]');
+        if(dashCard){ dashCard.classList.add('active'); }
+        const dashSection = el('admin-dashboard');
+        if(dashSection){ dashSection.classList.add('active'); }
+        loadAdminDashboard();
+      }
     }
   } else {
     showLoginScreen();
