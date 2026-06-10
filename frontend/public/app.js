@@ -3003,10 +3003,11 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadAdminActivacionesFilterOptions() {
     try {
       const [partnersResp, coursesResp] = await Promise.all([
-        safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/partners', { headers: authHeaders() }),
+        safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/partners?page=1&limit=1000', { headers: authHeaders() }),
         safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/courses',  { headers: authHeaders() })
       ]);
-      const partners = await safeJson(partnersResp);
+      const partnersResult = await safeJson(partnersResp);
+      const partners = Array.isArray(partnersResult) ? partnersResult : (partnersResult && Array.isArray(partnersResult.data) ? partnersResult.data : []);
       const courses  = await safeJson(coursesResp);
 
       const pSel = el('admin-act-filter-partner');
@@ -4307,8 +4308,9 @@ document.addEventListener('DOMContentLoaded', () => {
             <div class="col-md-2">
               <label class="form-label mb-1 small">Estado</label>
               <select id="avf-status" class="form-select form-select-sm">
-                <option value="">Activos</option>
+                <option value="">Todos los estados</option>
                 <option value="AVAILABLE">Disponible</option>
+                <option value="CONSUMED">Consumido</option>
               </select>
             </div>
             <div class="col-md-3">
@@ -4393,12 +4395,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         stats = await statsResp.json();
         const allVouchers = vouchersResp.ok ? await vouchersResp.json() : [];
-        vouchers = Array.isArray(allVouchers)
-          ? allVouchers.filter(v => {
-              const status = String(v.status || '').toUpperCase();
-              return status === 'AVAILABLE' || status === 'ACTIVE';
-            })
-          : [];
+        vouchers = Array.isArray(allVouchers) ? allVouchers : [];
         partnerInfo = _adminPartnersCache.find(p => String(p.id) === String(pid)) || null;
       }
 
@@ -4552,12 +4549,12 @@ document.addEventListener('DOMContentLoaded', () => {
               </div>
             </div>
           </div>
-          <div class="alert alert-success mb-3">Estadísticas cargadas — ${_adminVouchersAllData.length} vouchers activos encontrados.</div>
+          <div class="alert alert-success mb-3">Estadísticas cargadas — ${_adminVouchersAllData.length} vouchers encontrados.</div>
           ${buildAdminVouchersFilterBar(_adminVouchersAllData)}
           <div class="card shadow-sm">
             <div class="card-body p-0">
               <div class="d-flex align-items-center justify-content-between px-3 pt-3 pb-2">
-                <h6 class="mb-0">Detalle de Vouchers Activos del Partner</h6>
+                <h6 class="mb-0">Detalle de Vouchers del Partner</h6>
                 <span class="badge bg-secondary">${_adminVouchersAllData.length} total</span>
               </div>
               <div class="table-responsive">
@@ -4814,6 +4811,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function applyVoucherFilters(){
+    const codeVal    = ((el('voucher-filter-code') && el('voucher-filter-code').value) || '').trim().toLowerCase();
     const courseVal  = (el('voucher-filter-course') && el('voucher-filter-course').value) || '';
     const clientVal  = (el('voucher-filter-client') && el('voucher-filter-client').value) || '';
     const periodVal  = (el('voucher-filter-period') && el('voucher-filter-period').value) || '';
@@ -4844,10 +4842,12 @@ document.addEventListener('DOMContentLoaded', () => {
       if(dateTo)   rangeEnd   = new Date(dateTo   + 'T23:59:59');
     }
 
-    // Only show USED (CONSUMED) vouchers in this list
+    // Only show USED (CONSUMED) vouchers in this list — unless filtering by code (search all)
     const usedOnly = _allPartnerVouchers.filter(v => (v.status || '').toUpperCase() !== 'AVAILABLE');
+    const baseList = codeVal ? _allPartnerVouchers : usedOnly;
 
-    let filtered = usedOnly.filter(v => {
+    let filtered = baseList.filter(v => {
+      if(codeVal && !(v.code || '').toLowerCase().includes(codeVal)) return false;
       if(courseVal && (v.course_name || '') !== courseVal) return false;
       if(clientVal && (v.final_client || '') !== clientVal) return false;
       if(rangeStart || rangeEnd){
@@ -4875,10 +4875,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const summaryEl = el('voucher-filter-summary');
     if(summaryEl){
-      const hasFilter = courseVal || clientVal || periodVal;
+      const hasFilter = codeVal || courseVal || clientVal || periodVal;
       if(hasFilter){
         summaryEl.style.display = '';
-        summaryEl.textContent = `Mostrando ${filtered.length} de ${usedOnly.length} vouchers usados`;
+        const baseLabel = codeVal ? _allPartnerVouchers.length : usedOnly.length;
+        const baseDesc  = codeVal ? 'vouchers totales' : 'vouchers usados';
+        summaryEl.textContent = `Mostrando ${filtered.length} de ${baseLabel} ${baseDesc}`;
       } else {
         summaryEl.style.display = 'none';
       }
@@ -4914,6 +4916,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    const codeValExp  = ((el('voucher-filter-code') && el('voucher-filter-code').value) || '').trim();
     const courseVal = (el('voucher-filter-course') && el('voucher-filter-course').value) || '';
     const clientVal = (el('voucher-filter-client') && el('voucher-filter-client').value) || '';
     const periodVal = (el('voucher-filter-period') && el('voucher-filter-period').value) || '';
@@ -4927,12 +4930,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const aoa = [
       ['CertJOIN Platform'],
-      ['Mis Vouchers Usados'],
+      ['Mis Vouchers'],
       [`Generado: ${generatedAt}`],
+      ...(codeValExp ? [[`Código: ${codeValExp}`]] : []),
       [`Certificación: ${courseVal || 'Todas las certificaciones'}`],
       [`Cliente final: ${clientVal || 'Todos los clientes'}`],
       [`Periodo: ${periodLabel}`],
-      [`Total vouchers usados: ${rows.length}`],
+      [`Total vouchers: ${rows.length}`],
       [],
       ['Codigo', 'Estado', 'Certificación asociada', 'Consumido por', 'Cliente final', 'Fecha consumo', 'Fecha registro']
     ];
@@ -5116,6 +5120,7 @@ document.addEventListener('DOMContentLoaded', () => {
   on('voucher-filter-apply', 'click', () => applyVoucherFilters());
   on('voucher-export-excel', 'click', () => exportFilteredUsedVouchersExcel());
   on('voucher-filter-clear', 'click', () => {
+    const vc = el('voucher-filter-code');    if(vc) vc.value = '';
     const co = el('voucher-filter-course');  if(co) co.selectedIndex = 0;
     const cl = el('voucher-filter-client');  if(cl) cl.selectedIndex = 0;
     const p  = el('voucher-filter-period');  if(p)  p.value  = '';
