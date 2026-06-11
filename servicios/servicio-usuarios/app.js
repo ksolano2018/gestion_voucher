@@ -612,12 +612,13 @@ async function sendStudentWelcomeEmail({ activationId, to, studentName, courseNa
     else if (result.skipped) emailStatus = 'SKIPPED';
     else                     { emailStatus = 'FAILED'; emailError = result.error || 'error desconocido'; }
 
+    const sentAt = result.sent ? new Date() : null;
     await pool.query(
       `UPDATE activations
        SET email_status=$1, email_error=$2, email_to=$3,
-           email_sent_at = CASE WHEN $1='SENT' THEN NOW() ELSE email_sent_at END
-       WHERE id=$4`,
-      [emailStatus, emailError, to, activationId]
+           email_sent_at = COALESCE($4::timestamp, email_sent_at)
+       WHERE id=$5`,
+      [emailStatus, emailError, to, sentAt, activationId]
     );
 
     await logSystemEvent(
