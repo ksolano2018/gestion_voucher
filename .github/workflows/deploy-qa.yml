@@ -32,11 +32,13 @@ jobs:
             # Inyectar URL real del servidor en el frontend
             sed -i "s|%API_URL%|http://${{ secrets.EC2_HOST }}:8080|g" frontend/public/index.html
 
-            # .env raíz para docker-compose (variables de postgres y healthcheck)
+            # .env raíz para docker-compose (postgres, healthcheck y Moodle dockerizado)
             cat > .env << ENVEOF
             DB_NAME=voucherdb
             DB_USER=admin
             DB_PASSWORD=${{ secrets.DB_PASSWORD }}
+            MOODLE_SITE_URL=http://${{ secrets.EC2_HOST }}:8095
+            MOODLE_ADMIN_PASSWORD=${{ secrets.MOODLE_ADMIN_PASSWORD }}
             ENVEOF
 
             # .env del servicio Node.js
@@ -62,7 +64,7 @@ jobs:
             MAX_LOGIN_ATTEMPTS=10
             RATE_LIMIT_WINDOW_MINUTES=15
             RATE_LIMIT_MAX_REQUESTS=100
-            MOODLE_URL=http://moodle-mock:8082
+            MOODLE_URL=http://moodle:8080
             MOODLE_TOKEN=${{ secrets.MOODLE_TOKEN }}
             MOODLE_ROLE_ID=5
             MOODLE_MOCK=false
@@ -90,9 +92,9 @@ jobs:
               -o /usr/local/lib/docker/cli-plugins/docker-buildx
             sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
-            # Levantar contenedores
-            docker compose down --remove-orphans
-            docker compose up -d --build
+            # Levantar contenedores (incluye Moodle dockerizado vía perfil local-moodle)
+            docker compose --profile local-moodle down --remove-orphans
+            docker compose --profile local-moodle up -d --build
 
             # Verificar estado
-            docker compose ps
+            docker compose --profile local-moodle ps

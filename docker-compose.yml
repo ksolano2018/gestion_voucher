@@ -104,8 +104,9 @@ services:
       timeout: 5s
       retries: 10
 
-  # Moodle LMS local (acceso: http://localhost:8095  admin/Admin1234!)
-  # Solo arranca con: docker compose --profile local-moodle up -d
+  # Moodle LMS dockerizado.
+  # Local:  docker compose --profile local-moodle up -d   (admin/Admin1234! en http://localhost:8095)
+  # QA:     el deploy lo levanta con --profile local-moodle y SITE_URL/MOODLE_ADMIN_PASSWORD por env.
   moodle:
     image: erseco/alpine-moodle
     container_name: moodle
@@ -113,7 +114,7 @@ services:
     ports:
       - "8095:8080"
     environment:
-      - SITE_URL=http://localhost:8095
+      - SITE_URL=${MOODLE_SITE_URL:-http://localhost:8095}
       - DB_TYPE=mariadb
       - DB_HOST=moodle-db
       - DB_PORT=3306
@@ -121,7 +122,7 @@ services:
       - DB_USER=moodle
       - DB_PASS=moodlepass123
       - MOODLE_USERNAME=admin
-      - MOODLE_PASSWORD=Admin1234!
+      - MOODLE_PASSWORD=${MOODLE_ADMIN_PASSWORD:-Admin1234!}
       - MOODLE_EMAIL=admin@certjoin.com
       - MOODLE_SITENAME=CertJOIN-LMS
       - MOODLE_LANGUAGE=es
