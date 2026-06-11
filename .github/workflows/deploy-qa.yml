@@ -68,18 +68,18 @@ jobs:
             MOODLE_TOKEN=${{ secrets.MOODLE_TOKEN }}
             MOODLE_ROLE_ID=5
             MOODLE_MOCK=false
-            MOODLE_PUBLIC_URL=${{ vars.MOODLE_PUBLIC_URL }}
-            CAMPUS_URL=${{ vars.CAMPUS_URL }}
-            MAIL_ENABLED=${{ vars.MAIL_ENABLED }}
-            SMTP_HOST=${{ vars.SMTP_HOST }}
-            SMTP_PORT=${{ vars.SMTP_PORT }}
-            SMTP_SECURE=${{ vars.SMTP_SECURE }}
-            SMTP_USER=${{ vars.SMTP_USER }}
-            SMTP_PASS=${{ secrets.SMTP_PASS }}
-            MAIL_FROM=${{ vars.MAIL_FROM }}
-            MAIL_FROM_NAME=${{ vars.MAIL_FROM_NAME || 'CertJoin' }}
-            MAIL_REPLY_TO=${{ vars.MAIL_REPLY_TO }}
-            MAIL_LOGO_URL=${{ vars.MAIL_LOGO_URL }}
+            MOODLE_PUBLIC_URL=${{ vars.MOODLE_PUBLIC_URL || secrets.MOODLE_PUBLIC_URL }}
+            CAMPUS_URL=${{ vars.CAMPUS_URL || secrets.CAMPUS_URL }}
+            MAIL_ENABLED=${{ vars.MAIL_ENABLED || secrets.MAIL_ENABLED }}
+            SMTP_HOST=${{ vars.SMTP_HOST || secrets.SMTP_HOST }}
+            SMTP_PORT=${{ vars.SMTP_PORT || secrets.SMTP_PORT }}
+            SMTP_SECURE=${{ vars.SMTP_SECURE || secrets.SMTP_SECURE }}
+            SMTP_USER=${{ vars.SMTP_USER || secrets.SMTP_USER }}
+            SMTP_PASS=${{ secrets.SMTP_PASS || vars.SMTP_PASS }}
+            MAIL_FROM=${{ vars.MAIL_FROM || secrets.MAIL_FROM }}
+            MAIL_FROM_NAME=${{ vars.MAIL_FROM_NAME || secrets.MAIL_FROM_NAME || 'CertJoin' }}
+            MAIL_REPLY_TO=${{ vars.MAIL_REPLY_TO || secrets.MAIL_REPLY_TO }}
+            MAIL_LOGO_URL=${{ vars.MAIL_LOGO_URL || secrets.MAIL_LOGO_URL }}
             ENVEOF
 
             # Crear directorio de logs
