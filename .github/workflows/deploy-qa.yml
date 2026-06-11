@@ -63,7 +63,7 @@ jobs:
             RATE_LIMIT_WINDOW_MINUTES=15
             RATE_LIMIT_MAX_REQUESTS=100
             MOODLE_URL=http://moodle-mock:8082
-            MOODLE_TOKEN=b7e1f736de1ed7eb52b09ac6a8f18c60
+            MOODLE_TOKEN=${{ secrets.MOODLE_TOKEN }}
             MOODLE_ROLE_ID=5
             MOODLE_MOCK=false
             MOODLE_PUBLIC_URL=${{ secrets.MOODLE_PUBLIC_URL }}
