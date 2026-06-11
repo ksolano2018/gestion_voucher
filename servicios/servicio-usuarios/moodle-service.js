@@ -80,9 +80,10 @@ function moodleRequest(wsfunction, params) {
 
 let _mockIdCounter = 5000;
 
-function mockEnrollStudent(email, moodleCourseId) {
+function mockEnrollStudent(email, moodleCourseId, timeend) {
   const id = ++_mockIdCounter;
-  console.log(`[MOODLE MOCK] enrollStudent email=${email} courseId=${moodleCourseId} → userId=${id}`);
+  const endLabel = timeend && Number(timeend) > 0 ? new Date(Number(timeend) * 1000).toISOString().slice(0, 10) : 'ilimitado';
+  console.log(`[MOODLE MOCK] enrollStudent email=${email} courseId=${moodleCourseId} timeend=${endLabel} → userId=${id}`);
   return { mocked: true, moodleUserId: id };
 }
 
@@ -165,15 +166,21 @@ async function forcePasswordChange(moodleUserId) {
 
 /**
  * Enroll a Moodle user in a course.
+ * @param {number} timeend - Unix timestamp (seconds) en que expira la matrícula. 0/null = ilimitado.
  * Returns { ok: true } or { error }.
  */
-async function enrollUserInCourse(moodleUserId, moodleCourseId) {
+async function enrollUserInCourse(moodleUserId, moodleCourseId, timeend) {
   try {
-    await moodleRequest('enrol_manual_enrol_users', {
+    const params = {
       'enrolments[0][roleid]':   MOODLE_ROLE_ID,
       'enrolments[0][userid]':   moodleUserId,
       'enrolments[0][courseid]': moodleCourseId
-    });
+    };
+    if (timeend && Number(timeend) > 0) {
+      params['enrolments[0][timestart]'] = Math.floor(Date.now() / 1000);
+      params['enrolments[0][timeend]']   = Math.floor(Number(timeend));
+    }
+    await moodleRequest('enrol_manual_enrol_users', params);
     return { ok: true };
   } catch (err) {
     return { error: err.message };
@@ -189,13 +196,16 @@ async function enrollUserInCourse(moodleUserId, moodleCourseId) {
  *   { skipped: true, reason }                  — sin moodle_course_id
  *   { error, moodleUserId? }                   — fallo parcial o total
  */
-async function enrollStudent({ email, firstName, lastName, moodleCourseId }) {
+async function enrollStudent({ email, firstName, lastName, moodleCourseId, expiresAt }) {
   if (!moodleCourseId) {
     return { skipped: true, reason: 'no_moodle_course_id' };
   }
 
+  // Convierte expiresAt (Date | ISO string | timestamp) a Unix segundos para Moodle
+  const timeend = expiresAt ? Math.floor(new Date(expiresAt).getTime() / 1000) : 0;
+
   if (MOODLE_MOCK) {
-    return mockEnrollStudent(email, moodleCourseId);
+    return mockEnrollStudent(email, moodleCourseId, timeend);
   }
 
   // Step 1: find existing user
@@ -225,8 +235,8 @@ async function enrollStudent({ email, firstName, lastName, moodleCourseId }) {
     }
   }
 
-  // Step 3: enroll
-  const enrollResult = await enrollUserInCourse(moodleUserId, moodleCourseId);
+  // Step 3: enroll (con fecha de expiración si aplica)
+  const enrollResult = await enrollUserInCourse(moodleUserId, moodleCourseId, timeend);
   if (enrollResult.error) {
     return { error: `enroll: ${enrollResult.error}`, moodleUserId };
   }

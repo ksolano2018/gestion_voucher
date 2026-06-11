@@ -2921,7 +2921,7 @@ app.get('/partner/:id/vouchers', authenticate, async (req,res)=>{
               v.voucher_type, v.complimentary_reason,
               a.final_client, a.user_name AS activation_user_name,
               a.moodle_status, a.moodle_user_id, a.moodle_error, a.moodle_enrolled_at,
-              a.moodle_completed_at
+              a.moodle_completed_at, a.expires_at
        FROM vouchers v
        LEFT JOIN courses c ON c.id = v.course_id
        LEFT JOIN activations a ON a.voucher_id = v.id
@@ -3343,7 +3343,8 @@ app.post('/partner/:id/activate',
         email: user_email,
         firstName,
         lastName,
-        moodleCourseId
+        moodleCourseId,
+        expiresAt
       });
 
       let moodleStatus, moodleUserId, moodleError, moodleEnrolledAt;
@@ -3470,7 +3471,7 @@ app.post('/admin/moodle/enrollments/:activationId/retry',
     const { activationId } = req.params;
     try {
       const actResult = await pool.query(
-        `SELECT a.id, a.user_name, a.user_email, a.moodle_status,
+        `SELECT a.id, a.user_name, a.user_email, a.moodle_status, a.expires_at,
                 a.moodle_retry_count, c.moodle_course_id, c.name AS course_name
          FROM activations a
          LEFT JOIN courses c ON c.id = a.course_id
@@ -3501,7 +3502,8 @@ app.post('/admin/moodle/enrollments/:activationId/retry',
         email:          act.user_email,
         firstName:      nameParts[0] || act.user_email.split('@')[0],
         lastName:       nameParts.slice(1).join(' ') || 'Student',
-        moodleCourseId: act.moodle_course_id
+        moodleCourseId: act.moodle_course_id,
+        expiresAt:      act.expires_at
       });
 
       let moodleStatus, moodleUserId, moodleError, moodleEnrolledAt;
@@ -3563,7 +3565,7 @@ app.post('/admin/moodle/enrollments/retry-all-failed',
 
       for (const row of failed.rows) {
         const actResult = await pool.query(
-          `SELECT a.user_name, a.user_email, c.moodle_course_id
+          `SELECT a.user_name, a.user_email, a.expires_at, c.moodle_course_id
            FROM activations a
            LEFT JOIN courses c ON c.id = a.course_id
            WHERE a.id=$1`, [row.id]
@@ -3576,7 +3578,8 @@ app.post('/admin/moodle/enrollments/retry-all-failed',
           email:          act.user_email,
           firstName:      nameParts[0] || act.user_email.split('@')[0],
           lastName:       nameParts.slice(1).join(' ') || 'Student',
-          moodleCourseId: act.moodle_course_id
+          moodleCourseId: act.moodle_course_id,
+          expiresAt:      act.expires_at
         });
 
         results.attempted++;

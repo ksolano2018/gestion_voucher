@@ -2657,6 +2657,125 @@ document.addEventListener('DOMContentLoaded', () => {
     ws['!cols'] = widths.map(w => ({ wch: w }));
   }
 
+  // ── Estilos Excel (requiere xlsx-js-style) ──────────────
+  const XLS_COLORS = {
+    brandDark:  '0F3478',  // azul corporativo
+    brandMid:   '1F4E78',
+    accent:     '29B6F6',
+    headerBg:   '0F3478',
+    headerText: 'FFFFFF',
+    zebra:      'EEF3FB',
+    border:     'C8D2E0',
+    labelText:  '334155',
+    metaText:   '64748B'
+  };
+
+  function _xlsThin(){
+    return {
+      top:    { style: 'thin', color: { rgb: XLS_COLORS.border } },
+      bottom: { style: 'thin', color: { rgb: XLS_COLORS.border } },
+      left:   { style: 'thin', color: { rgb: XLS_COLORS.border } },
+      right:  { style: 'thin', color: { rgb: XLS_COLORS.border } }
+    };
+  }
+
+  // Asigna estilo a una celda existente (crea objeto si falta el valor)
+  function _xlsSetCellStyle(ws, r, c, style){
+    const ref = XLSX.utils.encode_cell({ r, c });
+    if(!ws[ref]) ws[ref] = { t: 's', v: '' };
+    ws[ref].s = style;
+  }
+
+  // Aplica un layout profesional a una hoja tabular con bloque de título + metadatos.
+  // opts: { title, subtitle, metaPairs:[[label,value]], headers:[], dataRows:[[...]], colWidths:[], centerCols:[] }
+  function _xlsBuildStyledSheet(opts){
+    const { title, subtitle, metaPairs = [], headers = [], dataRows = [], colWidths = [], centerCols = [] } = opts;
+    const nCols = headers.length;
+    const lastColIdx = nCols - 1;
+
+    const aoa = [];
+    aoa.push([title]);                         // r0
+    if(subtitle) aoa.push([subtitle]);         // r1
+    const metaStart = aoa.length;
+    metaPairs.forEach(([label, value]) => aoa.push([label, value]));
+    aoa.push([]);                              // blank separator
+    const headerRowIdx = aoa.length;
+    aoa.push(headers);
+    dataRows.forEach(row => aoa.push(row));
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    ws['!cols'] = colWidths.map(w => ({ wch: w }));
+
+    // Merges: título, subtítulo y valores de metadatos (col 1 → última col)
+    const merges = [];
+    merges.push({ s: { r: 0, c: 0 }, e: { r: 0, c: lastColIdx } });
+    if(subtitle) merges.push({ s: { r: 1, c: 0 }, e: { r: 1, c: lastColIdx } });
+    metaPairs.forEach((_, i) => merges.push({ s: { r: metaStart + i, c: 1 }, e: { r: metaStart + i, c: lastColIdx } }));
+    ws['!merges'] = merges;
+
+    // Alturas de fila
+    const rows = [];
+    rows[0] = { hpt: 26 };
+    if(subtitle) rows[1] = { hpt: 18 };
+    rows[headerRowIdx] = { hpt: 20 };
+    ws['!rows'] = rows;
+
+    // Estilo título
+    _xlsSetCellStyle(ws, 0, 0, {
+      font: { bold: true, sz: 16, color: { rgb: XLS_COLORS.headerText } },
+      fill: { patternType: 'solid', fgColor: { rgb: XLS_COLORS.brandDark } },
+      alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+    });
+    if(subtitle){
+      _xlsSetCellStyle(ws, 1, 0, {
+        font: { bold: true, sz: 11, color: { rgb: XLS_COLORS.headerText } },
+        fill: { patternType: 'solid', fgColor: { rgb: XLS_COLORS.brandMid } },
+        alignment: { horizontal: 'left', vertical: 'center', indent: 1 }
+      });
+    }
+
+    // Estilo metadatos (label en negrita, valor normal)
+    metaPairs.forEach((_, i) => {
+      _xlsSetCellStyle(ws, metaStart + i, 0, {
+        font: { bold: true, sz: 10, color: { rgb: XLS_COLORS.labelText } },
+        alignment: { horizontal: 'left', vertical: 'center' }
+      });
+      _xlsSetCellStyle(ws, metaStart + i, 1, {
+        font: { sz: 10, color: { rgb: XLS_COLORS.metaText } },
+        alignment: { horizontal: 'left', vertical: 'center' }
+      });
+    });
+
+    // Estilo encabezados
+    for(let c = 0; c < nCols; c++){
+      _xlsSetCellStyle(ws, headerRowIdx, c, {
+        font: { bold: true, sz: 10, color: { rgb: XLS_COLORS.headerText } },
+        fill: { patternType: 'solid', fgColor: { rgb: XLS_COLORS.headerBg } },
+        alignment: { horizontal: 'center', vertical: 'center', wrapText: true },
+        border: _xlsThin()
+      });
+    }
+
+    // Estilo filas de datos (zebra + bordes)
+    for(let i = 0; i < dataRows.length; i++){
+      const r = headerRowIdx + 1 + i;
+      const zebra = i % 2 === 1;
+      for(let c = 0; c < nCols; c++){
+        _xlsSetCellStyle(ws, r, c, {
+          font: { sz: 10, color: { rgb: '1E293B' } },
+          fill: zebra ? { patternType: 'solid', fgColor: { rgb: XLS_COLORS.zebra } } : undefined,
+          alignment: { horizontal: centerCols.includes(c) ? 'center' : 'left', vertical: 'center' },
+          border: _xlsThin()
+        });
+      }
+    }
+
+    // AutoFilter sobre encabezado + datos
+    ws['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: headerRowIdx, c: 0 }, e: { r: headerRowIdx + dataRows.length, c: lastColIdx } }) };
+
+    return ws;
+  }
+
   // Carga el logo una sola vez y lo cachea en base64 para jsPDF
   let _logoBase64 = null;
   async function _loadLogo(){
@@ -4732,7 +4851,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbody = el('vouchers-table-body');
     if(!tbody) return;
     if(_currentVouchersDisplayList.length === 0){
-      tbody.innerHTML = '<tr><td colspan="7" class="text-center text-muted p-3">No hay vouchers para los criterios seleccionados</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-3">No hay vouchers para los criterios seleccionados</td></tr>';
       renderVouchersPagination();
       return;
     }
@@ -4774,6 +4893,17 @@ document.addEventListener('DOMContentLoaded', () => {
       const compBadge = (v.voucher_type === 'COMPLIMENTARY')
         ? `<span class="badge ms-1" style="background:#fd7e14;color:#fff;" title="${escapeHTML(v.complimentary_reason || 'Cortesía')}">🎁 Cortesía</span>`
         : '';
+
+      let expiraCell = '<span class="text-muted">—</span>';
+      if(v.expires_at){
+        const expDate = new Date(v.expires_at);
+        const expLabel = expDate.toLocaleDateString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric' });
+        const expired = expDate.getTime() < Date.now();
+        expiraCell = expired
+          ? `<span class="badge bg-danger" title="Acceso expirado">${expLabel}</span>`
+          : `<span title="Acceso al curso hasta esta fecha">${expLabel}</span>`;
+      }
+
       return `<tr>
         <td><code>${safeCode}</code>${compBadge}</td>
         <td>${statusBadge}</td>
@@ -4782,6 +4912,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${safeFinalClient}</td>
         <td>${moodleBadge}</td>
         <td>${created}</td>
+        <td>${expiraCell}</td>
       </tr>`;
     }).join('');
     renderVouchersPagination();
@@ -4925,43 +5056,49 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const wb = XLSX.utils.book_new();
     const todayIso = new Date().toISOString().slice(0,10);
-    const generatedAt = new Date().toLocaleDateString('es-ES');
+    const generatedAt = new Date().toLocaleDateString('es-ES', { day:'2-digit', month:'long', year:'numeric' });
     const periodLabel = getVoucherPeriodLabel(periodVal, dateFrom, dateTo);
 
-    const aoa = [
-      ['CertJOIN Platform'],
-      ['Mis Vouchers'],
-      [`Generado: ${generatedAt}`],
-      ...(codeValExp ? [[`Código: ${codeValExp}`]] : []),
-      [`Certificación: ${courseVal || 'Todas las certificaciones'}`],
-      [`Cliente final: ${clientVal || 'Todos los clientes'}`],
-      [`Periodo: ${periodLabel}`],
-      [`Total vouchers: ${rows.length}`],
-      [],
-      ['Codigo', 'Estado', 'Certificación asociada', 'Consumido por', 'Cliente final', 'Fecha consumo', 'Fecha registro']
-    ];
-
-    rows.forEach(v => {
+    const dataRows = rows.map(v => {
       const status = (v.status || '').toUpperCase();
       const statusLabel = status === 'CONSUMED' ? 'Consumido' : (v.status || '-');
       const consumedAt = v.consumed_at ? new Date(v.consumed_at).toLocaleDateString('es-ES') : '-';
       const createdAt = v.created_at ? new Date(v.created_at).toLocaleDateString('es-ES') : '-';
-      aoa.push([
+      const expiresAt = v.expires_at ? new Date(v.expires_at).toLocaleDateString('es-ES') : '-';
+      return [
         v.code || '-',
         statusLabel,
         v.course_name || '-',
         v.consumed_by || '-',
         v.final_client || '-',
         consumedAt,
-        createdAt
-      ]);
+        createdAt,
+        expiresAt
+      ];
     });
 
-    const ws = XLSX.utils.aoa_to_sheet(aoa);
-    _xlsxSetColWidths(ws, [16, 12, 28, 30, 24, 14, 14]);
-    XLSX.utils.book_append_sheet(wb, ws, 'Vouchers usados');
-    XLSX.writeFile(wb, `mis_vouchers_usados_${todayIso}.xlsx`);
-    showLoginMessage('Excel de vouchers usado generado correctamente', 'success', 2500);
+    const metaPairs = [
+      ['Generado:', generatedAt],
+      ...(codeValExp ? [['Código:', codeValExp]] : []),
+      ['Certificación:', courseVal || 'Todas las certificaciones'],
+      ['Cliente final:', clientVal || 'Todos los clientes'],
+      ['Periodo:', periodLabel],
+      ['Total vouchers:', String(rows.length)]
+    ];
+
+    const ws = _xlsBuildStyledSheet({
+      title:    'CertJOIN Platform',
+      subtitle: 'Mis Vouchers',
+      metaPairs,
+      headers:  ['Código', 'Estado', 'Certificación asociada', 'Consumido por', 'Cliente final', 'Fecha consumo', 'Fecha registro', 'Expira'],
+      dataRows,
+      colWidths:  [18, 14, 30, 32, 26, 16, 16, 16],
+      centerCols: [1, 5, 6, 7]
+    });
+
+    XLSX.utils.book_append_sheet(wb, ws, 'Mis Vouchers');
+    XLSX.writeFile(wb, `mis_vouchers_${todayIso}.xlsx`);
+    showLoginMessage('Excel de vouchers generado correctamente', 'success', 2500);
   }
 
   function populateFilterSelect(selectId, values, defaultLabel){
@@ -5242,8 +5379,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!courseId || !firstname || !lastname || !email || !finalClient){ showToast('Completa todos los campos del formulario', 'warning'); return; }
     const courseName = (el('activate-course-id') || {}).options?.[(el('activate-course-id')||{}).selectedIndex]?.text || courseId;
     const months = parseInt((el('activate-months') || {}).value || '12');
+    const endDate = new Date();
+    endDate.setMonth(endDate.getMonth() + months);
+    const endDateLabel = endDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
     const infoEl = el('confirm-activate-info');
-    if(infoEl) infoEl.innerHTML = `Certificación: <strong>${escapeHTML(courseName)}</strong><br>Usuario: <strong>${escapeHTML(name)}</strong> — ${escapeHTML(email)}<br>Cliente: <strong>${escapeHTML(finalClient)}</strong><br>Disponibilidad: <strong>${months} mes(es)</strong>`;
+    if(infoEl) infoEl.innerHTML = `Certificación: <strong>${escapeHTML(courseName)}</strong><br>Usuario: <strong>${escapeHTML(name)}</strong> — ${escapeHTML(email)}<br>Cliente: <strong>${escapeHTML(finalClient)}</strong><br>Disponibilidad: <strong>${months} mes(es)</strong><br><span style="color:#0d6efd;">⏱️ Acceso al curso en Moodle hasta el <strong>${escapeHTML(endDateLabel)}</strong></span>`;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmActivateModal')).show();
   });
 
@@ -5279,8 +5419,14 @@ document.addEventListener('DOMContentLoaded', () => {
         } else if(ms === 'MOCKED')  moodleMsg = ' — Acceso Moodle: Simulado';
         else if(ms === 'FAILED')    moodleMsg = ' — Acceso Moodle: ⚠ Error (reintentar desde Admin)';
         else if(ms === 'SKIPPED')   moodleMsg = ' — Sin certificación Moodle configurada';
-        const expiryInfo = data.expires_at ? ` — Disponible hasta: ${new Date(data.expires_at).toLocaleDateString('es-ES')}` : '';
-        showToast(`Voucher activado — Certificación: ${data.course_name || ''}${moodleMsg}${expiryInfo}`, ms === 'FAILED' ? 'warning' : 'success', 8000);
+        let expiryInfo = '';
+        if(data.expires_at){
+          const endLabel = new Date(data.expires_at).toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
+          const monthsLabel = data.activation_months ? `${data.activation_months} mes(es), ` : '';
+          expiryInfo = ` ⏱️ Acceso al curso hasta: ${endLabel} (${monthsLabel}fin de matrícula en Moodle).`;
+        }
+        const moodleMsgPlain = moodleMsg.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').replace(/\s+—\s+/g, ' — ').trimEnd();
+        showToast(`✓ Voucher activado — Certificación: ${data.course_name || ''}${moodleMsgPlain}${expiryInfo}`, ms === 'FAILED' ? 'warning' : 'success', 10000);
         loadPartnerVouchers();
         loadPartnerStats(false);
         loadActivationEligibility();
