@@ -83,8 +83,11 @@ let _mockIdCounter = 5000;
 function mockEnrollStudent(email, moodleCourseId, timeend) {
   const id = ++_mockIdCounter;
   const endLabel = timeend && Number(timeend) > 0 ? new Date(Number(timeend) * 1000).toISOString().slice(0, 10) : 'ilimitado';
+  // Credenciales simuladas para poder probar el correo de bienvenida end-to-end en local
+  const username = email.toLowerCase().replace('@', '.').replace(/[^a-z0-9._-]/g, '_');
+  const tempPassword = `Mock-${id}-Aa!`;
   console.log(`[MOODLE MOCK] enrollStudent email=${email} courseId=${moodleCourseId} timeend=${endLabel} → userId=${id}`);
-  return { mocked: true, moodleUserId: id };
+  return { mocked: true, moodleUserId: id, createdNewUser: true, moodleUsername: username, moodleTempPassword: tempPassword };
 }
 
 function mockGetCourseCompletionStatus(moodleUserId, moodleCourseId) {
@@ -219,6 +222,7 @@ async function enrollStudent({ email, firstName, lastName, moodleCourseId, expir
   // Step 2: create if not found
   let moodleUsername = null;
   let moodleTempPassword = null;
+  let createdNewUser = false;
   if (!moodleUserId) {
     const createResult = await createUser(email, firstName, lastName);
     if (createResult.error) {
@@ -227,6 +231,7 @@ async function enrollStudent({ email, firstName, lastName, moodleCourseId, expir
     moodleUserId = createResult.moodleUserId;
     moodleUsername = createResult.moodleUsername;
     moodleTempPassword = createResult.moodleTempPassword;
+    createdNewUser = true;
 
     // Force password change on first login (non-fatal if unsupported)
     const fpcResult = await forcePasswordChange(moodleUserId);
@@ -241,7 +246,7 @@ async function enrollStudent({ email, firstName, lastName, moodleCourseId, expir
     return { error: `enroll: ${enrollResult.error}`, moodleUserId };
   }
 
-  return { enrolled: true, moodleUserId, moodleUsername, moodleTempPassword };
+  return { enrolled: true, moodleUserId, moodleUsername, moodleTempPassword, createdNewUser };
 }
 
 /**

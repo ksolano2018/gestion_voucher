@@ -134,6 +134,20 @@ services:
     networks:
       - proyecto-network
 
+  # Mail-catcher local: captura los correos salientes para validarlos visualmente.
+  # UI web: http://localhost:8025  |  SMTP interno: mailpit:1025
+  # Solo arranca con el perfil local-mail:  docker compose --profile local-mail up -d
+  # En QA/PD NO se usa: allí SMTP_HOST apunta a un SMTP real vía variables de entorno.
+  mailpit:
+    image: axllent/mailpit:latest
+    container_name: mailpit
+    profiles: [local-mail]
+    ports:
+      - "8025:8025"   # UI web del buzón
+      - "1025:1025"   # SMTP
+    networks:
+      - proyecto-network
+
 networks:
   proyecto-network:
     driver: bridge

@@ -66,6 +66,18 @@ jobs:
             MOODLE_TOKEN=b7e1f736de1ed7eb52b09ac6a8f18c60
             MOODLE_ROLE_ID=5
             MOODLE_MOCK=false
+            MOODLE_PUBLIC_URL=${{ secrets.MOODLE_PUBLIC_URL }}
+            CAMPUS_URL=${{ secrets.CAMPUS_URL }}
+            MAIL_ENABLED=${{ secrets.MAIL_ENABLED }}
+            SMTP_HOST=${{ secrets.SMTP_HOST }}
+            SMTP_PORT=${{ secrets.SMTP_PORT }}
+            SMTP_SECURE=${{ secrets.SMTP_SECURE }}
+            SMTP_USER=${{ secrets.SMTP_USER }}
+            SMTP_PASS=${{ secrets.SMTP_PASS }}
+            MAIL_FROM=${{ secrets.MAIL_FROM }}
+            MAIL_FROM_NAME=CertJoin
+            MAIL_REPLY_TO=${{ secrets.MAIL_REPLY_TO }}
+            MAIL_LOGO_URL=${{ secrets.MAIL_LOGO_URL }}
             ENVEOF
 
             # Crear directorio de logs

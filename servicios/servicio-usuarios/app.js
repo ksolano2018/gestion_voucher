@@ -12,6 +12,11 @@ const { body, param, validationResult } = require('express-validator');
 require('dotenv').config();
 
 const moodleService = require('./moodle-service');
+const mailer = require('./mailer');
+const { buildStudentWelcomeEmail } = require('./email-templates');
+
+const MOODLE_PUBLIC_URL = (process.env.MOODLE_PUBLIC_URL || process.env.MOODLE_URL || '').replace(/\/$/, '');
+const CAMPUS_URL = process.env.CAMPUS_URL || (MOODLE_PUBLIC_URL ? `${MOODLE_PUBLIC_URL}/login/index.php` : 'https://campus.certjoin.com/');
 
 const app = express();
 
@@ -582,6 +587,51 @@ async function logSystemEvent(eventType, eventCategory, userId, stripeCustomerId
   }
 }
 
+/**
+ * Envía el correo de bienvenida al estudiante cuando se crea su cuenta en Moodle.
+ * No bloqueante e idempotente: nunca lanza, y no reenvía si email_status ya es 'SENT'.
+ * Registra el resultado en activations (email_status/email_error/email_to/email_sent_at)
+ * y en system_events.
+ */
+async function sendStudentWelcomeEmail({ activationId, to, studentName, courseName, username, tempPassword, months = null, expiresAt, userId = null, req = null }) {
+  try {
+    if (!to) return;
+
+    // Idempotencia: no reenviar si ya se envió correctamente
+    const prev = await pool.query('SELECT email_status FROM activations WHERE id=$1', [activationId]);
+    if (prev.rowCount > 0 && prev.rows[0].email_status === 'SENT') return;
+
+    const { subject, html, text } = buildStudentWelcomeEmail({
+      studentName, email: to, courseName, username, tempPassword, months, expiresAt, campusUrl: CAMPUS_URL
+    });
+
+    const result = await mailer.sendMail({ to, subject, html, text });
+
+    let emailStatus, emailError = null;
+    if (result.sent)        emailStatus = 'SENT';
+    else if (result.skipped) emailStatus = 'SKIPPED';
+    else                     { emailStatus = 'FAILED'; emailError = result.error || 'error desconocido'; }
+
+    await pool.query(
+      `UPDATE activations
+       SET email_status=$1, email_error=$2, email_to=$3,
+           email_sent_at = CASE WHEN $1='SENT' THEN NOW() ELSE email_sent_at END
+       WHERE id=$4`,
+      [emailStatus, emailError, to, activationId]
+    );
+
+    await logSystemEvent(
+      emailStatus === 'SENT' ? 'STUDENT_WELCOME_EMAIL_SENT' : `STUDENT_WELCOME_EMAIL_${emailStatus}`,
+      'EMAIL', userId, null, null,
+      { activation_id: activationId, to, course_name: courseName, reason: result.reason || null },
+      emailStatus === 'FAILED' ? 'FAILED' : 'SUCCESS',
+      emailError, req
+    );
+  } catch (e) {
+    console.error(`❌ Error enviando correo de bienvenida (activation ${activationId}):`, e.message);
+  }
+}
+
 // Log transaction state changes for audit trail
 async function logTransactionEvent(purchaseId, newStatus, previousStatus, eventType, stripeEventId, stripeEventData, paymentIntentId, partnerId, metadata = null) {
   try {
@@ -1124,6 +1174,10 @@ async function initDb(){
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS moodle_temp_password VARCHAR(100);
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS moodle_completed_at TIMESTAMP;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS moodle_completion_synced_at TIMESTAMP;
+    ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_status VARCHAR(30);
+    ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_error TEXT;
+    ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_to VARCHAR(200);
+    ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP;
     ALTER TABLE purchases   ADD COLUMN IF NOT EXISTS payment_method     VARCHAR(50) DEFAULT 'stripe';
     ALTER TABLE purchases   ADD COLUMN IF NOT EXISTS external_reference VARCHAR(200);
     ALTER TABLE purchases   ADD COLUMN IF NOT EXISTS notes              TEXT;
@@ -3356,6 +3410,8 @@ app.post('/partner/:id/activate',
         moodleStatus     = 'MOCKED';
         moodleUserId     = moodleResult.moodleUserId;
         moodleEnrolledAt = new Date();
+        moodleUsername    = moodleResult.moodleUsername    || null;
+        moodleTempPassword = moodleResult.moodleTempPassword || null;
       } else if (moodleResult.enrolled) {
         moodleStatus      = 'ENROLLED';
         moodleUserId      = moodleResult.moodleUserId;
@@ -3396,6 +3452,22 @@ app.post('/partner/:id/activate',
         moodleError || null,
         req
       );
+
+      // Correo de bienvenida: solo si se creó una cuenta nueva en Moodle (no bloqueante)
+      if (moodleResult.createdNewUser && moodleTempPassword) {
+        await sendStudentWelcomeEmail({
+          activationId,
+          to:           user_email,
+          studentName:  user_name,
+          courseName:   course.rows[0].name,
+          username:     moodleUsername,
+          tempPassword: moodleTempPassword,
+          months:       reqMonths,
+          expiresAt,
+          userId:       req.user.sub,
+          req
+        });
+      }
 
       res.json({
         ok: true,
@@ -3507,11 +3579,14 @@ app.post('/admin/moodle/enrollments/:activationId/retry',
       });
 
       let moodleStatus, moodleUserId, moodleError, moodleEnrolledAt;
+      let moodleUsername = null, moodleTempPassword = null;
 
       if (moodleResult.enrolled || moodleResult.mocked) {
         moodleStatus     = moodleResult.mocked ? 'MOCKED' : 'ENROLLED';
         moodleUserId     = moodleResult.moodleUserId;
         moodleEnrolledAt = new Date();
+        moodleUsername    = moodleResult.moodleUsername    || null;
+        moodleTempPassword = moodleResult.moodleTempPassword || null;
       } else {
         moodleStatus = 'FAILED';
         moodleError  = moodleResult.error;
@@ -3520,9 +3595,12 @@ app.post('/admin/moodle/enrollments/:activationId/retry',
 
       await pool.query(
         `UPDATE activations
-         SET moodle_status=$1, moodle_user_id=$2, moodle_error=$3, moodle_enrolled_at=$4
-         WHERE id=$5`,
-        [moodleStatus, moodleUserId || null, moodleError || null, moodleEnrolledAt || null, activationId]
+         SET moodle_status=$1, moodle_user_id=$2, moodle_error=$3, moodle_enrolled_at=$4,
+             moodle_username=COALESCE($5, moodle_username),
+             moodle_temp_password=COALESCE($6, moodle_temp_password)
+         WHERE id=$7`,
+        [moodleStatus, moodleUserId || null, moodleError || null, moodleEnrolledAt || null,
+         moodleUsername, moodleTempPassword, activationId]
       );
 
       await logSystemEvent(
@@ -3532,6 +3610,21 @@ app.post('/admin/moodle/enrollments/:activationId/retry',
         moodleStatus === 'FAILED' ? 'FAILED' : 'SUCCESS',
         moodleError || null, req
       );
+
+      // Correo de bienvenida: solo si el retry creó una cuenta nueva en Moodle (no bloqueante)
+      if (moodleResult.createdNewUser && moodleTempPassword) {
+        await sendStudentWelcomeEmail({
+          activationId: parseInt(activationId, 10),
+          to:           act.user_email,
+          studentName:  act.user_name,
+          courseName:   act.course_name,
+          username:     moodleUsername,
+          tempPassword: moodleTempPassword,
+          expiresAt:    act.expires_at,
+          userId:       req.user.sub,
+          req
+        });
+      }
 
       res.json({
         ok:             moodleStatus !== 'FAILED',
@@ -3565,7 +3658,7 @@ app.post('/admin/moodle/enrollments/retry-all-failed',
 
       for (const row of failed.rows) {
         const actResult = await pool.query(
-          `SELECT a.user_name, a.user_email, a.expires_at, c.moodle_course_id
+          `SELECT a.user_name, a.user_email, a.expires_at, c.moodle_course_id, c.name AS course_name
            FROM activations a
            LEFT JOIN courses c ON c.id = a.course_id
            WHERE a.id=$1`, [row.id]
@@ -3591,16 +3684,35 @@ app.post('/admin/moodle/enrollments/retry-all-failed',
           `UPDATE activations
            SET moodle_status=$1, moodle_user_id=$2, moodle_error=$3,
                moodle_enrolled_at=$4, moodle_retried_at=NOW(),
-               moodle_retry_count = moodle_retry_count + 1
-           WHERE id=$5`,
+               moodle_retry_count = moodle_retry_count + 1,
+               moodle_username=COALESCE($5, moodle_username),
+               moodle_temp_password=COALESCE($6, moodle_temp_password)
+           WHERE id=$7`,
           [
             ok ? (moodleResult.mocked ? 'MOCKED' : 'ENROLLED') : 'FAILED',
             moodleResult.moodleUserId || null,
             ok ? null : moodleResult.error,
             ok ? new Date() : null,
+            ok ? (moodleResult.moodleUsername    || null) : null,
+            ok ? (moodleResult.moodleTempPassword || null) : null,
             row.id
           ]
         );
+
+        // Correo de bienvenida: solo si el retry creó una cuenta nueva en Moodle (no bloqueante)
+        if (moodleResult.createdNewUser && moodleResult.moodleTempPassword) {
+          await sendStudentWelcomeEmail({
+            activationId: row.id,
+            to:           act.user_email,
+            studentName:  act.user_name,
+            courseName:   act.course_name,
+            username:     moodleResult.moodleUsername,
+            tempPassword: moodleResult.moodleTempPassword,
+            expiresAt:    act.expires_at,
+            userId:       req.user.sub,
+            req
+          });
+        }
       }
 
       await logSystemEvent('MOODLE_BULK_RETRY', 'MOODLE', req.user.sub, null, null,
