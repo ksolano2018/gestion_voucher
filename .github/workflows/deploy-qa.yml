@@ -77,7 +77,7 @@ jobs:
             SMTP_USER=${{ vars.SMTP_USER || secrets.SMTP_USER }}
             SMTP_PASS=${{ secrets.SMTP_PASS || vars.SMTP_PASS }}
             MAIL_FROM=${{ vars.MAIL_FROM || secrets.MAIL_FROM }}
-            MAIL_FROM_NAME=${{ vars.MAIL_FROM_NAME || secrets.MAIL_FROM_NAME || 'CertJoin' }}
+            MAIL_FROM_NAME=CertJoin
             MAIL_REPLY_TO=${{ vars.MAIL_REPLY_TO || secrets.MAIL_REPLY_TO }}
             MAIL_LOGO_URL=${{ vars.MAIL_LOGO_URL || secrets.MAIL_LOGO_URL }}
             ENVEOF
