@@ -80,8 +80,11 @@ services:
       - api-gateway
     networks:
       - proyecto-network
-    volumes:
-      - ./frontend/public:/app/public
+    # Nota: NO se monta ./frontend/public como volumen. En Docker Desktop sobre
+    # Google Drive (H:) el bind-mount de directorios aparece vacío en el contenedor
+    # y rompe el frontend ("Error cargando la aplicación"). La imagen ya incluye
+    # public/ vía COPY, y server.js reemplaza %API_URL% en tiempo de respuesta.
+    # Para reflejar cambios en public/ localmente: docker compose up -d --build frontend
 
   # Base de datos de Moodle (MariaDB oficial, separada del PostgreSQL de la app)
   # Solo arranca con: docker compose --profile local-moodle up -d
