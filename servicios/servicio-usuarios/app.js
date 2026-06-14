@@ -1129,6 +1129,36 @@ async function initDb(){
       CREATE INDEX IF NOT EXISTS idx_transaction_events_purchase ON transaction_events(purchase_id);
       CREATE INDEX IF NOT EXISTS idx_transaction_events_partner ON transaction_events(partner_id);
       CREATE INDEX IF NOT EXISTS idx_transaction_events_created ON transaction_events(created_at);
+
+      -- Tablas de auditoría definidas también en init.sql. Se replican aquí en la
+      -- migración de runtime para que el servicio se auto-sane en CADA arranque y
+      -- no dependa de que init.sql corra (solo se ejecuta sobre volumen vacío).
+      -- Sin esto, un volumen Postgres previo a estas tablas queda sin ellas y el
+      -- módulo de auditoría falla con "relation does not exist".
+      CREATE TABLE IF NOT EXISTS stripe_events (
+        id SERIAL PRIMARY KEY,
+        stripe_event_id VARCHAR(200) UNIQUE NOT NULL,
+        event_type VARCHAR(100),
+        event_data JSONB,
+        processed BOOLEAN DEFAULT FALSE,
+        processed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS system_events (
+        id SERIAL PRIMARY KEY,
+        event_type VARCHAR(100) NOT NULL,
+        event_category VARCHAR(50) NOT NULL,
+        user_id INTEGER REFERENCES users(id),
+        stripe_customer_id VARCHAR(200),
+        purchase_id INTEGER REFERENCES purchases(id),
+        event_data JSONB,
+        status VARCHAR(50) DEFAULT 'SUCCESS',
+        error_message TEXT,
+        ip_address VARCHAR(45),
+        user_agent VARCHAR(500),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
   `);
 
   await pool.query(`
