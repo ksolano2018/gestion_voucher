@@ -2810,72 +2810,84 @@ document.addEventListener('DOMContentLoaded', () => {
       return s ? `Desde ${fmt(s)}` : `Hasta ${fmt(e)}`;
     };
 
-    const mkMeta = (title, mod) => [
-      ['CertJOIN Platform'],
-      [title],
-      [`Generado: ${now}`],
-      [`Período: ${drLabel(mod)}`],
-      [],
+    const mkMeta = mod => [
+      ['Generado:', now],
+      ['Período:', drLabel(mod)]
     ];
 
     if(module === 'compras'){
       const rows = _rptData.compras;
       if(!rows.length){ showLoginMessage('Genera el reporte primero', 'warning', 2500); return; }
-      const ws = XLSX.utils.aoa_to_sheet([
-        ...mkMeta('Reporte de Compras', 'compras'),
-        ['ID','Partner','Cantidad','Total ($)','Estado','Estado Stripe','Vouchers Usados','Fecha'],
-        ...rows.map(r => [
+      const ws = _xlsBuildStyledSheet({
+        title:    'CertJOIN Platform',
+        subtitle: 'Reporte de Compras',
+        metaPairs: mkMeta('compras'),
+        headers:  ['ID','Partner','Cantidad','Total ($)','Estado','Estado Stripe','Vouchers Usados','Fecha'],
+        dataRows: rows.map(r => [
           r.id, r.partner_name||'-', r.qty||0,
           parseFloat(r.total_price||0), r.status||'-',
           r.stripe_status||'-', r.vouchers_used||0,
           r.created_at ? new Date(r.created_at).toLocaleDateString('es-ES') : '-'
-        ])
-      ]);
-      _xlsxSetColWidths(ws, [8,28,12,14,14,16,16,13]);
+        ]),
+        colWidths:  [8,28,12,14,14,16,16,13],
+        centerCols: [0,2,3,4,5,6,7]
+      });
       XLSX.utils.book_append_sheet(wb, ws, 'Compras');
 
     } else if(module === 'vouchers'){
       const rows = (_rptData.vouchers || {}).rows || [];
       if(!rows.length){ showLoginMessage('Genera el reporte primero', 'warning', 2500); return; }
-      const ws = XLSX.utils.aoa_to_sheet([
-        ...mkMeta('Reporte de Vouchers', 'vouchers'),
-        ['Métrica','Valor'],
-        ...rows.map(r => [r.metrica, String(r.valor)])
-      ]);
-      _xlsxSetColWidths(ws, [34,18]);
+      const ws = _xlsBuildStyledSheet({
+        title:    'CertJOIN Platform',
+        subtitle: 'Reporte de Vouchers',
+        metaPairs: mkMeta('vouchers'),
+        headers:  ['Métrica','Valor'],
+        dataRows: rows.map(r => [r.metrica, String(r.valor)]),
+        colWidths:  [34,18],
+        centerCols: [1]
+      });
       XLSX.utils.book_append_sheet(wb, ws, 'Vouchers');
 
     } else if(module === 'activaciones'){
       const rows = _rptData.activaciones;
       if(!rows.length){ showLoginMessage('Genera el reporte primero', 'warning', 2500); return; }
-      const ws = XLSX.utils.aoa_to_sheet([
-        ...mkMeta('Reporte de Activaciones', 'activaciones'),
-        ['#','Certificación','Activaciones','Partners'],
-        ...rows.map((r,i) => [i+1, r.course_name||'-', r.total_activations||0, r.partners_count||0])
-      ]);
-      _xlsxSetColWidths(ws, [5,36,14,12]);
+      const ws = _xlsBuildStyledSheet({
+        title:    'CertJOIN Platform',
+        subtitle: 'Reporte de Activaciones',
+        metaPairs: mkMeta('activaciones'),
+        headers:  ['#','Certificación','Activaciones','Partners'],
+        dataRows: rows.map((r,i) => [i+1, r.course_name||'-', r.total_activations||0, r.partners_count||0]),
+        colWidths:  [5,36,14,12],
+        centerCols: [0,2,3]
+      });
       XLSX.utils.book_append_sheet(wb, ws, 'Activaciones');
 
     } else if(module === 'partners'){
       const rows = _rptData.partners;
       if(!rows.length){ showLoginMessage('Genera el reporte primero', 'warning', 2500); return; }
-      const ws = XLSX.utils.aoa_to_sheet([
-        ...mkMeta('Reporte de Partners', 'partners'),
-        ['#','Partner','Compras','Vouchers Vendidos','Ingresos ($)'],
-        ...rows.map((r,i) => [i+1, r.partner_name||'-', r.total_purchases||0, r.vouchers_sold||0, parseFloat(r.total_revenue||0)])
-      ]);
-      _xlsxSetColWidths(ws, [5,30,12,18,16]);
+      const ws = _xlsBuildStyledSheet({
+        title:    'CertJOIN Platform',
+        subtitle: 'Reporte de Partners',
+        metaPairs: mkMeta('partners'),
+        headers:  ['#','Partner','Compras','Vouchers Vendidos','Ingresos ($)'],
+        dataRows: rows.map((r,i) => [i+1, r.partner_name||'-', r.total_purchases||0, r.vouchers_sold||0, parseFloat(r.total_revenue||0)]),
+        colWidths:  [5,30,12,18,16],
+        centerCols: [0,2,3,4]
+      });
       XLSX.utils.book_append_sheet(wb, ws, 'Partners');
 
     } else if(module === 'tendencia'){
       const rows = _rptData.tendencia;
       if(!rows.length){ showLoginMessage('Genera el reporte primero', 'warning', 2500); return; }
-      const ws = XLSX.utils.aoa_to_sheet([
-        ...mkMeta('Reporte de Tendencia Mensual', 'tendencia'),
-        ['Mes','Compras','Vouchers Vendidos','Ingresos ($)'],
-        ...rows.map(r => [r.month||'-', r.purchases||0, r.vouchers_sold||0, parseFloat(r.revenue||0)])
-      ]);
-      _xlsxSetColWidths(ws, [18,12,18,16]);
+      const ws = _xlsBuildStyledSheet({
+        title:    'CertJOIN Platform',
+        subtitle: 'Reporte de Tendencia Mensual',
+        metaPairs: mkMeta('tendencia'),
+        headers:  ['Mes','Compras','Vouchers Vendidos','Ingresos ($)'],
+        dataRows: rows.map(r => [r.month||'-', r.purchases||0, r.vouchers_sold||0, parseFloat(r.revenue||0)]),
+        colWidths:  [18,12,18,16],
+        centerCols: [0,1,2,3]
+      });
       XLSX.utils.book_append_sheet(wb, ws, 'Tendencia');
     }
     XLSX.writeFile(wb, `reporte_${module}_${fecha}.xlsx`);
@@ -6088,38 +6100,49 @@ document.addEventListener('DOMContentLoaded', () => {
     const now = new Date().toLocaleDateString('es-ES');
     const wb  = window.XLSX.utils.book_new();
 
-    const partnerRows = partnerInfo ? [
-      ['Nombre',    partnerInfo.name  || ''],
-      ['Email',     partnerInfo.email || ''],
-      ['ID',        String(partnerInfo.id || '')],
-      ['Categoría', partnerInfo.pricing_profile_name || partnerInfo.pricing_profile_code || ''],
-    ] : [];
+    const summaryMeta = [
+      ['Generado:', now],
+      ...(partnerInfo ? [
+        ['Partner:',   partnerInfo.name  || ''],
+        ['Email:',     partnerInfo.email || ''],
+        ['ID:',        String(partnerInfo.id || '')],
+        ['Categoría:', partnerInfo.pricing_profile_name || partnerInfo.pricing_profile_code || ''],
+      ] : [])
+    ];
 
-    const wsSummary = window.XLSX.utils.aoa_to_sheet([
-      ['CertJOIN Platform'],
-      ['Informe de Partner – Administrador'],
-      [`Generado: ${now}`],
-      [],
-      ...(partnerRows.length ? [['── Información del Partner ──'], ...partnerRows, []] : []),
-      ['── Estadísticas ──'],
-      ['Total Vouchers',  stats.total     || 0],
-      ['Disponibles',     stats.available || 0],
-      ['Consumidos',      stats.used      || 0],
-    ]);
-    _xlsxSetColWidths(wsSummary, [32, 22]);
+    const wsSummary = _xlsBuildStyledSheet({
+      title:    'CertJOIN Platform',
+      subtitle: 'Informe de Partner – Administrador',
+      metaPairs: summaryMeta,
+      headers:  ['Métrica', 'Valor'],
+      dataRows: [
+        ['Total Vouchers', stats.total     || 0],
+        ['Disponibles',    stats.available || 0],
+        ['Consumidos',     stats.used      || 0],
+      ],
+      colWidths:  [32, 22],
+      centerCols: [1]
+    });
     window.XLSX.utils.book_append_sheet(wb, wsSummary, 'Resumen');
 
-    const wsVouchers = window.XLSX.utils.aoa_to_sheet([
-      ['Código', 'Estado', 'Curso', 'Usuario', 'Cliente final', 'Compra ID', 'Creado', 'Consumido'],
-      ...vouchers.map(v => [
+    const wsVouchers = _xlsBuildStyledSheet({
+      title:    'CertJOIN Platform',
+      subtitle: 'Informe de Partner – Vouchers',
+      metaPairs: [
+        ['Generado:', now],
+        ['Total vouchers:', String(vouchers.length)]
+      ],
+      headers:  ['Código', 'Estado', 'Curso', 'Usuario', 'Cliente final', 'Compra ID', 'Creado', 'Consumido'],
+      dataRows: vouchers.map(v => [
         v.code || '', v.status || '', v.course_name || '',
         v.consumed_by || '', v.final_client || '',
         v.purchase_id != null ? String(v.purchase_id) : '',
         v.created_at  ? new Date(v.created_at).toLocaleDateString('es-ES')  : '',
         v.consumed_at ? new Date(v.consumed_at).toLocaleDateString('es-ES') : '',
-      ])
-    ]);
-    _xlsxSetColWidths(wsVouchers, [20, 14, 28, 22, 22, 11, 13, 13]);
+      ]),
+      colWidths:  [20, 14, 28, 22, 22, 11, 13, 13],
+      centerCols: [1, 5, 6, 7]
+    });
     window.XLSX.utils.book_append_sheet(wb, wsVouchers, 'Vouchers');
 
     const partnerSlug = partnerInfo ? String(partnerInfo.id) : 'admin';
