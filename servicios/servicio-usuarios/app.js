@@ -593,7 +593,7 @@ async function logSystemEvent(eventType, eventCategory, userId, stripeCustomerId
  * Registra el resultado en activations (email_status/email_error/email_to/email_sent_at)
  * y en system_events.
  */
-async function sendStudentWelcomeEmail({ activationId, to, studentName, courseName, username, tempPassword, months = null, expiresAt, userId = null, req = null }) {
+async function sendStudentWelcomeEmail({ activationId, to, studentName, courseName, username, tempPassword, months = null, expiresAt, userId = null, isNewEnrollment = false, req = null }) {
   try {
     if (!to) return;
 
@@ -602,7 +602,7 @@ async function sendStudentWelcomeEmail({ activationId, to, studentName, courseNa
     if (prev.rowCount > 0 && prev.rows[0].email_status === 'SENT') return;
 
     const { subject, html, text } = buildStudentWelcomeEmail({
-      studentName, email: to, courseName, username, tempPassword, months, expiresAt, campusUrl: CAMPUS_URL
+      studentName, email: to, courseName, username, tempPassword, months, expiresAt, campusUrl: CAMPUS_URL, isNewEnrollment
     });
 
     const result = await mailer.sendMail({ to, subject, html, text });
@@ -621,10 +621,11 @@ async function sendStudentWelcomeEmail({ activationId, to, studentName, courseNa
       [emailStatus, emailError, to, sentAt, activationId]
     );
 
+    const eventBase = isNewEnrollment ? 'STUDENT_NEW_COURSE_EMAIL' : 'STUDENT_WELCOME_EMAIL';
     await logSystemEvent(
-      emailStatus === 'SENT' ? 'STUDENT_WELCOME_EMAIL_SENT' : `STUDENT_WELCOME_EMAIL_${emailStatus}`,
+      `${eventBase}_${emailStatus}`,
       'EMAIL', userId, null, null,
-      { activation_id: activationId, to, course_name: courseName, reason: result.reason || null },
+      { activation_id: activationId, to, course_name: courseName, reason: result.reason || null, new_enrollment: isNewEnrollment },
       emailStatus === 'FAILED' ? 'FAILED' : 'SUCCESS',
       emailError, req
     );
@@ -3484,7 +3485,9 @@ app.post('/partner/:id/activate',
         req
       );
 
-      // Correo de bienvenida: solo si se creó una cuenta nueva en Moodle (no bloqueante)
+      // Correo al estudiante (no bloqueante):
+      //  - cuenta nueva en Moodle        → bienvenida con credenciales (usuario + contraseña temporal)
+      //  - cuenta existente, curso nuevo → aviso de nueva certificación (misma plantilla, sin contraseña)
       if (moodleResult.createdNewUser && moodleTempPassword) {
         await sendStudentWelcomeEmail({
           activationId,
@@ -3496,6 +3499,18 @@ app.post('/partner/:id/activate',
           months:       reqMonths,
           expiresAt,
           userId:       req.user.sub,
+          req
+        });
+      } else if ((moodleStatus === 'ENROLLED' || moodleStatus === 'MOCKED') && !moodleResult.createdNewUser) {
+        await sendStudentWelcomeEmail({
+          activationId,
+          to:           user_email,
+          studentName:  user_name,
+          courseName:   course.rows[0].name,
+          months:       reqMonths,
+          expiresAt,
+          userId:       req.user.sub,
+          isNewEnrollment: true,
           req
         });
       }
@@ -3642,7 +3657,9 @@ app.post('/admin/moodle/enrollments/:activationId/retry',
         moodleError || null, req
       );
 
-      // Correo de bienvenida: solo si el retry creó una cuenta nueva en Moodle (no bloqueante)
+      // Correo al estudiante (no bloqueante):
+      //  - cuenta nueva en Moodle        → bienvenida con credenciales
+      //  - cuenta existente, curso nuevo → aviso de nueva certificación (sin contraseña)
       if (moodleResult.createdNewUser && moodleTempPassword) {
         await sendStudentWelcomeEmail({
           activationId: parseInt(activationId, 10),
@@ -3653,6 +3670,17 @@ app.post('/admin/moodle/enrollments/:activationId/retry',
           tempPassword: moodleTempPassword,
           expiresAt:    act.expires_at,
           userId:       req.user.sub,
+          req
+        });
+      } else if ((moodleStatus === 'ENROLLED' || moodleStatus === 'MOCKED') && !moodleResult.createdNewUser) {
+        await sendStudentWelcomeEmail({
+          activationId: parseInt(activationId, 10),
+          to:           act.user_email,
+          studentName:  act.user_name,
+          courseName:   act.course_name,
+          expiresAt:    act.expires_at,
+          userId:       req.user.sub,
+          isNewEnrollment: true,
           req
         });
       }
@@ -3730,7 +3758,9 @@ app.post('/admin/moodle/enrollments/retry-all-failed',
           ]
         );
 
-        // Correo de bienvenida: solo si el retry creó una cuenta nueva en Moodle (no bloqueante)
+        // Correo al estudiante (no bloqueante):
+        //  - cuenta nueva en Moodle        → bienvenida con credenciales
+        //  - cuenta existente, curso nuevo → aviso de nueva certificación (sin contraseña)
         if (moodleResult.createdNewUser && moodleResult.moodleTempPassword) {
           await sendStudentWelcomeEmail({
             activationId: row.id,
@@ -3741,6 +3771,17 @@ app.post('/admin/moodle/enrollments/retry-all-failed',
             tempPassword: moodleResult.moodleTempPassword,
             expiresAt:    act.expires_at,
             userId:       req.user.sub,
+            req
+          });
+        } else if (ok && !moodleResult.createdNewUser) {
+          await sendStudentWelcomeEmail({
+            activationId: row.id,
+            to:           act.user_email,
+            studentName:  act.user_name,
+            courseName:   act.course_name,
+            expiresAt:    act.expires_at,
+            userId:       req.user.sub,
+            isNewEnrollment: true,
             req
           });
         }

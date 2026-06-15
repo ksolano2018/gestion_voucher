@@ -69,6 +69,10 @@ function resolveMonths(months, expiresAt) {
  * @param {number} [p.months]       meses de acceso (si se conoce)
  * @param {string|Date} [p.expiresAt] fecha de expiración del acceso
  * @param {string} [p.campusUrl]    URL del botón "Campus"
+ * @param {boolean} [p.isNewEnrollment] true cuando la cuenta de Moodle ya existía
+ *        y solo se matriculó en una nueva certificación. Usa la misma plantilla,
+ *        pero ajusta asunto/título/intro y omite las credenciales (no hay
+ *        contraseña nueva: el estudiante usa la que ya tenía).
  * @returns {{ subject:string, html:string, text:string }}
  */
 function buildStudentWelcomeEmail(p = {}) {
@@ -80,8 +84,23 @@ function buildStudentWelcomeEmail(p = {}) {
   const logoUrl     = process.env.MAIL_LOGO_URL || '';
   const months      = resolveMonths(p.months, p.expiresAt);
   const expiresLbl  = formatDate(p.expiresAt);
+  const isNewEnrollment = Boolean(p.isNewEnrollment);
 
-  const subject = '¡Bienvenido/a a tu Certificación Oficial con CertJoin!';
+  // Variante "nueva certificación": misma plantilla/diseño, pero la cuenta ya
+  // existía en Moodle (no hay contraseña nueva). Solo cambian asunto, título e intro.
+  const subject = isNewEnrollment
+    ? '¡Tienes una nueva certificación disponible en CertJoin!'
+    : '¡Bienvenido/a a tu Certificación Oficial con CertJoin!';
+
+  const heading = isNewEnrollment
+    ? '🎓 ¡Tienes una nueva certificación disponible!'
+    : '🧡 ¡Bienvenido/a a tu Certificación Oficial con CertJoin!';
+  const subtitle = isNewEnrollment
+    ? '¡Seguimos impulsando tu crecimiento profesional!'
+    : '¡Qué alegría tenerte aquí!';
+  const introLine = isNewEnrollment
+    ? 'Hemos habilitado una nueva certificación en tu cuenta. Ya puedes ingresar al campus y comenzar tu preparación.'
+    : 'Hoy comienzas un camino que impulsará tu crecimiento profesional y abrirá nuevas oportunidades en tu carrera.';
 
   const durationStr = months
     ? `${months} ${months === 1 ? 'mes' : 'meses'}`
@@ -125,9 +144,9 @@ function buildStudentWelcomeEmail(p = {}) {
 
         <!-- Bienvenida -->
         <tr><td style="background:${BRAND.white};padding:28px 28px 20px;text-align:center;">
-          <h1 style="margin:0 0 12px;font-size:23pt;line-height:1.25;font-weight:700;color:${BRAND.ink};">🧡 ¡Bienvenido/a a tu Certificación Oficial con CertJoin!</h1>
-          <p style="margin:0;font-size:11pt;font-weight:700;color:${BRAND.orange};">¡Qué alegría tenerte aquí!</p>
-          <p style="margin:6px 0 0;font-size:14pt;color:${BRAND.ink};">Hoy comienzas un camino que impulsará tu crecimiento profesional y abrirá nuevas oportunidades en tu carrera.</p>
+          <h1 style="margin:0 0 12px;font-size:23pt;line-height:1.25;font-weight:700;color:${BRAND.ink};">${heading}</h1>
+          <p style="margin:0;font-size:11pt;font-weight:700;color:${BRAND.orange};">${subtitle}</p>
+          <p style="margin:6px 0 0;font-size:14pt;color:${BRAND.ink};">${introLine}</p>
           ${courseLineHtml}
         </td></tr>
 
@@ -191,10 +210,10 @@ function buildStudentWelcomeEmail(p = {}) {
 
   // ── Versión texto plano ──
   const textLines = [
-    '🧡 ¡Bienvenido/a a tu Certificación Oficial con CertJoin!',
+    heading,
     '',
-    '¡Qué alegría tenerte aquí!',
-    'Hoy comienzas un camino que impulsará tu crecimiento profesional y abrirá nuevas oportunidades en tu carrera.'
+    subtitle,
+    introLine
   ];
   if (courseName) textLines.push(`Certificación: ${courseName}`);
   textLines.push(
