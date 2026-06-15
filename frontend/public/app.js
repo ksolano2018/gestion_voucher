@@ -3058,7 +3058,7 @@ document.addEventListener('DOMContentLoaded', () => {
           moodleId += `<div class="small text-warning mt-1" title="Contraseña inicial (cambiar en primer acceso)">🔑 ${escapeHTML(a.moodle_temp_password)}</div>`;
         }
 
-        let acciones = '—';
+        let acciones = '';
         const ms = (a.moodle_status || '').toUpperCase();
         if(ms === 'FAILED' || ms === 'PENDING') {
           acciones = `<button class="btn btn-xs btn-outline-warning py-0 px-1" style="font-size:0.75rem;" data-retry-id="${a.activation_id}" title="Reintentar matrícula Moodle">↺ Retry</button>`;
@@ -3066,6 +3066,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if(ms === 'FAILED' && a.moodle_error) {
           acciones += ` <span class="d-block small text-danger mt-1" style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${escapeHTML(a.moodle_error)}">${escapeHTML(a.moodle_error.slice(0,40))}…</span>`;
         }
+        // Reenvío de correo (admin: sin tope ni cooldown) cuando hay matrícula/curso activo
+        if(['ENROLLED','MOCKED','COMPLETED','COURSE_COMPLETED'].includes(ms)) {
+          const es = (a.email_status || '').toUpperCase();
+          const hint = es === 'SENT' ? '✉ enviado' : es === 'FAILED' ? '✗ falló' : 'sin enviar';
+          acciones += `<button class="btn btn-xs btn-outline-primary py-0 px-1 d-block mt-1" style="font-size:0.75rem;" data-resend-id="${a.activation_id}" data-email="${escapeHTML(a.user_email || '')}" data-course="${escapeHTML(a.course_name || '')}" title="Reenviar correo al estudiante (estado actual: ${hint})">✉ Reenviar</button>`;
+        }
+        if(!acciones) acciones = '—';
 
         return `<tr>
           <td style="white-space:nowrap;">${fecha}</td>
@@ -3077,7 +3084,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${expiraBadge}</td>
           <td>${moodleBadge}</td>
           <td>${moodleId}</td>
-          <td>${acciones}</td>
+          <td style="position:sticky;right:0;z-index:1;background-color:#fff;box-shadow:-6px 0 6px -6px rgba(0,0,0,0.15);">${acciones}</td>
         </tr>`;
       }).join('');
 
@@ -3098,6 +3105,39 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.disabled = false;
             btn.textContent = '↺ Retry';
           }
+        });
+      });
+
+      // Resend email buttons (admin: sin tope ni cooldown)
+      tbody.querySelectorAll('[data-resend-id]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const actId = btn.dataset.resendId;
+          const dest = btn.dataset.email;
+          if(!dest){ showToast('Esta activación no tiene un correo de destino válido.', 'danger'); return; }
+          showConfirmAction({
+            title: 'Reenviar correo de notificación',
+            icon: '✉️',
+            rows: [
+              { label: 'Se enviará a', value: dest },
+              { label: 'Curso', value: btn.dataset.course || '—' }
+            ],
+            alert: 'Verifica que el correo del estudiante sea correcto antes de continuar.',
+            confirmLabel: '✉️ Sí, reenviar',
+            confirmClass: 'btn-primary',
+            onConfirm: async () => {
+              const original = btn.innerHTML;
+              btn.disabled = true; btn.innerHTML = '⏳';
+              try {
+                const r = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/activations/${actId}/resend-email`, { method:'POST', headers: authHeaders() });
+                const d = await safeJson(r);
+                if(r.ok && d.ok) { showToast('Correo reenviado ✓', 'success'); loadAdminActivaciones(_adminActPage); }
+                else { showToast(d.error || 'No se pudo reenviar el correo', 'danger', 5000); btn.disabled = false; btn.innerHTML = original; }
+              } catch(e) {
+                showToast('Error: ' + e.message, 'danger');
+                btn.disabled = false; btn.innerHTML = original;
+              }
+            }
+          });
         });
       });
 
@@ -4856,6 +4896,56 @@ document.addEventListener('DOMContentLoaded', () => {
   let _currentVouchersDisplayList = [];
   let _currentVouchersPage = 1;
   const VOUCHERS_PAGE_SIZE = 10;
+  // Tope de reenvíos manuales del partner por activación (debe coincidir con MAX_PARTNER_EMAIL_RETRIES del backend)
+  const PARTNER_EMAIL_MAX_RETRIES = 1;
+
+  // Reenvío del correo de notificación al estudiante. Delegación sobre el tbody,
+  // vinculada una sola vez (el render solo reemplaza innerHTML, no el tbody).
+  function bindResendEmailHandler(tbody){
+    if(!tbody || tbody._resendBound) return;
+    tbody._resendBound = true;
+    tbody.addEventListener('click', (e) => {
+      const btn = e.target.closest('.resend-email-btn');
+      if(!btn) return;
+      const activationId = btn.dataset.activation;
+      if(!activationId) return;
+      const pid = getPartnerIdFromJwt();
+      if(!pid){ showToast('No se pudo obtener Partner ID', 'danger'); return; }
+      const dest = btn.dataset.email;
+      if(!dest){ showToast('Esta activación no tiene un correo de destino válido.', 'danger'); return; }
+      showConfirmAction({
+        title: 'Reenviar correo de notificación',
+        icon: '✉️',
+        rows: [
+          { label: 'Se enviará a', value: dest },
+          { label: 'Curso', value: btn.dataset.course || '—' }
+        ],
+        alert: 'Verifica que el correo del estudiante sea correcto antes de continuar.',
+        confirmLabel: '✉️ Sí, reenviar',
+        confirmClass: 'btn-primary',
+        onConfirm: async () => {
+          const original = btn.innerHTML;
+          btn.disabled = true; btn.innerHTML = 'Enviando…';
+          try{
+            const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/activations/${activationId}/resend-email`, {
+              method: 'POST', headers: authHeaders()
+            });
+            const data = await resp.json().catch(() => ({}));
+            if(resp.ok && data.ok){
+              showToast(`Correo reenviado ✓ — reenvíos restantes: ${data.retries_remaining}`, 'success');
+              loadPartnerVouchers();
+            } else {
+              showToast(data.error || 'No se pudo reenviar el correo', 'danger', 5000);
+              btn.disabled = false; btn.innerHTML = original;
+            }
+          }catch(err){
+            showToast('Error de red al reenviar el correo', 'danger');
+            btn.disabled = false; btn.innerHTML = original;
+          }
+        }
+      });
+    });
+  }
 
   function renderVouchersTable(list, page){
     _currentVouchersDisplayList = Array.isArray(list) ? list : [];
@@ -4863,10 +4953,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbody = el('vouchers-table-body');
     if(!tbody) return;
     if(_currentVouchersDisplayList.length === 0){
-      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-3">No hay vouchers para los criterios seleccionados</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="text-center text-muted p-3">No hay vouchers para los criterios seleccionados</td></tr>';
       renderVouchersPagination();
       return;
     }
+    bindResendEmailHandler(tbody);
     const start = (_currentVouchersPage - 1) * VOUCHERS_PAGE_SIZE;
     const pageData = _currentVouchersDisplayList.slice(start, start + VOUCHERS_PAGE_SIZE);
     tbody.innerHTML = pageData.map(v => {
@@ -4916,6 +5007,32 @@ document.addEventListener('DOMContentLoaded', () => {
           : `<span title="Acceso al curso hasta esta fecha">${expLabel}</span>`;
       }
 
+      // Notificación por correo al estudiante + reenvío (con tope/cooldown controlados en backend)
+      let notifCell = '<span class="text-muted">—</span>';
+      if(status === 'CONSUMED' && v.activation_id){
+        const es = (v.email_status || '').toUpperCase();
+        const retryCount = v.email_retry_count || 0;
+        const remaining  = Math.max(0, PARTNER_EMAIL_MAX_RETRIES - retryCount);
+        let badge = '<span class="text-muted">—</span>';
+        let canResend = false;
+        if(es === 'SENT'){
+          badge = '<span class="badge bg-success" title="Correo de notificación enviado al estudiante">✉ Enviado</span>';
+          canResend = remaining > 0;
+        } else if(es === 'FAILED'){
+          badge = `<span class="badge bg-danger" title="${escapeHTML(v.email_error || 'No se pudo enviar el correo')}">✗ No enviado</span>`;
+          canResend = remaining > 0;
+        } else if(es === 'SKIPPED'){
+          badge = '<span class="badge bg-secondary" title="Esta activación no envía correo">Omitido</span>';
+        }
+        let action = '';
+        if(canResend){
+          action = `<button class="btn btn-sm btn-outline-primary mt-1 d-block resend-email-btn" data-activation="${v.activation_id}" data-email="${escapeHTML(v.consumed_by || '')}" data-course="${escapeHTML(v.course_name || '')}" title="Reenviar el correo al estudiante (quedan ${remaining})">↻ Reenviar</button>`;
+        } else if((es === 'SENT' || es === 'FAILED') && remaining === 0){
+          action = '<div class="small text-muted mt-1" title="Límite de reenvíos alcanzado. Contacta a un administrador.">Máx. alcanzado</div>';
+        }
+        notifCell = badge + action;
+      }
+
       return `<tr>
         <td><code>${safeCode}</code>${compBadge}</td>
         <td>${statusBadge}</td>
@@ -4923,6 +5040,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${safeConsumedBy}</td>
         <td>${safeFinalClient}</td>
         <td>${moodleBadge}</td>
+        <td>${notifCell}</td>
         <td>${created}</td>
         <td>${expiraCell}</td>
       </tr>`;

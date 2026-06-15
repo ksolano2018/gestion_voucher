@@ -117,6 +117,11 @@ const apiLimiter = rateLimit({
   legacyHeaders: false
 });
 
+// Reenvío manual del correo de notificación al estudiante (control anti-spam).
+// Configurable por entorno; valores por defecto: 1 reenvío por activación, 10 min de cooldown.
+const MAX_PARTNER_EMAIL_RETRIES = parseInt(process.env.MAX_PARTNER_EMAIL_RETRIES) || 1;
+const EMAIL_RESEND_COOLDOWN_MIN = parseInt(process.env.EMAIL_RESEND_COOLDOWN_MIN) || 10;
+
 // DB Pool with connection limits
 const pool = new Pool({
   host: process.env.DB_HOST || 'postgres',
@@ -589,17 +594,22 @@ async function logSystemEvent(eventType, eventCategory, userId, stripeCustomerId
 
 /**
  * Envía el correo de bienvenida al estudiante cuando se crea su cuenta en Moodle.
- * No bloqueante e idempotente: nunca lanza, y no reenvía si email_status ya es 'SENT'.
+ * No bloqueante e idempotente: nunca lanza, y no reenvía si email_status ya es 'SENT'
+ * (salvo `force: true`, usado en el reenvío manual del partner/admin).
  * Registra el resultado en activations (email_status/email_error/email_to/email_sent_at)
  * y en system_events.
+ *
+ * @returns {string|null} estado del envío: 'SENT' | 'FAILED' | 'SKIPPED' | null (sin destinatario u omitido por idempotencia)
  */
-async function sendStudentWelcomeEmail({ activationId, to, studentName, courseName, username, tempPassword, months = null, expiresAt, userId = null, isNewEnrollment = false, req = null }) {
+async function sendStudentWelcomeEmail({ activationId, to, studentName, courseName, username, tempPassword, months = null, expiresAt, userId = null, isNewEnrollment = false, force = false, req = null }) {
   try {
-    if (!to) return;
+    if (!to) return null;
 
-    // Idempotencia: no reenviar si ya se envió correctamente
-    const prev = await pool.query('SELECT email_status FROM activations WHERE id=$1', [activationId]);
-    if (prev.rowCount > 0 && prev.rows[0].email_status === 'SENT') return;
+    // Idempotencia: no reenviar si ya se envió correctamente (a menos que sea un reenvío forzado)
+    if (!force) {
+      const prev = await pool.query('SELECT email_status FROM activations WHERE id=$1', [activationId]);
+      if (prev.rowCount > 0 && prev.rows[0].email_status === 'SENT') return null;
+    }
 
     const { subject, html, text } = buildStudentWelcomeEmail({
       studentName, email: to, courseName, username, tempPassword, months, expiresAt, campusUrl: CAMPUS_URL, isNewEnrollment
@@ -625,12 +635,15 @@ async function sendStudentWelcomeEmail({ activationId, to, studentName, courseNa
     await logSystemEvent(
       `${eventBase}_${emailStatus}`,
       'EMAIL', userId, null, null,
-      { activation_id: activationId, to, course_name: courseName, reason: result.reason || null, new_enrollment: isNewEnrollment },
+      { activation_id: activationId, to, course_name: courseName, reason: result.reason || null, new_enrollment: isNewEnrollment, forced: force },
       emailStatus === 'FAILED' ? 'FAILED' : 'SUCCESS',
       emailError, req
     );
+
+    return emailStatus;
   } catch (e) {
     console.error(`❌ Error enviando correo de bienvenida (activation ${activationId}):`, e.message);
+    return 'FAILED';
   }
 }
 
@@ -1210,6 +1223,8 @@ async function initDb(){
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_error TEXT;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_to VARCHAR(200);
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_sent_at TIMESTAMP;
+    ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_retry_count INTEGER NOT NULL DEFAULT 0;
+    ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_last_attempt_at TIMESTAMP;
     ALTER TABLE purchases   ADD COLUMN IF NOT EXISTS payment_method     VARCHAR(50) DEFAULT 'stripe';
     ALTER TABLE purchases   ADD COLUMN IF NOT EXISTS external_reference VARCHAR(200);
     ALTER TABLE purchases   ADD COLUMN IF NOT EXISTS notes              TEXT;
@@ -3007,7 +3022,10 @@ app.get('/partner/:id/vouchers', authenticate, async (req,res)=>{
               v.voucher_type, v.complimentary_reason,
               a.final_client, a.user_name AS activation_user_name,
               a.moodle_status, a.moodle_user_id, a.moodle_error, a.moodle_enrolled_at,
-              a.moodle_completed_at, a.expires_at
+              a.moodle_completed_at, a.expires_at,
+              a.id AS activation_id,
+              a.email_status, a.email_error, a.email_sent_at,
+              a.email_retry_count, a.email_last_attempt_at
        FROM vouchers v
        LEFT JOIN courses c ON c.id = v.course_id
        LEFT JOIN activations a ON a.voucher_id = v.id
@@ -3537,6 +3555,217 @@ app.post('/partner/:id/activate',
       }, 'FAILED', e.message, req);
       logSecurityEvent('VOUCHER_ACTIVATION_ERROR', { error: e.message, partnerId: pid, userId: req.user.sub });
       res.status(400).json({ error: 'Error al activar voucher' });
+    }
+  }
+);
+
+// Reenvío manual del correo de notificación al estudiante, desde el partner.
+//
+// Controles anti-abuso/anti-spam (todos en backend, no en el botón):
+//  - Tope: máx. MAX_PARTNER_EMAIL_RETRIES reenvíos por activación (luego solo admin).
+//  - Cooldown: mínimo EMAIL_RESEND_COOLDOWN_MIN minutos entre intentos.
+//  - Solo aplica a correos ya intentados (email_status FAILED o SENT).
+//  - Ownership: la activación debe pertenecer al partner autenticado.
+//  - Cada intento queda auditado en system_events (EMAIL_MANUAL_RESEND_*).
+app.post('/partner/:id/activations/:activationId/resend-email',
+  authenticate, requireRole('partner'), apiLimiter,
+  param('id').isInt().withMessage('Partner ID inválido'),
+  param('activationId').isInt({ min: 1 }).withMessage('activationId inválido'),
+  handleValidationErrors,
+  async (req, res) => {
+    const pid = req.params.id;
+    const { activationId } = req.params;
+
+    if (!req.user.partner_id || String(req.user.partner_id) !== String(pid)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    try {
+      const r = await pool.query(
+        `SELECT a.id, a.user_name, a.user_email, a.expires_at,
+                a.moodle_status, a.moodle_username, a.moodle_temp_password,
+                a.email_status, a.email_retry_count, a.email_last_attempt_at,
+                c.name AS course_name, v.partner_id
+         FROM activations a
+         JOIN vouchers v ON v.id = a.voucher_id
+         LEFT JOIN courses c ON c.id = a.course_id
+         WHERE a.id = $1`,
+        [activationId]
+      );
+      if (r.rowCount === 0) {
+        return res.status(404).json({ error: 'Activación no encontrada' });
+      }
+      const act = r.rows[0];
+
+      // Ownership: el voucher de la activación debe ser de este partner
+      if (String(act.partner_id) !== String(pid)) {
+        return res.status(403).json({ error: 'forbidden' });
+      }
+
+      // Solo se reenvía un correo que ya se intentó antes (FAILED o SENT)
+      if (!['FAILED', 'SENT'].includes(act.email_status)) {
+        return res.status(400).json({
+          error: 'No hay un correo de notificación para reenviar en esta activación.',
+          code: 'NOTHING_TO_RESEND'
+        });
+      }
+
+      // Tope de reintentos del partner
+      const retryCount = act.email_retry_count || 0;
+      if (retryCount >= MAX_PARTNER_EMAIL_RETRIES) {
+        await logSystemEvent('EMAIL_MANUAL_RESEND_BLOCKED', 'EMAIL', req.user.sub, null, null,
+          { activation_id: parseInt(activationId, 10), reason: 'retry_limit', retry_count: retryCount }, 'FAILED', 'retry_limit_reached', req);
+        return res.status(429).json({
+          error: `Alcanzaste el máximo de reenvíos (${MAX_PARTNER_EMAIL_RETRIES}). Si el estudiante aún no recibe el correo, contacta a un administrador.`,
+          code: 'RETRY_LIMIT_REACHED'
+        });
+      }
+
+      // Cooldown entre intentos
+      if (act.email_last_attempt_at) {
+        const elapsedMin = (Date.now() - new Date(act.email_last_attempt_at).getTime()) / 60000;
+        if (elapsedMin < EMAIL_RESEND_COOLDOWN_MIN) {
+          const wait = Math.max(1, Math.ceil(EMAIL_RESEND_COOLDOWN_MIN - elapsedMin));
+          return res.status(429).json({
+            error: `Debes esperar ${wait} min antes de reenviar de nuevo.`,
+            code: 'COOLDOWN',
+            retry_after_minutes: wait
+          });
+        }
+      }
+
+      // Registrar el intento ya (el cooldown se mide por intento, exitoso o no)
+      await pool.query('UPDATE activations SET email_last_attempt_at = NOW() WHERE id=$1', [activationId]);
+
+      // Variante: con credenciales (cuenta nueva) o aviso de nueva certificación (cuenta existente)
+      const isNewEnrollment = !act.moodle_temp_password;
+
+      const emailStatus = await sendStudentWelcomeEmail({
+        activationId:  parseInt(activationId, 10),
+        to:            act.user_email,
+        studentName:   act.user_name,
+        courseName:    act.course_name,
+        username:      act.moodle_username,
+        tempPassword:  act.moodle_temp_password,
+        expiresAt:     act.expires_at,
+        userId:        req.user.sub,
+        isNewEnrollment,
+        force:         true,
+        req
+      });
+
+      // El tope solo consume un reintento cuando el correo SÍ se entregó (anti-spam:
+      // limita notificaciones efectivas, no castiga fallos transitorios de SMTP).
+      let newRetryCount = retryCount;
+      if (emailStatus === 'SENT') {
+        const upd = await pool.query(
+          'UPDATE activations SET email_retry_count = email_retry_count + 1 WHERE id=$1 RETURNING email_retry_count',
+          [activationId]
+        );
+        newRetryCount = upd.rows[0].email_retry_count;
+      }
+
+      await logSystemEvent(
+        `EMAIL_MANUAL_RESEND_${emailStatus || 'SKIPPED'}`,
+        'EMAIL', req.user.sub, null, null,
+        { activation_id: parseInt(activationId, 10), to: act.user_email, new_enrollment: isNewEnrollment, retry_count: newRetryCount },
+        emailStatus === 'SENT' ? 'SUCCESS' : 'FAILED',
+        emailStatus === 'SENT' ? null : `email_status=${emailStatus}`, req
+      );
+
+      if (emailStatus !== 'SENT') {
+        return res.status(502).json({
+          error: 'No se pudo reenviar el correo en este momento. Intenta de nuevo más tarde.',
+          code: 'SEND_FAILED',
+          email_status: emailStatus
+        });
+      }
+
+      return res.json({
+        ok: true,
+        email_status: emailStatus,
+        email_retry_count: newRetryCount,
+        retries_remaining: Math.max(0, MAX_PARTNER_EMAIL_RETRIES - newRetryCount)
+      });
+    } catch (e) {
+      console.error('❌ Error en reenvío de correo del partner:', e);
+      res.status(500).json({ error: 'Error al reenviar el correo' });
+    }
+  }
+);
+
+// Reenvío del correo de notificación al estudiante, desde el admin (vía de escalación).
+// A diferencia del partner: NO aplica tope ni cooldown, y puede enviar aunque el correo
+// nunca se haya intentado (útil para activaciones previas a esta función), siempre que
+// la matrícula en Moodle esté activa (ENROLLED/MOCKED). Queda auditado en system_events.
+app.post('/admin/activations/:activationId/resend-email',
+  authenticate, requireRole('admin'), apiLimiter,
+  param('activationId').isInt({ min: 1 }).withMessage('activationId inválido'),
+  handleValidationErrors,
+  async (req, res) => {
+    const { activationId } = req.params;
+    try {
+      const r = await pool.query(
+        `SELECT a.id, a.user_name, a.user_email, a.expires_at,
+                a.moodle_status, a.moodle_username, a.moodle_temp_password, a.email_status,
+                c.name AS course_name
+         FROM activations a
+         LEFT JOIN courses c ON c.id = a.course_id
+         WHERE a.id = $1`,
+        [activationId]
+      );
+      if (r.rowCount === 0) {
+        return res.status(404).json({ error: 'Activación no encontrada' });
+      }
+      const act = r.rows[0];
+
+      // Debe existir acceso al curso que justifique la notificación
+      const notifiableStatuses = ['ENROLLED', 'MOCKED', 'COMPLETED', 'COURSE_COMPLETED'];
+      if (!notifiableStatuses.includes((act.moodle_status || '').toUpperCase())) {
+        return res.status(400).json({
+          error: 'La activación no tiene una matrícula activa en Moodle; no hay nada que notificar.',
+          code: 'NO_ACTIVE_ENROLLMENT'
+        });
+      }
+
+      await pool.query('UPDATE activations SET email_last_attempt_at = NOW() WHERE id=$1', [activationId]);
+
+      const isNewEnrollment = !act.moodle_temp_password;
+
+      const emailStatus = await sendStudentWelcomeEmail({
+        activationId:  parseInt(activationId, 10),
+        to:            act.user_email,
+        studentName:   act.user_name,
+        courseName:    act.course_name,
+        username:      act.moodle_username,
+        tempPassword:  act.moodle_temp_password,
+        expiresAt:     act.expires_at,
+        userId:        req.user.sub,
+        isNewEnrollment,
+        force:         true,
+        req
+      });
+
+      await logSystemEvent(
+        `EMAIL_ADMIN_RESEND_${emailStatus || 'SKIPPED'}`,
+        'EMAIL', req.user.sub, null, null,
+        { activation_id: parseInt(activationId, 10), to: act.user_email, new_enrollment: isNewEnrollment },
+        emailStatus === 'SENT' ? 'SUCCESS' : 'FAILED',
+        emailStatus === 'SENT' ? null : `email_status=${emailStatus}`, req
+      );
+
+      if (emailStatus !== 'SENT') {
+        return res.status(502).json({
+          error: 'No se pudo reenviar el correo en este momento. Intenta de nuevo más tarde.',
+          code: 'SEND_FAILED',
+          email_status: emailStatus
+        });
+      }
+
+      return res.json({ ok: true, email_status: emailStatus, new_enrollment: isNewEnrollment });
+    } catch (e) {
+      console.error('❌ Error en reenvío de correo del admin:', e);
+      res.status(500).json({ error: 'Error al reenviar el correo' });
     }
   }
 );
@@ -4357,6 +4586,10 @@ app.get('/admin/activations',
            a.moodle_completion_synced_at,
            a.expires_at,
            a.activation_status,
+           a.email_status,
+           a.email_error,
+           a.email_sent_at,
+           a.email_retry_count,
            v.id                  AS voucher_id,
            v.code                AS voucher_code,
            v.purchase_id,
