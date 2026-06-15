@@ -11,7 +11,11 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+      # Nota: NO se monta ./database/init.sql como volumen. En Docker Desktop sobre
+      # Google Drive (H:) el bind-mount de un archivo suelto falla ("not a directory")
+      # y el contenedor no arranca. Además init.sql solo corre la primera vez que el
+      # volumen está vacío. Para inicializar la BD localmente, cargar el SQL por stdin:
+      #   Get-Content ./database/init.sql -Raw | docker exec -i proyecto-db psql -U admin -d proyectodb
     networks:
       - proyecto-network
     healthcheck:
