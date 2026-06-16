@@ -1,24 +1,33 @@
 const express = require('express');
 const cors = require('cors');
-const { Pool } = require('pg');
 const { v4: uuidv4 } = require('uuid');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
 const { body, param, validationResult } = require('express-validator');
 require('dotenv').config();
 
 const moodleService = require('./moodle-service');
-const mailer = require('./mailer');
-const { buildStudentWelcomeEmail } = require('./email-templates');
+
+// ── Módulos internos (refactor incremental hacia src/) ─────────────────────────
+const pool = require('./src/db/pool');
+const { logSecurityEvent, logSystemEvent, logTransactionEvent } = require('./src/lib/audit');
+const { authLimiter, apiLimiter } = require('./src/lib/rateLimit');
+const { handleValidationErrors } = require('./src/lib/validation');
+const { authenticate, requireRole, requirePermission, requireAnyPermission } = require('./src/lib/auth');
+// Envío de correo delegado al microservicio servicio-notificaciones (cliente HTTP).
+const { sendStudentWelcomeEmail } = require('./src/integrations/notifications');
 
 const MOODLE_PUBLIC_URL = (process.env.MOODLE_PUBLIC_URL || process.env.MOODLE_URL || '').replace(/\/$/, '');
 const CAMPUS_URL = process.env.CAMPUS_URL || (MOODLE_PUBLIC_URL ? `${MOODLE_PUBLIC_URL}/login/index.php` : 'https://campus.certjoin.com/');
 
 const app = express();
+
+// Detrás del gateway/reverse proxy: confiar en el primer hop para que req.ip,
+// el rate-limit y los logs de seguridad usen la IP real del cliente y no la del proxy.
+app.set('trust proxy', 1);
 
 // Security middleware - helmet for security headers
 app.use(helmet({
@@ -76,66 +85,22 @@ app.use((req, res, next) => {
   })(req, res, next);
 });
 
-// Rate limiting for authentication endpoints — clave por username para no bloquear toda la IP
-const authLimiter = rateLimit({
-  windowMs: (parseInt(process.env.RATE_LIMIT_WINDOW_MINUTES) || 15) * 60 * 1000,
-  max: parseInt(process.env.MAX_LOGIN_ATTEMPTS) || 5,
-  message: { error: 'Demasiados intentos de inicio de sesión. Intenta de nuevo más tarde.' },
-  standardHeaders: true,
-  legacyHeaders: false,
-  skipSuccessfulRequests: true,
-  keyGenerator: (req) => {
-    const username = (req.body && (req.body.username || req.body.email || '')).toString().toLowerCase().trim();
-    return username || req.ip;
-  },
-});
-
-// Rate limiting for API endpoints
-const apiLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: (req) => {
-    const baseLimit = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS) || 100;
-
-    // Usuarios autenticados tienen un cupo mayor para evitar bloqueos por navegación interna.
-    if (req.user && req.user.role === 'admin') {
-      return Math.max(baseLimit, 1200);
-    }
-    if (req.user && req.user.role === 'partner') {
-      return Math.max(baseLimit, 600);
-    }
-
-    return baseLimit;
-  },
-  keyGenerator: (req) => {
-    if (req.user && req.user.sub) {
-      return `user:${req.user.sub}`;
-    }
-    return req.ip;
-  },
-  message: { error: 'Demasiadas solicitudes. Intenta de nuevo más tarde.' },
-  standardHeaders: true,
-  legacyHeaders: false
-});
+// authLimiter / apiLimiter ahora viven en src/lib/rateLimit.js (importados arriba).
 
 // Reenvío manual del correo de notificación al estudiante (control anti-spam).
 // Configurable por entorno; valores por defecto: 1 reenvío por activación, 10 min de cooldown.
 const MAX_PARTNER_EMAIL_RETRIES = parseInt(process.env.MAX_PARTNER_EMAIL_RETRIES) || 1;
 const EMAIL_RESEND_COOLDOWN_MIN = parseInt(process.env.EMAIL_RESEND_COOLDOWN_MIN) || 10;
 
-// DB Pool with connection limits
-const pool = new Pool({
-  host: process.env.DB_HOST || 'postgres',
-  port: process.env.DB_PORT ? parseInt(process.env.DB_PORT) : 5432,
-  database: process.env.DB_NAME || 'proyectodb',
-  user: process.env.DB_USER || 'admin',
-  password: process.env.DB_PASSWORD || 'admin123',
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+// El pool de Postgres ahora vive en src/db/pool.js (importado arriba).
 
 // Validate required environment variables
 const requiredEnvVars = ['JWT_SECRET', 'ADMIN_PASSWORD'];
+// En producción exigimos también los secretos sensibles: nunca arrancar con
+// los fallbacks débiles de desarrollo (DB_PASSWORD, claves de Stripe).
+if (process.env.NODE_ENV === 'production') {
+  requiredEnvVars.push('DB_PASSWORD', 'STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET');
+}
 const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
 if (missingEnvVars.length > 0) {
   console.error('❌ ERROR: Las siguientes variables de entorno son requeridas:', missingEnvVars.join(', '));
@@ -185,62 +150,12 @@ const DEFAULT_PRICING_PROFILES = [
   }
 ];
 
-const ROLE_TYPES = ['system_role', 'client_role'];
-const ROLE_TYPE_LABELS = { system_role: 'Sistema', client_role: 'Cliente' };
-
-// Each module declares which role types may hold a non-'none' permission.
-// Add new modules here — nowhere else needs to change.
-const ROLE_PERMISSION_MODULES = [
-  { key: 'dashboard',     label: 'Dashboard',          types: ['system_role', 'client_role'] },
-  { key: 'purchases',     label: 'Compras',            types: ['system_role', 'client_role'] },
-  { key: 'users',         label: 'Usuarios',           types: ['system_role'] },
-  { key: 'courses',       label: 'Certificaciones',    types: ['system_role', 'client_role'] },
-  { key: 'pricing',       label: 'Pricing',            types: ['system_role'] },
-  { key: 'stats',         label: 'Estadísticas',       types: ['system_role', 'client_role'] },
-  { key: 'audit',         label: 'Auditoría',          types: ['system_role'] },
-  { key: 'reports',       label: 'Reportería',         types: ['system_role'] },
-  { key: 'financial_ops', label: 'Ops Financieras',    types: ['system_role'] },
-];
-const ROLE_PERMISSION_LEVELS = ['none', 'view', 'edit'];
-
-function buildRolePermissionsDefault(level = 'none') {
-  return ROLE_PERMISSION_MODULES.reduce((acc, mod) => {
-    acc[mod.key] = level;
-    return acc;
-  }, {});
-}
-
-function getDefaultPermissionsForRole(roleName) {
-  if (roleName === 'admin') return buildRolePermissionsDefault('edit');
-  return buildRolePermissionsDefault('none');
-}
-
-// roleType controls which modules may hold non-'none' values.
-function sanitizeRolePermissions(permissions, roleType = 'system_role') {
-  const source = permissions && typeof permissions === 'object' && !Array.isArray(permissions) ? permissions : {};
-  const sanitized = {};
-  for (const mod of ROLE_PERMISSION_MODULES) {
-    const value = source[mod.key] || 'none';
-    const allowed = mod.types.includes(roleType);
-    sanitized[mod.key] = (allowed && ROLE_PERMISSION_LEVELS.includes(value)) ? value : 'none';
-  }
-  return sanitized;
-}
-
-function normalizeRoleName(value) {
-  return String(value || '')
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9_-]/g, '_')
-    .replace(/_+/g, '_')
-    .replace(/^_+|_+$/g, '');
-}
-
-async function getPermissionsByRole(roleName) {
-  const result = await pool.query('SELECT permissions FROM roles WHERE name=$1 AND active=TRUE', [roleName]);
-  if (result.rowCount === 0) return {};
-  return result.rows[0].permissions || {};
-}
+// Helpers/constantes RBAC ahora viven en src/lib/rbac.js (compartidos por roles y users).
+const {
+  ROLE_TYPES, ROLE_TYPE_LABELS, ROLE_PERMISSION_MODULES, ROLE_PERMISSION_LEVELS,
+  buildRolePermissionsDefault, getDefaultPermissionsForRole, sanitizeRolePermissions,
+  normalizeRoleName, getPermissionsByRole,
+} = require('./src/lib/rbac');
 
 function normalizePricingProfileCode(value) {
   const normalized = String(value || '')
@@ -569,28 +484,7 @@ async function resolvePartnerPricing(partnerId, qty, cumulativeOverride = null) 
   throw new Error('No existe una regla de precio activa para esa cantidad');
 }
 
-// Security logging function
-function logSecurityEvent(event, details) {
-  const timestamp = new Date().toISOString();
-  console.log(`[SECURITY] ${timestamp} - ${event}:`, JSON.stringify(details));
-}
-
-// Log system events to database for audit trail
-async function logSystemEvent(eventType, eventCategory, userId, stripeCustomerId, purchaseId, eventData, status = 'SUCCESS', errorMessage = null, req = null) {
-  try {
-    const ipAddress = req ? req.ip : null;
-    const userAgent = req ? req.get('user-agent') : null;
-    
-    await pool.query(
-      `INSERT INTO system_events (event_type, event_category, user_id, stripe_customer_id, purchase_id, event_data, status, error_message, ip_address, user_agent)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [eventType, eventCategory, userId, stripeCustomerId, purchaseId, JSON.stringify(eventData), status, errorMessage, ipAddress, userAgent]
-    );
-    console.log(`✓ System event logged: ${eventType} (${eventCategory})`);
-  } catch (e) {
-    console.error('❌ Error logging system event:', e.message);
-  }
-}
+// logSecurityEvent / logSystemEvent ahora viven en src/lib/audit.js (importados arriba).
 
 /**
  * Envía el correo de bienvenida al estudiante cuando se crea su cuenta en Moodle.
@@ -601,65 +495,9 @@ async function logSystemEvent(eventType, eventCategory, userId, stripeCustomerId
  *
  * @returns {string|null} estado del envío: 'SENT' | 'FAILED' | 'SKIPPED' | null (sin destinatario u omitido por idempotencia)
  */
-async function sendStudentWelcomeEmail({ activationId, to, studentName, courseName, username, tempPassword, months = null, expiresAt, userId = null, isNewEnrollment = false, force = false, req = null }) {
-  try {
-    if (!to) return null;
+// sendStudentWelcomeEmail ahora es un cliente HTTP a servicio-notificaciones (importado arriba).
 
-    // Idempotencia: no reenviar si ya se envió correctamente (a menos que sea un reenvío forzado)
-    if (!force) {
-      const prev = await pool.query('SELECT email_status FROM activations WHERE id=$1', [activationId]);
-      if (prev.rowCount > 0 && prev.rows[0].email_status === 'SENT') return null;
-    }
-
-    const { subject, html, text } = buildStudentWelcomeEmail({
-      studentName, email: to, courseName, username, tempPassword, months, expiresAt, campusUrl: CAMPUS_URL, isNewEnrollment
-    });
-
-    const result = await mailer.sendMail({ to, subject, html, text });
-
-    let emailStatus, emailError = null;
-    if (result.sent)        emailStatus = 'SENT';
-    else if (result.skipped) emailStatus = 'SKIPPED';
-    else                     { emailStatus = 'FAILED'; emailError = result.error || 'error desconocido'; }
-
-    const sentAt = result.sent ? new Date() : null;
-    await pool.query(
-      `UPDATE activations
-       SET email_status=$1, email_error=$2, email_to=$3,
-           email_sent_at = COALESCE($4::timestamp, email_sent_at)
-       WHERE id=$5`,
-      [emailStatus, emailError, to, sentAt, activationId]
-    );
-
-    const eventBase = isNewEnrollment ? 'STUDENT_NEW_COURSE_EMAIL' : 'STUDENT_WELCOME_EMAIL';
-    await logSystemEvent(
-      `${eventBase}_${emailStatus}`,
-      'EMAIL', userId, null, null,
-      { activation_id: activationId, to, course_name: courseName, reason: result.reason || null, new_enrollment: isNewEnrollment, forced: force },
-      emailStatus === 'FAILED' ? 'FAILED' : 'SUCCESS',
-      emailError, req
-    );
-
-    return emailStatus;
-  } catch (e) {
-    console.error(`❌ Error enviando correo de bienvenida (activation ${activationId}):`, e.message);
-    return 'FAILED';
-  }
-}
-
-// Log transaction state changes for audit trail
-async function logTransactionEvent(purchaseId, newStatus, previousStatus, eventType, stripeEventId, stripeEventData, paymentIntentId, partnerId, metadata = null) {
-  try {
-    await pool.query(
-      `INSERT INTO transaction_events (purchase_id, partner_id, payment_intent_id, previous_status, new_status, event_type, stripe_event_id, stripe_event_data, metadata)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [purchaseId, partnerId, paymentIntentId, previousStatus, newStatus, eventType, stripeEventId, JSON.stringify(stripeEventData || {}), JSON.stringify(metadata || {})]
-    );
-    console.log(`✓ Transaction event logged: Purchase ${purchaseId} - ${previousStatus} → ${newStatus} (${eventType})`);
-  } catch (e) {
-    console.error('❌ Error logging transaction event:', e.message);
-  }
-}
+// logTransactionEvent ahora vive en src/lib/audit.js (importado arriba).
 
 async function backfillPaidPurchaseVouchers(partnerId) {
   const paidPurchases = await pool.query(
@@ -972,15 +810,7 @@ async function runStripeSyncJob(jobId) {
   }
 }
 
-// Validation error handler
-function handleValidationErrors(req, res, next) {
-  const errors = validationResult(req);
-  if (!errors.isEmpty()) {
-    logSecurityEvent('VALIDATION_ERROR', { errors: errors.array(), ip: req.ip });
-    return res.status(400).json({ error: 'Datos inválidos', details: errors.array() });
-  }
-  next();
-}
+// handleValidationErrors ahora vive en src/lib/validation.js (importado arriba).
 
 async function initDb(){
   await pool.query(`
@@ -3037,158 +2867,8 @@ app.get('/partner/:id/vouchers', authenticate, async (req,res)=>{
   }catch(e){ res.status(400).json({error:e.message}); }
 });
 
-// Admin: courses CRUD
-app.get('/admin/courses', authenticate, requirePermission('courses', 'view'), apiLimiter, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT id, name, COALESCE(active, TRUE) AS active, created_at, updated_at FROM courses ORDER BY name ASC');
-    res.json(result.rows);
-  } catch (e) {
-    res.status(500).json({ error: 'Error al obtener cursos' });
-  }
-});
-
-app.post('/admin/courses',
-  authenticate,
-  requireRole('admin'),
-  apiLimiter,
-  body('name').trim().isLength({ min: 2, max: 200 }).withMessage('Nombre de curso inválido (2-200 caracteres)'),
-  handleValidationErrors,
-  async (req, res) => {
-    const name = String(req.body.name || '').trim();
-    try {
-      const duplicate = await pool.query('SELECT id FROM courses WHERE LOWER(name)=LOWER($1)', [name]);
-      if (duplicate.rowCount > 0) {
-        return res.status(409).json({ error: 'Ya existe un curso con ese nombre' });
-      }
-
-      const created = await pool.query(
-        'INSERT INTO courses (name, active) VALUES ($1, TRUE) RETURNING id, name, COALESCE(active, TRUE) AS active, created_at',
-        [name]
-      );
-      await logSystemEvent('COURSE_CREATED', 'COURSE_MANAGEMENT', req.user.sub, null, null, {
-        course_id: created.rows[0].id,
-        name: created.rows[0].name
-      }, 'SUCCESS', null, req);
-      res.status(201).json(created.rows[0]);
-    } catch (e) {
-      await logSystemEvent('COURSE_CREATE_ERROR', 'COURSE_MANAGEMENT', req.user.sub, null, null, { name }, 'FAILED', e.message, req);
-      res.status(500).json({ error: 'Error al crear curso' });
-    }
-  }
-);
-
-app.put('/admin/courses/:id',
-  authenticate,
-  requireRole('admin'),
-  apiLimiter,
-  param('id').isInt({ min: 1 }).withMessage('ID de curso inválido'),
-  body('name').trim().isLength({ min: 2, max: 200 }).withMessage('Nombre de curso inválido (2-200 caracteres)'),
-  handleValidationErrors,
-  async (req, res) => {
-    const courseId = parseInt(req.params.id, 10);
-    const name = String(req.body.name || '').trim();
-    try {
-      const duplicate = await pool.query('SELECT id FROM courses WHERE LOWER(name)=LOWER($1) AND id<>$2', [name, courseId]);
-      if (duplicate.rowCount > 0) {
-        return res.status(409).json({ error: 'Ya existe un curso con ese nombre' });
-      }
-
-      const updated = await pool.query(
-        'UPDATE courses SET name=$1, updated_at=NOW() WHERE id=$2 RETURNING id, name, COALESCE(active, TRUE) AS active, created_at, updated_at',
-        [name, courseId]
-      );
-
-      if (updated.rowCount === 0) {
-        return res.status(404).json({ error: 'Curso no encontrado' });
-      }
-
-      await logSystemEvent('COURSE_UPDATED', 'COURSE_MANAGEMENT', req.user.sub, null, null, {
-        course_id: courseId,
-        name
-      }, 'SUCCESS', null, req);
-      res.json(updated.rows[0]);
-    } catch (e) {
-      await logSystemEvent('COURSE_UPDATE_ERROR', 'COURSE_MANAGEMENT', req.user.sub, null, null, { course_id: courseId, name }, 'FAILED', e.message, req);
-      res.status(500).json({ error: 'Error al actualizar curso' });
-    }
-  }
-);
-
-app.patch('/admin/courses/:id/status',
-  authenticate,
-  requireRole('admin'),
-  apiLimiter,
-  param('id').isInt({ min: 1 }).withMessage('ID de curso inválido'),
-  body('active').isBoolean().withMessage('Estado inválido'),
-  handleValidationErrors,
-  async (req, res) => {
-    const courseId = parseInt(req.params.id, 10);
-    const active = req.body.active === true || req.body.active === 'true';
-    try {
-      const updated = await pool.query(
-        'UPDATE courses SET active=$1, updated_at=NOW() WHERE id=$2 RETURNING id, name, COALESCE(active, TRUE) AS active, created_at, updated_at',
-        [active, courseId]
-      );
-
-      if (updated.rowCount === 0) {
-        return res.status(404).json({ error: 'Curso no encontrado' });
-      }
-
-      await logSystemEvent('COURSE_STATUS_UPDATED', 'COURSE_MANAGEMENT', req.user.sub, null, null, {
-        course_id: courseId,
-        active
-      }, 'SUCCESS', null, req);
-      res.json(updated.rows[0]);
-    } catch (e) {
-      await logSystemEvent('COURSE_STATUS_UPDATE_ERROR', 'COURSE_MANAGEMENT', req.user.sub, null, null, { course_id: courseId, active }, 'FAILED', e.message, req);
-      res.status(500).json({ error: 'Error al actualizar estado del curso' });
-    }
-  }
-);
-
-app.delete('/admin/courses/:id',
-  authenticate,
-  requireRole('admin'),
-  apiLimiter,
-  param('id').isInt({ min: 1 }).withMessage('ID de curso inválido'),
-  handleValidationErrors,
-  async (req, res) => {
-    const courseId = parseInt(req.params.id, 10);
-    try {
-      const deleted = await pool.query('DELETE FROM courses WHERE id=$1 RETURNING id', [courseId]);
-      if (deleted.rowCount === 0) {
-        return res.status(404).json({ error: 'Curso no encontrado' });
-      }
-      await logSystemEvent('COURSE_DELETED', 'COURSE_MANAGEMENT', req.user.sub, null, null, {
-        course_id: courseId
-      }, 'SUCCESS', null, req);
-      res.json({ ok: true, id: courseId });
-    } catch (e) {
-      if (e && e.code === '23503') {
-        await logSystemEvent('COURSE_DELETE_ERROR', 'COURSE_MANAGEMENT', req.user.sub, null, null, { course_id: courseId }, 'FAILED', 'Curso con dependencias', req);
-        return res.status(409).json({ error: 'No se puede eliminar: el curso tiene activaciones o vouchers asociados' });
-      }
-      await logSystemEvent('COURSE_DELETE_ERROR', 'COURSE_MANAGEMENT', req.user.sub, null, null, { course_id: courseId }, 'FAILED', e.message, req);
-      res.status(500).json({ error: 'Error al eliminar curso' });
-    }
-  }
-);
-
-app.get('/partner/:id/courses', authenticate, apiLimiter, async (req, res) => {
-  const pid = req.params.id;
-  if (req.user && req.user.role !== 'admin') {
-    if (!req.user.partner_id || String(req.user.partner_id) !== String(pid)) {
-      return res.status(403).json({ error: 'forbidden' });
-    }
-  }
-
-  try {
-    const courses = await pool.query('SELECT id, name FROM courses WHERE COALESCE(active, TRUE)=TRUE ORDER BY name ASC');
-    res.json(courses.rows);
-  } catch (e) {
-    res.status(400).json({ error: 'Error al obtener cursos' });
-  }
-});
+// Courses (CRUD admin + cursos del partner + catalogs) → src/modules/courses
+app.use(require('./src/modules/courses/routes'));
 
 app.get('/partner/:id/activation-eligibility', authenticate, apiLimiter, async (req, res) => {
   const pid = req.params.id;
@@ -3226,117 +2906,8 @@ app.get('/partner/:id/activation-eligibility', authenticate, apiLimiter, async (
 });
 
 // Partner: final clients CRUD
-app.get('/partner/:id/final-clients', authenticate, async (req, res) => {
-  const pid = req.params.id;
-  if(req.user.role !== 'admin'){
-    if(!req.user.partner_id || String(req.user.partner_id) !== String(pid))
-      return res.status(403).json({ error: 'forbidden' });
-  }
-  try {
-    const r = await pool.query(
-      'SELECT id, name, created_at FROM partner_final_clients WHERE partner_id=$1 ORDER BY name ASC',
-      [pid]
-    );
-    res.json(r.rows);
-  } catch(e) { res.status(400).json({ error: e.message }); }
-});
-
-app.post('/partner/:id/final-clients',
-  authenticate, requireRole('partner'), apiLimiter,
-  body('name').trim().isLength({ min: 2, max: 200 }).withMessage('Nombre obligatorio (2-200 caracteres)'),
-  handleValidationErrors,
-  async (req, res) => {
-    const pid = req.params.id;
-    if(!req.user.partner_id || String(req.user.partner_id) !== String(pid))
-      return res.status(403).json({ error: 'forbidden' });
-    try {
-      const { name } = req.body;
-      const dup = await pool.query(
-        'SELECT id FROM partner_final_clients WHERE partner_id=$1 AND LOWER(name)=LOWER($2)',
-        [pid, name]
-      );
-      if(dup.rowCount > 0) return res.status(409).json({ error: 'Ya existe un cliente con ese nombre' });
-      const r = await pool.query(
-        'INSERT INTO partner_final_clients (partner_id, name) VALUES ($1,$2) RETURNING id, name, created_at',
-        [pid, name]
-      );
-      await logSystemEvent('FINAL_CLIENT_CREATED', 'FINAL_CLIENT_MANAGEMENT', req.user.sub, null, null, {
-        partner_id: parseInt(pid, 10),
-        final_client_id: r.rows[0].id,
-        name: r.rows[0].name
-      }, 'SUCCESS', null, req);
-      res.status(201).json(r.rows[0]);
-    } catch(e) {
-      await logSystemEvent('FINAL_CLIENT_CREATE_ERROR', 'FINAL_CLIENT_MANAGEMENT', req.user.sub, null, null, { partner_id: parseInt(pid, 10) || null }, 'FAILED', e.message, req);
-      res.status(400).json({ error: e.message });
-    }
-  }
-);
-
-app.put('/partner/:id/final-clients/:clientId',
-  authenticate, requireRole('partner'), apiLimiter,
-  body('name').trim().isLength({ min: 2, max: 200 }).withMessage('Nombre obligatorio (2-200 caracteres)'),
-  handleValidationErrors,
-  async (req, res) => {
-    const pid = req.params.id;
-    const clientId = parseInt(req.params.clientId, 10);
-    if(!req.user.partner_id || String(req.user.partner_id) !== String(pid))
-      return res.status(403).json({ error: 'forbidden' });
-    try {
-      const { name } = req.body;
-      const dup = await pool.query(
-        'SELECT id FROM partner_final_clients WHERE partner_id=$1 AND LOWER(name)=LOWER($2) AND id<>$3',
-        [pid, name, clientId]
-      );
-      if(dup.rowCount > 0) return res.status(409).json({ error: 'Ya existe un cliente con ese nombre' });
-      const r = await pool.query(
-        'UPDATE partner_final_clients SET name=$1 WHERE id=$2 AND partner_id=$3 RETURNING id, name, created_at',
-        [name, clientId, pid]
-      );
-      if(r.rowCount === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
-      await logSystemEvent('FINAL_CLIENT_UPDATED', 'FINAL_CLIENT_MANAGEMENT', req.user.sub, null, null, {
-        partner_id: parseInt(pid, 10),
-        final_client_id: clientId,
-        name
-      }, 'SUCCESS', null, req);
-      res.json(r.rows[0]);
-    } catch(e) {
-      await logSystemEvent('FINAL_CLIENT_UPDATE_ERROR', 'FINAL_CLIENT_MANAGEMENT', req.user.sub, null, null, {
-        partner_id: parseInt(pid, 10) || null,
-        final_client_id: clientId
-      }, 'FAILED', e.message, req);
-      res.status(400).json({ error: e.message });
-    }
-  }
-);
-
-app.delete('/partner/:id/final-clients/:clientId',
-  authenticate, requireRole('partner'),
-  async (req, res) => {
-    const pid = req.params.id;
-    const clientId = parseInt(req.params.clientId, 10);
-    if(!req.user.partner_id || String(req.user.partner_id) !== String(pid))
-      return res.status(403).json({ error: 'forbidden' });
-    try {
-      const r = await pool.query(
-        'DELETE FROM partner_final_clients WHERE id=$1 AND partner_id=$2 RETURNING id',
-        [clientId, pid]
-      );
-      if(r.rowCount === 0) return res.status(404).json({ error: 'Cliente no encontrado' });
-      await logSystemEvent('FINAL_CLIENT_DELETED', 'FINAL_CLIENT_MANAGEMENT', req.user.sub, null, null, {
-        partner_id: parseInt(pid, 10),
-        final_client_id: clientId
-      }, 'SUCCESS', null, req);
-      res.json({ ok: true });
-    } catch(e) {
-      await logSystemEvent('FINAL_CLIENT_DELETE_ERROR', 'FINAL_CLIENT_MANAGEMENT', req.user.sub, null, null, {
-        partner_id: parseInt(pid, 10) || null,
-        final_client_id: clientId
-      }, 'FAILED', e.message, req);
-      res.status(400).json({ error: e.message });
-    }
-  }
-);
+// Final clients (clientes finales del partner) → src/modules/final-clients
+app.use(require('./src/modules/final-clients/routes'));
 
 // Partner: activate voucher with validation
 app.post('/partner/:id/activate',
@@ -4581,7 +4152,8 @@ app.get('/admin/activations',
            a.moodle_enrolled_at,
            a.moodle_retry_count,
            a.moodle_username,
-           a.moodle_temp_password,
+           -- moodle_temp_password NO se expone en el listado admin (dato sensible);
+           -- el reenvío de credenciales lo usa solo del lado servidor.
            a.moodle_completed_at,
            a.moodle_completion_synced_at,
            a.expires_at,
@@ -4701,11 +4273,7 @@ app.get('/admin/partners/:id/stats', authenticate, requireRole('admin'), async (
   }
 });
 
-// Catalogs
-app.get('/catalogs', async (req,res)=>{
-  const r = await pool.query('SELECT * FROM catalogs');
-  res.json(r.rows);
-});
+// /catalogs ahora vive en src/modules/courses/routes.js
 
 // OAuth2-like token endpoint (password grant) with rate limiting and validation
 app.post('/oauth/token',
@@ -5205,224 +4773,15 @@ app.put('/admin/users/:id', authenticate, requireRole('admin'), async (req,res)=
   }
 });
 
-// Política global de contraseñas
-app.get('/admin/password-policy', authenticate, requireRole('admin'), async (req, res) => {
-  try {
-    const r = await pool.query("SELECT key, value FROM system_settings WHERE key='password_expiry_days'");
-    const expiryDays = r.rows.length ? parseInt(r.rows[0].value) || 0 : 0;
-    res.json({ expiry_days: expiryDays });
-  } catch(e) { res.status(500).json({ error: 'Error al obtener política de contraseñas' }); }
-});
-
-app.put('/admin/password-policy', authenticate, requireRole('admin'), async (req, res) => {
-  try {
-    const expiryDays = Math.max(0, parseInt(req.body.expiry_days) || 0);
-    await pool.query(
-      `INSERT INTO system_settings (key, value, updated_at)
-       VALUES ('password_expiry_days', $1, NOW())
-       ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()`,
-      [String(expiryDays)]
-    );
-    await logSystemEvent('PASSWORD_POLICY_UPDATED', 'USER_MANAGEMENT', req.user.sub, null, null,
-      { expiry_days: expiryDays }, 'SUCCESS', null, req);
-    res.json({ ok: true, expiry_days: expiryDays });
-  } catch(e) { res.status(500).json({ error: 'Error al guardar política de contraseñas' }); }
-});
-
-// Configuración de activación (partner la lee, admin la escribe)
-app.get('/partner/settings', authenticate, requireRole('partner'), async (req, res) => {
-  try {
-    const r = await pool.query("SELECT value FROM system_settings WHERE key='max_activation_months'");
-    const maxMonths = r.rows.length ? (parseInt(r.rows[0].value) || 12) : 12;
-    res.json({ max_activation_months: maxMonths });
-  } catch(e) { res.status(500).json({ error: 'Error al obtener configuración' }); }
-});
-
-app.get('/admin/settings/activation', authenticate, requireRole('admin'), async (req, res) => {
-  try {
-    const r = await pool.query("SELECT value FROM system_settings WHERE key='max_activation_months'");
-    const maxMonths = r.rows.length ? (parseInt(r.rows[0].value) || 12) : 12;
-    res.json({ max_activation_months: maxMonths });
-  } catch(e) { res.status(500).json({ error: 'Error al obtener configuración' }); }
-});
-
-app.put('/admin/settings/activation', authenticate, requireRole('admin'), async (req, res) => {
-  try {
-    const maxMonths = Math.min(120, Math.max(1, parseInt(req.body.max_activation_months) || 12));
-    await pool.query(
-      `INSERT INTO system_settings (key, value, updated_at)
-       VALUES ('max_activation_months', $1, NOW())
-       ON CONFLICT (key) DO UPDATE SET value=$1, updated_at=NOW()`,
-      [String(maxMonths)]
-    );
-    await logSystemEvent('ACTIVATION_SETTINGS_UPDATED', 'USER_MANAGEMENT', req.user.sub, null, null,
-      { max_activation_months: maxMonths }, 'SUCCESS', null, req);
-    res.json({ ok: true, max_activation_months: maxMonths });
-  } catch(e) { res.status(500).json({ error: 'Error al guardar configuración' }); }
-});
+// Settings (política de contraseñas + configuración de activación) → src/modules/settings
+app.use(require('./src/modules/settings/routes'));
 
 // Roles and permissions (admin only)
 
-// Config endpoint — frontend lee esto para construir la UI de permisos dinámicamente
-app.get('/admin/roles/config', authenticate, requireRole('admin'), apiLimiter, (req, res) => {
-  res.json({
-    types:       ROLE_TYPES,
-    type_labels: ROLE_TYPE_LABELS,
-    modules:     ROLE_PERMISSION_MODULES,
-    levels:      ROLE_PERMISSION_LEVELS
-  });
-});
+// Roles & permisos → src/modules/roles
+app.use(require('./src/modules/roles/routes'));
 
-app.get('/admin/roles', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT name, display_name, active, is_system,
-              COALESCE(role_type, 'system_role') AS role_type,
-              COALESCE(permissions, '{}'::jsonb) AS permissions
-       FROM roles
-       ORDER BY is_system DESC, name ASC`
-    );
-    res.json(result.rows);
-  } catch (e) {
-    console.error('❌ Error fetching roles:', e);
-    res.status(500).json({ error: 'Error al obtener roles' });
-  }
-});
-
-app.post('/admin/roles', authenticate, requireRole('admin'), apiLimiter,
-  body('name').trim().isLength({ min: 2, max: 50 }).withMessage('Nombre de rol inválido'),
-  body('display_name').optional().trim().isLength({ min: 2, max: 100 }).withMessage('Nombre visible inválido'),
-  body('role_type').optional().isIn(ROLE_TYPES).withMessage('Tipo de rol inválido'),
-  handleValidationErrors,
-  async (req, res) => {
-    const name      = normalizeRoleName(req.body.name);
-    const displayName = (req.body.display_name || name).toString().trim();
-    const roleType  = ROLE_TYPES.includes(req.body.role_type) ? req.body.role_type : 'client_role';
-    const permissions = sanitizeRolePermissions(req.body.permissions || getDefaultPermissionsForRole(name), roleType);
-
-    if (!name) return res.status(400).json({ error: 'Nombre de rol inválido' });
-    try {
-      const created = await pool.query(
-        `INSERT INTO roles (name, display_name, permissions, active, is_system, role_type, updated_at)
-         VALUES ($1, $2, $3::jsonb, TRUE, FALSE, $4, NOW())
-         RETURNING name, display_name, active, is_system, role_type, permissions`,
-        [name, displayName, JSON.stringify(permissions), roleType]
-      );
-      await logSystemEvent('ROLE_CREATED', 'ROLE_MANAGEMENT', req.user.sub, null, null, {
-        role_name: created.rows[0].name,
-        display_name: created.rows[0].display_name,
-        role_type: roleType
-      }, 'SUCCESS', null, req);
-      res.status(201).json(created.rows[0]);
-    } catch (e) {
-      if (e.code === '23505') {
-        await logSystemEvent('ROLE_CREATE_ERROR', 'ROLE_MANAGEMENT', req.user.sub, null, null, { role_name: name }, 'FAILED', 'El rol ya existe', req);
-        return res.status(409).json({ error: 'El rol ya existe' });
-      }
-      await logSystemEvent('ROLE_CREATE_ERROR', 'ROLE_MANAGEMENT', req.user.sub, null, null, { role_name: name }, 'FAILED', e.message, req);
-      console.error('❌ Error creating role:', e);
-      res.status(500).json({ error: 'Error al crear rol' });
-    }
-  }
-);
-
-app.put('/admin/roles/:name', authenticate, requireRole('admin'), apiLimiter,
-  body('display_name').optional().trim().isLength({ min: 1, max: 100 }),
-  body('role_type').optional().isIn(ROLE_TYPES).withMessage('Tipo de rol inválido'),
-  handleValidationErrors,
-  async (req, res) => {
-    const roleName = normalizeRoleName(req.params.name);
-    if (!roleName) return res.status(400).json({ error: 'Rol inválido' });
-    const { display_name, role_type } = req.body;
-    if (!display_name && !role_type) return res.status(400).json({ error: 'Nada que actualizar' });
-    try {
-      const existing = await pool.query('SELECT name, is_system, role_type, permissions FROM roles WHERE name=$1', [roleName]);
-      if (existing.rowCount === 0) return res.status(404).json({ error: 'Rol no encontrado' });
-      const cur = existing.rows[0];
-
-      // Si cambia role_type, re-sanitize permissions para limpiar módulos prohibidos
-      let newPermissions = cur.permissions;
-      if (role_type && role_type !== cur.role_type) {
-        newPermissions = sanitizeRolePermissions(cur.permissions, role_type);
-      }
-
-      const updated = await pool.query(
-        `UPDATE roles
-         SET display_name = COALESCE($1, display_name),
-             role_type    = COALESCE($2, role_type),
-             permissions  = $3::jsonb,
-             updated_at   = NOW()
-         WHERE name = $4
-         RETURNING name, display_name, active, is_system, role_type, permissions`,
-        [display_name || null, role_type || null, JSON.stringify(newPermissions), roleName]
-      );
-      await logSystemEvent('ROLE_UPDATED', 'ROLE_MANAGEMENT', req.user.sub, null, null, {
-        role_name: roleName, display_name, role_type, permissions_sanitized: !!role_type
-      }, 'SUCCESS', null, req);
-      res.json({ ok: true, role: updated.rows[0] });
-    } catch (e) {
-      console.error('❌ Error updating role:', e);
-      res.status(500).json({ error: 'Error al actualizar rol' });
-    }
-  }
-);
-
-app.delete('/admin/roles/:name', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
-  const roleName = normalizeRoleName(req.params.name);
-  if (!roleName) return res.status(400).json({ error: 'Rol inválido' });
-
-  try {
-    const existing = await pool.query('SELECT name FROM roles WHERE name=$1', [roleName]);
-    if (existing.rowCount === 0) return res.status(404).json({ error: 'Rol no encontrado' });
-    if (roleName === 'admin') return res.status(400).json({ error: 'No se puede eliminar el rol administrador' });
-
-    const usersWithRole = await pool.query('SELECT COUNT(*) FROM users WHERE role=$1', [roleName]);
-    if (parseInt(usersWithRole.rows[0].count, 10) > 0) {
-      return res.status(400).json({ error: 'No se puede eliminar el rol porque tiene usuarios asignados' });
-    }
-
-    await pool.query('DELETE FROM roles WHERE name=$1', [roleName]);
-    await logSystemEvent('ROLE_DELETED', 'ROLES', req.user.sub, null, null, { role_name: roleName }, 'SUCCESS', null, req);
-    res.json({ message: `Rol "${roleName}" eliminado correctamente` });
-  } catch (e) {
-    console.error('Error al eliminar rol:', e.message);
-    res.status(500).json({ error: 'Error al eliminar rol' });
-  }
-});
-
-app.put('/admin/roles/:name/permissions', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
-  const roleName = normalizeRoleName(req.params.name);
-  if (!roleName) return res.status(400).json({ error: 'Rol inválido' });
-
-  try {
-    // Lee el role_type actual para aplicar las restricciones correctas
-    const roleRow = await pool.query('SELECT role_type FROM roles WHERE name=$1', [roleName]);
-    if (roleRow.rowCount === 0) return res.status(404).json({ error: 'Rol no encontrado' });
-    const roleType = roleRow.rows[0].role_type || 'system_role';
-
-    const permissions = sanitizeRolePermissions(req.body.permissions, roleType);
-
-    const updated = await pool.query(
-      `UPDATE roles
-       SET permissions=$1::jsonb, updated_at=NOW()
-       WHERE name=$2
-       RETURNING name, display_name, active, is_system, role_type, permissions`,
-      [JSON.stringify(permissions), roleName]
-    );
-    await logSystemEvent('ROLE_PERMISSIONS_UPDATED', 'ROLE_MANAGEMENT', req.user.sub, null, null, {
-      role_name: roleName,
-      role_type: roleType,
-      permissions
-    }, 'SUCCESS', null, req);
-    res.json({ ok: true, role: updated.rows[0] });
-  } catch (e) {
-    await logSystemEvent('ROLE_PERMISSIONS_UPDATE_ERROR', 'ROLE_MANAGEMENT', req.user.sub, null, null, {
-      role_name: roleName
-    }, 'FAILED', e.message, req);
-    console.error('❌ Error updating role permissions:', e);
-    res.status(500).json({ error: 'Error al actualizar permisos del rol' });
-  }
-});
+// (rutas PUT/DELETE/permissions de roles movidas a src/modules/roles)
 
 // Delete user (admin) - also delete refresh tokens
 app.delete('/admin/users/:id', authenticate, requireRole('admin'), async (req,res)=>{
@@ -5483,84 +4842,8 @@ app.delete('/admin/users/:id', authenticate, requireRole('admin'), async (req,re
   }
 });
 
-// Middleware: authenticate with improved security
-function authenticate(req,res,next){
-  const h = req.headers['authorization'];
-  if(!h || !h.startsWith('Bearer ')) {
-    logSecurityEvent('AUTH_MISSING_TOKEN', { ip: req.ip, path: req.path });
-    return res.status(401).json({error:'missing_token'});
-  }
-  const token = h.slice(7);
-  try{
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
-  }catch(e){ 
-    logSecurityEvent('AUTH_INVALID_TOKEN', { error: e.message, ip: req.ip, path: req.path });
-    return res.status(401).json({error:'invalid_token', message: e.message}); 
-  }
-}
-
-function requireRole(...allowedRoles){
-  return (req,res,next)=>{
-    if(!req.user) {
-      logSecurityEvent('AUTHZ_MISSING_USER', { ip: req.ip, path: req.path });
-      return res.status(401).json({error:'missing_token'});
-    }
-    // Admin can access all roles
-    if(req.user.role === 'admin') {
-      return next();
-    }
-    // Check if user's role is in allowed roles
-    if(!allowedRoles.includes(req.user.role)) {
-      logSecurityEvent('AUTHZ_FORBIDDEN', { userId: req.user.sub, role: req.user.role, requiredRoles: allowedRoles, ip: req.ip, path: req.path });
-      return res.status(403).json({error:'forbidden', message: 'No tienes permisos para acceder a este recurso'});
-    }
-    next();
-  };
-}
-
-// Verifica que el usuario tenga al menos `level` (none < view < edit) en `module`.
-function requirePermission(module, level) {
-  const LEVELS = { none: 0, view: 1, edit: 2 };
-  return async (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: 'missing_token' });
-    if (req.user.role === 'admin') return next();
-    try {
-      const roleRow = await pool.query('SELECT permissions FROM roles WHERE name=$1', [req.user.role]);
-      const perms     = roleRow.rows[0]?.permissions || {};
-      const userLevel = LEVELS[perms[module] || 'none'] ?? 0;
-      if (userLevel >= LEVELS[level]) return next();
-      logSecurityEvent('AUTHZ_PERMISSION_DENIED', {
-        userId: req.user.sub, role: req.user.role, module, requiredLevel: level, ip: req.ip, path: req.path
-      });
-      return res.status(403).json({ error: 'forbidden', module, required: level });
-    } catch (e) {
-      return res.status(500).json({ error: 'Error validando permisos' });
-    }
-  };
-}
-
-// Igual que requirePermission pero pasa si el usuario tiene el nivel en CUALQUIERA de los módulos.
-function requireAnyPermission(modules, level) {
-  const LEVELS = { none: 0, view: 1, edit: 2 };
-  return async (req, res, next) => {
-    if (!req.user) return res.status(401).json({ error: 'missing_token' });
-    if (req.user.role === 'admin') return next();
-    try {
-      const roleRow = await pool.query('SELECT permissions FROM roles WHERE name=$1', [req.user.role]);
-      const perms = roleRow.rows[0]?.permissions || {};
-      const hasAny = modules.some(mod => (LEVELS[perms[mod] || 'none'] ?? 0) >= LEVELS[level]);
-      if (hasAny) return next();
-      logSecurityEvent('AUTHZ_PERMISSION_DENIED', {
-        userId: req.user.sub, role: req.user.role, modules, requiredLevel: level, ip: req.ip, path: req.path
-      });
-      return res.status(403).json({ error: 'forbidden', modules, required: level });
-    } catch (e) {
-      return res.status(500).json({ error: 'Error validando permisos' });
-    }
-  };
-}
+// authenticate / requireRole / requirePermission / requireAnyPermission
+// ahora viven en src/lib/auth.js (importados arriba).
 
 function generateVoucherCode() {
   return crypto.randomBytes(6).toString('hex').toUpperCase();
@@ -6372,6 +5655,30 @@ app.get('/admin/reports/export/csv', authenticate, requirePermission('reports', 
     console.error('❌ Error exportando reporte CSV:', e);
     res.status(500).json({ error: 'Error al exportar reporte en CSV' });
   }
+});
+
+// ── Manejo global de errores (después de TODAS las rutas) ──────────────────────
+// 404 para rutas no encontradas
+app.use((req, res) => {
+  res.status(404).json({ error: 'not_found', path: req.path });
+});
+
+// Error handler global: registra y responde sin filtrar el stack en producción.
+// eslint-disable-next-line no-unused-vars
+app.use((err, req, res, next) => {
+  console.error('❌ Error no controlado:', err && err.stack ? err.stack : err);
+  if (res.headersSent) return next(err);
+  const body = { error: 'internal_error' };
+  if (process.env.NODE_ENV !== 'production') body.message = err && err.message;
+  res.status(err && err.status ? err.status : 500).json(body);
+});
+
+// Handlers de proceso: registrar fallos en vez de morir en silencio.
+process.on('unhandledRejection', (reason) => {
+  console.error('❌ unhandledRejection:', reason);
+});
+process.on('uncaughtException', (err) => {
+  console.error('❌ uncaughtException:', err && err.stack ? err.stack : err);
 });
 
 // Graceful shutdown

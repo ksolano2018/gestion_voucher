@@ -16,11 +16,39 @@ jobs:
 
       - name: Deploy en EC2
         uses: appleboy/ssh-action@v1.0.3
+        # Los secretos se pasan como variables de entorno (env: + envs:) en lugar de
+        # interpolarse dentro del texto del `script`. Así no aparecen en la línea de
+        # comando ni en el historial del shell remoto; appleboy los exporta en el host
+        # y los heredocs (<< ENVEOF, sin comillas) los expanden allí.
+        env:
+          EC2_HOST: ${{ secrets.EC2_HOST }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          MOODLE_ADMIN_PASSWORD: ${{ secrets.MOODLE_ADMIN_PASSWORD }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+          PARTNER_PASSWORD: ${{ secrets.PARTNER_PASSWORD }}
+          STRIPE_PUBLISHABLE_KEY: ${{ secrets.STRIPE_PUBLISHABLE_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          MOODLE_TOKEN: ${{ secrets.MOODLE_TOKEN }}
+          MOODLE_PUBLIC_URL: ${{ vars.MOODLE_PUBLIC_URL || secrets.MOODLE_PUBLIC_URL }}
+          CAMPUS_URL: ${{ vars.CAMPUS_URL || secrets.CAMPUS_URL }}
+          MAIL_ENABLED: ${{ vars.MAIL_ENABLED || secrets.MAIL_ENABLED }}
+          SMTP_HOST: ${{ vars.SMTP_HOST || secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ vars.SMTP_PORT || secrets.SMTP_PORT }}
+          SMTP_SECURE: ${{ vars.SMTP_SECURE || secrets.SMTP_SECURE }}
+          SMTP_USER: ${{ vars.SMTP_USER || secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS || vars.SMTP_PASS }}
+          MAIL_FROM: ${{ vars.MAIL_FROM || secrets.MAIL_FROM }}
+          MAIL_REPLY_TO: ${{ vars.MAIL_REPLY_TO || secrets.MAIL_REPLY_TO }}
+          MAIL_LOGO_URL: ${{ vars.MAIL_LOGO_URL || secrets.MAIL_LOGO_URL }}
+          INTERNAL_API_TOKEN: ${{ secrets.INTERNAL_API_TOKEN }}
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           command_timeout: 10m
+          envs: EC2_HOST,DB_PASSWORD,MOODLE_ADMIN_PASSWORD,JWT_SECRET,ADMIN_PASSWORD,PARTNER_PASSWORD,STRIPE_PUBLISHABLE_KEY,STRIPE_SECRET_KEY,STRIPE_WEBHOOK_SECRET,MOODLE_TOKEN,MOODLE_PUBLIC_URL,CAMPUS_URL,MAIL_ENABLED,SMTP_HOST,SMTP_PORT,SMTP_SECURE,SMTP_USER,SMTP_PASS,MAIL_FROM,MAIL_REPLY_TO,MAIL_LOGO_URL,INTERNAL_API_TOKEN
           script: |
             set -e
             cd /home/ec2-user/app
@@ -30,15 +58,16 @@ jobs:
             git reset --hard origin/qa
 
             # Inyectar URL real del servidor en el frontend
-            sed -i "s|%API_URL%|http://${{ secrets.EC2_HOST }}:8080|g" frontend/public/index.html
+            sed -i "s|%API_URL%|http://$EC2_HOST:8080|g" frontend/public/index.html
 
             # .env raíz para docker-compose (postgres, healthcheck y Moodle dockerizado)
             cat > .env << ENVEOF
             DB_NAME=voucherdb
             DB_USER=admin
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            MOODLE_SITE_URL=http://${{ secrets.EC2_HOST }}:8095
-            MOODLE_ADMIN_PASSWORD=${{ secrets.MOODLE_ADMIN_PASSWORD }}
+            DB_PASSWORD=$DB_PASSWORD
+            MOODLE_SITE_URL=http://$EC2_HOST:8095
+            MOODLE_ADMIN_PASSWORD=$MOODLE_ADMIN_PASSWORD
+            INTERNAL_API_TOKEN=$INTERNAL_API_TOKEN
             ENVEOF
 
             # .env del servicio Node.js
@@ -47,16 +76,16 @@ jobs:
             DB_PORT=5432
             DB_NAME=voucherdb
             DB_USER=admin
-            DB_PASSWORD=${{ secrets.DB_PASSWORD }}
-            JWT_SECRET=${{ secrets.JWT_SECRET }}
+            DB_PASSWORD=$DB_PASSWORD
+            JWT_SECRET=$JWT_SECRET
             ADMIN_EMAIL=admin@certjoin.com
-            ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
+            ADMIN_PASSWORD=$ADMIN_PASSWORD
             PARTNER_EMAIL=partner@certjoin.com
-            PARTNER_PASSWORD=${{ secrets.PARTNER_PASSWORD }}
-            STRIPE_PUBLISHABLE_KEY=${{ secrets.STRIPE_PUBLISHABLE_KEY }}
-            STRIPE_SECRET_KEY=${{ secrets.STRIPE_SECRET_KEY }}
-            STRIPE_WEBHOOK_SECRET=${{ secrets.STRIPE_WEBHOOK_SECRET }}
-            FRONTEND_URL=http://${{ secrets.EC2_HOST }}:3000
+            PARTNER_PASSWORD=$PARTNER_PASSWORD
+            STRIPE_PUBLISHABLE_KEY=$STRIPE_PUBLISHABLE_KEY
+            STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY
+            STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET
+            FRONTEND_URL=http://$EC2_HOST:3000
             PORT=8081
             NODE_ENV=production
             REFRESH_TOKEN_TTL_DAYS=7
@@ -65,22 +94,25 @@ jobs:
             RATE_LIMIT_WINDOW_MINUTES=15
             RATE_LIMIT_MAX_REQUESTS=100
             MOODLE_URL=http://moodle:8080
-            MOODLE_TOKEN=${{ secrets.MOODLE_TOKEN }}
+            MOODLE_TOKEN=$MOODLE_TOKEN
             MOODLE_ROLE_ID=5
             MOODLE_MOCK=false
-            MOODLE_PUBLIC_URL=${{ vars.MOODLE_PUBLIC_URL || secrets.MOODLE_PUBLIC_URL }}
-            CAMPUS_URL=${{ vars.CAMPUS_URL || secrets.CAMPUS_URL }}
-            MAIL_ENABLED=${{ vars.MAIL_ENABLED || secrets.MAIL_ENABLED }}
-            SMTP_HOST=${{ vars.SMTP_HOST || secrets.SMTP_HOST }}
-            SMTP_PORT=${{ vars.SMTP_PORT || secrets.SMTP_PORT }}
-            SMTP_SECURE=${{ vars.SMTP_SECURE || secrets.SMTP_SECURE }}
-            SMTP_USER=${{ vars.SMTP_USER || secrets.SMTP_USER }}
-            SMTP_PASS=${{ secrets.SMTP_PASS || vars.SMTP_PASS }}
-            MAIL_FROM=${{ vars.MAIL_FROM || secrets.MAIL_FROM }}
+            MOODLE_PUBLIC_URL=$MOODLE_PUBLIC_URL
+            CAMPUS_URL=$CAMPUS_URL
+            MAIL_ENABLED=$MAIL_ENABLED
+            SMTP_HOST=$SMTP_HOST
+            SMTP_PORT=$SMTP_PORT
+            SMTP_SECURE=$SMTP_SECURE
+            SMTP_USER=$SMTP_USER
+            SMTP_PASS=$SMTP_PASS
+            MAIL_FROM=$MAIL_FROM
             MAIL_FROM_NAME=CertJoin
-            MAIL_REPLY_TO=${{ vars.MAIL_REPLY_TO || secrets.MAIL_REPLY_TO }}
-            MAIL_LOGO_URL=${{ vars.MAIL_LOGO_URL || secrets.MAIL_LOGO_URL }}
+            MAIL_REPLY_TO=$MAIL_REPLY_TO
+            MAIL_LOGO_URL=$MAIL_LOGO_URL
             ENVEOF
+
+            # Restringir permisos de los .env (solo el dueño puede leerlos)
+            chmod 600 .env servicios/servicio-usuarios/.env
 
             # Crear directorio de logs
             mkdir -p logs/usuarios

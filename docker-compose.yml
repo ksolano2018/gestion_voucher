@@ -62,11 +62,37 @@ services:
       - DB_NAME=${DB_NAME}
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
+      - NOTIFICATIONS_URL=http://servicio-notificaciones:8083
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-dev-internal-token}
     depends_on:
       postgres:
         condition: service_healthy
       moodle-mock:
         condition: service_started
+    networks:
+      - proyecto-network
+
+  # Microservicio de Notificaciones (correo al estudiante). Extraído de servicio-usuarios.
+  # NO expone puerto al host: solo accesible por la red interna de Docker
+  # (servicio-usuarios -> http://servicio-notificaciones:8083/internal/send con token interno).
+  servicio-notificaciones:
+    build: ./servicios/servicio-notificaciones
+    container_name: servicio-notificaciones
+    expose:
+      - "8083"
+    env_file:
+      - ./servicios/servicio-usuarios/.env
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - PORT=8083
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-dev-internal-token}
+    depends_on:
+      postgres:
+        condition: service_healthy
     networks:
       - proyecto-network
     volumes:

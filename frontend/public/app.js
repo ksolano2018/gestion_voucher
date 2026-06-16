@@ -3054,9 +3054,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(a.moodle_username) {
           moodleId += `<div class="small text-muted mt-1" title="Usuario Moodle">👤 ${escapeHTML(a.moodle_username)}</div>`;
         }
-        if(a.moodle_temp_password) {
-          moodleId += `<div class="small text-warning mt-1" title="Contraseña inicial (cambiar en primer acceso)">🔑 ${escapeHTML(a.moodle_temp_password)}</div>`;
-        }
+        // La contraseña temporal de Moodle ya no se expone en el listado admin (dato sensible).
 
         let acciones = '';
         const ms = (a.moodle_status || '').toUpperCase();
