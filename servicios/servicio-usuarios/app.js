@@ -8,8 +8,6 @@ const helmet = require('helmet');
 const { body, param, validationResult } = require('express-validator');
 require('dotenv').config();
 
-const moodleService = require('./moodle-service');
-
 // ── Módulos internos (refactor incremental hacia src/) ─────────────────────────
 const pool = require('./src/db/pool');
 const { logSecurityEvent, logSystemEvent } = require('./src/lib/audit');
@@ -22,8 +20,10 @@ const { ensureDefaultPricingProfilesAndRules, getDefaultPricingProfileId } = req
 // directamente en app.js: viven en sus módulos (vouchers/purchases).
 // La integración Stripe (cliente + sync + webhook) vive en src/integrations/stripe.js y
 // src/modules/purchases/routes.js; app.js ya no la usa directamente.
-// Sincronización Moodle (completaciones + cursos): usada por schedulers, webhook y rutas.
-const { syncMoodleCompletions, syncMoodleCourses } = require('./src/modules/moodle/service');
+// Jobs de sincronización Moodle (setInterval) → src/schedulers; se arrancan tras RUN_SCHEDULERS.
+const { startSchedulers } = require('./src/schedulers');
+// RUN_SCHEDULERS: por defecto activo; poner en 'false' en réplicas extra para no duplicar jobs.
+const RUN_SCHEDULERS = process.env.RUN_SCHEDULERS !== 'false';
 
 const MOODLE_PUBLIC_URL = (process.env.MOODLE_PUBLIC_URL || process.env.MOODLE_URL || '').replace(/\/$/, '');
 const CAMPUS_URL = process.env.CAMPUS_URL || (MOODLE_PUBLIC_URL ? `${MOODLE_PUBLIC_URL}/login/index.php` : 'https://campus.certjoin.com/');
@@ -609,32 +609,8 @@ async function initDb(){
 
 initDb().catch(err=>{ console.error('DB init error', err); process.exit(1); });
 
-// ── Job automático: sincronizar completaciones Moodle cada 6 horas ────────────
-const COMPLETION_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 h
-/* istanbul ignore next */
-if (require.main === module) {
-  // Primera ejecución 5 min después del arranque (espera a que todo esté listo)
-  setTimeout(async () => {
-    try {
-      console.log('⏱ [MOODLE] Inicio sincronización automática de completaciones...');
-      const r = await syncMoodleCompletions();
-      console.log(`✓ [MOODLE] Sync completaciones: checked=${r.checked} completed=${r.completed} errors=${r.errors}`);
-    } catch (e) {
-      console.error('❌ [MOODLE] Error en sync automático de completaciones:', e.message);
-    }
-
-    // Luego cada 6 horas
-    setInterval(async () => {
-      try {
-        console.log('⏱ [MOODLE] Sincronizando completaciones...');
-        const r = await syncMoodleCompletions();
-        console.log(`✓ [MOODLE] Sync completaciones: checked=${r.checked} completed=${r.completed} errors=${r.errors}`);
-      } catch (e) {
-        console.error('❌ [MOODLE] Error en sync automático de completaciones:', e.message);
-      }
-    }, COMPLETION_SYNC_INTERVAL_MS);
-  }, 5 * 60 * 1000);
-}
+// Los jobs de sincronización Moodle (completaciones + cursos) viven en src/schedulers
+// y se arrancan desde app.listen cuando RUN_SCHEDULERS está activo.
 
 // Partners (alta/listado + stats/summary) → src/modules/partners
 app.use(require('./src/modules/partners/routes'));
@@ -669,15 +645,7 @@ app.use(require('./src/modules/final-clients/routes'));
 
 // Vouchers de cortesía, compras externas, ajuste y detalle de compra → src/modules/purchases
 
-// ── Moodle completion sync ────────────────────────────────────────────────────
-
-/**
- * Core logic: iterate ENROLLED activations and check completion in Moodle.
- * Returns { checked, completed, errors, skipped }.
- * Safe to call concurrently — uses moodle_completion_synced_at to avoid hammering.
- */
-// syncMoodleCompletions → src/modules/moodle/service.js (importado arriba).
-
+// La lógica de sync Moodle vive en src/modules/moodle/service.js; los jobs en src/schedulers.
 // (rutas /admin/moodle/* y /admin/courses/:id/moodle-mapping movidas a src/modules/moodle)
 
 
@@ -1003,37 +971,12 @@ if (require.main === module) app.listen(PORT, ()=> {
   console.log('  - Security logging');
   console.log('═══════════════════════════════════════════════════════\n');
 
-  // ── Auto-sync de certificaciones desde Moodle ──────────────────────────────
-  const MOODLE_SYNC_MINUTES = Math.max(5, parseInt(process.env.MOODLE_SYNC_INTERVAL_MINUTES || '60', 10));
-
-  if (!moodleService.isMockMode()) {
-    // Primera sincronización al arrancar (30 seg de delay para que la BD esté lista)
-    setTimeout(async () => {
-      console.log('🎓 [MOODLE] Sincronización inicial de certificaciones...');
-      const r = await syncMoodleCourses();
-      if (r.ok) {
-        console.log(`🎓 [MOODLE] Sync inicial: +${r.created.length} nuevas, ~${r.updated.length} actualizadas, -${r.deactivated.length} desactivadas`);
-      } else {
-        console.warn(`⚠️ [MOODLE] Sync inicial falló: ${r.error}`);
-      }
-    }, 30_000);
-
-    // Sincronización periódica
-    setInterval(async () => {
-      console.log(`🎓 [MOODLE] Auto-sync periódico (cada ${MOODLE_SYNC_MINUTES} min)...`);
-      const r = await syncMoodleCourses();
-      if (r.ok) {
-        if (r.created.length || r.updated.length || r.deactivated.length) {
-          console.log(`🎓 [MOODLE] Auto-sync: +${r.created.length} nuevas, ~${r.updated.length} actualizadas, -${r.deactivated.length} desactivadas`);
-        }
-      } else {
-        console.warn(`⚠️ [MOODLE] Auto-sync falló: ${r.error}`);
-      }
-    }, MOODLE_SYNC_MINUTES * 60 * 1000);
-
-    console.log(`✓ Moodle auto-sync activo: cada ${MOODLE_SYNC_MINUTES} min`);
+  // ── Jobs en background (sync Moodle) ────────────────────────────────────────
+  // Solo en la instancia con RUN_SCHEDULERS activo, para no duplicar al escalar.
+  if (RUN_SCHEDULERS) {
+    startSchedulers();
   } else {
-    console.log('ℹ️ Moodle auto-sync desactivado (MOODLE_MOCK=true)');
+    console.log('ℹ️ Schedulers desactivados en esta instancia (RUN_SCHEDULERS=false)');
   }
   // ────────────────────────────────────────────────────────────────────────────
 })
