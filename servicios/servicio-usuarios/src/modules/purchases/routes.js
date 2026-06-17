@@ -8,7 +8,6 @@
 //   - Operaciones financieras: vouchers de cortesía, compras externas, ajuste, detalle
 // El comportamiento (rutas/respuestas) es idéntico al monolito; sólo cambia de archivo.
 const express = require('express');
-const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const { body, param } = require('express-validator');
 
@@ -18,6 +17,7 @@ const { apiLimiter } = require('../../lib/rateLimit');
 const { handleValidationErrors } = require('../../lib/validation');
 const { authenticate, requireRole, requirePermission, requireAnyPermission } = require('../../lib/auth');
 const { resolvePartnerPricing } = require('../pricing/service');
+const { ensurePurchaseVouchers } = require('./service');
 const {
   stripe, isMissingStripeCustomerError, syncUserWithStripe, upsertPartnerAndUserFromStripeCustomer,
   syncAllStripeCustomersToPartners, enqueueStripeSyncJob, getStripeSyncJob, getLatestStripeSyncJob,
@@ -350,25 +350,10 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
             { amount: paymentIntent.amount / 100, currency: paymentIntent.currency }
           );
 
-          // Generate vouchers if not already created
-          const vouchersCount = await pool.query(
-            'SELECT COUNT(*) FROM vouchers WHERE purchase_id=$1',
-            [purchaseId]
-          );
-
-          if (parseInt(vouchersCount.rows[0].count) === 0) {
-            const purchase = result.rows[0];
-            console.log('🎫 Generating vouchers for purchase:', purchaseId);
-
-            for (let i = 0; i < purchase.qty; i++) {
-              const code = crypto.randomBytes(6).toString('hex').toUpperCase();
-              await pool.query(
-                'INSERT INTO vouchers (partner_id, purchase_id, code, status) VALUES ($1, $2, $3, $4)',
-                [purchase.partner_id, purchaseId, code, 'AVAILABLE']
-              );
-            }
-            console.log('🎉 Vouchers generated:', purchase.qty);
-          }
+          // Generar vouchers faltantes (atómico/idempotente; serializa con /status,
+          // backfill y checkout.session.completed para no duplicar — ver purchases/service).
+          const generated = await ensurePurchaseVouchers(purchaseId);
+          if (generated > 0) console.log('🎉 Vouchers generated:', generated, 'for purchase', purchaseId);
 
           logSecurityEvent('PAYMENT_SUCCEEDED', { purchaseId, paymentIntentId: paymentIntent.id, amount: paymentIntent.amount / 100 });
           await logSystemEvent('PAYMENT_STATUS_CHANGED', 'PAYMENT', null, null, purchaseId, {
@@ -575,17 +560,13 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
         // Step 3: Create purchase
         let newPurchaseId = metadata.purchase_id;
         let previousPurchaseStatus = null;
-        // Cantidad de vouchers a generar. Para compras ya creadas en /checkout usamos su
-        // qty real: el checkout manda UN line item con quantity:1 y unit_amount=total, así
-        // que totalQty NO refleja la cantidad de vouchers comprada (sería siempre 1).
-        let voucherQty = totalQty;
 
         if (newPurchaseId) {
           const prevPurchaseData = await pool.query('SELECT status, qty FROM purchases WHERE id=$1', [newPurchaseId]);
           previousPurchaseStatus = prevPurchaseData.rows[0]?.status || 'UNKNOWN';
-          voucherQty = prevPurchaseData.rows[0]?.qty || totalQty;
 
-          // No se sobrescribe qty: la fijó /checkout con la cantidad real comprada.
+          // No se sobrescribe qty: la fijó /checkout con la cantidad real comprada (el line
+          // item de Stripe es quantity:1 con unit_amount=total, así que totalQty daría 1).
           await pool.query(
             `UPDATE purchases
              SET partner_id=$1, total_price=$2, status=$3, stripe_status=$4, stripe_session_id=$5, payment_intent_id=$6, updated_at=NOW()
@@ -602,7 +583,6 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
           );
           newPurchaseId = purchaseResult.rows[0].id;
           previousPurchaseStatus = 'NEW';
-          voucherQty = totalQty;
         }
         console.log('💰 Purchase created:', newPurchaseId);
 
@@ -636,24 +616,11 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
 
         console.log('✅ Line items saved:', lineItems.data.length);
 
-        // Step 5: Generate vouchers — SOLO si la compra aún no tiene vouchers, para no
-        // duplicar con payment_intent.succeeded (otro evento del mismo pago) ni con
-        // reintentos del webhook. Mismo guard que usan payment_intent.succeeded y /status.
+        // Step 5: Generar vouchers faltantes (atómico/idempotente; serializa con
+        // payment_intent.succeeded, /status y backfill para no duplicar — ver purchases/service).
         if (paymentStatus === 'paid') {
-          const existingVouchers = await pool.query('SELECT COUNT(*) FROM vouchers WHERE purchase_id=$1', [newPurchaseId]);
-          if (parseInt(existingVouchers.rows[0].count, 10) === 0) {
-            console.log('🎫 Generating vouchers...', voucherQty);
-            for (let i = 0; i < voucherQty; i++) {
-              const code = crypto.randomBytes(6).toString('hex').toUpperCase();
-              await pool.query(
-                'INSERT INTO vouchers (partner_id, purchase_id, code, status) VALUES ($1, $2, $3, $4)',
-                [partnerId, newPurchaseId, code, 'AVAILABLE']
-              );
-            }
-            console.log('🎉 Vouchers generated:', voucherQty);
-          } else {
-            console.log('↩️ La compra ya tenía vouchers; no se regeneran:', newPurchaseId);
-          }
+          const generated = await ensurePurchaseVouchers(newPurchaseId);
+          if (generated > 0) console.log('🎉 Vouchers generated:', generated, 'for purchase', newPurchaseId);
         }
 
         logSecurityEvent('CHECKOUT_COMPLETED', {
@@ -1104,16 +1071,9 @@ router.get('/partner/:id/purchases/:purchaseId/status', authenticate, apiLimiter
           );
 
           if (paidNow) {
-            const existingVouchers = await pool.query('SELECT COUNT(*) FROM vouchers WHERE purchase_id=$1', [purchaseId]);
-            if (parseInt(existingVouchers.rows[0].count, 10) === 0) {
-              for (let i = 0; i < p.qty; i++) {
-                const code = crypto.randomBytes(6).toString('hex').toUpperCase();
-                await pool.query(
-                  'INSERT INTO vouchers (partner_id, purchase_id, code, status) VALUES ($1, $2, $3, $4)',
-                  [partnerId, purchaseId, code, 'AVAILABLE']
-                );
-              }
-            }
+            // Generación atómica/idempotente: serializa con backfill y webhooks
+            // (antes este loop + backfill concurrentes duplicaban vouchers).
+            await ensurePurchaseVouchers(purchaseId);
           }
 
           const refreshed = await pool.query(
@@ -1241,21 +1201,10 @@ router.get('/partner/:id/transaction-events', authenticate, apiLimiter, async (r
 router.post('/stripe/webhook', async (req,res)=>{
   const { purchase_id, status } = req.body; // status: PAID or FAILED
   try{
-    const p = await pool.query('UPDATE purchases SET status=$1 WHERE id=$2 RETURNING *',[status,purchase_id]);
+    await pool.query('UPDATE purchases SET status=$1 WHERE id=$2',[status,purchase_id]);
     if(status === 'PAID'){
-      // create vouchers for the purchase (idempotente: solo si aún no existen)
-      const purchase = p.rows[0];
-      const qty = purchase.qty;
-      const partner_id = purchase.partner_id;
-      const existing = await pool.query('SELECT COUNT(*) FROM vouchers WHERE purchase_id=$1', [purchase_id]);
-      const created = [];
-      if (parseInt(existing.rows[0].count, 10) === 0) {
-        for(let i=0;i<qty;i++){
-          const code = crypto.randomBytes(6).toString('hex').toUpperCase();
-          const v = await pool.query('INSERT INTO vouchers (partner_id,purchase_id,code) VALUES ($1,$2,$3) RETURNING *',[partner_id,purchase_id,code]);
-          created.push(v.rows[0]);
-        }
-      }
+      // Generación atómica/idempotente (mismo helper que el webhook real y /status).
+      const created = await ensurePurchaseVouchers(purchase_id);
       res.json({ok:true,created});
     }else{
       res.json({ok:true});
