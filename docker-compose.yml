@@ -63,11 +63,12 @@ services:
       - DB_USER=${DB_USER}
       - DB_PASSWORD=${DB_PASSWORD}
       - NOTIFICATIONS_URL=http://servicio-notificaciones:8083
+      - MOODLE_SERVICE_URL=http://servicio-moodle:8084
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-dev-internal-token}
     depends_on:
       postgres:
         condition: service_healthy
-      moodle-mock:
+      servicio-moodle:
         condition: service_started
     networks:
       - proyecto-network
@@ -97,6 +98,26 @@ services:
       - proyecto-network
     volumes:
       - ./logs/usuarios:/app/logs
+
+  # Microservicio servicio-moodle (adaptador del Web Services de Moodle). Extraído de
+  # servicio-usuarios. NO expone puerto al host: solo accesible por la red interna
+  # (servicio-usuarios -> http://servicio-moodle:8084/internal/* con token interno).
+  # No usa BD: es un adaptador puro sobre el WS de Moodle.
+  servicio-moodle:
+    build: ./servicios/servicio-moodle
+    container_name: servicio-moodle
+    expose:
+      - "8084"
+    env_file:
+      - ./servicios/servicio-usuarios/.env
+    environment:
+      - PORT=8084
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-dev-internal-token}
+    depends_on:
+      moodle-mock:
+        condition: service_started
+    networks:
+      - proyecto-network
 
   # Frontend
   frontend:

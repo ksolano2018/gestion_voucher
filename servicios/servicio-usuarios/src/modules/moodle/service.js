@@ -2,7 +2,8 @@
 // Lógica de sincronización con Moodle (completaciones y cursos).
 // Usada por los schedulers (app.js), el webhook de course-event y las rutas admin de Moodle.
 const pool = require('../../db/pool');
-const moodleService = require('../../../moodle-service');
+// WS de Moodle vía microservicio servicio-moodle (cliente HTTP fino).
+const moodleService = require('../../integrations/moodle');
 
 /**
  * Revisa activaciones ENROLLED/COURSE_COMPLETED y avanza su estado según Moodle:

@@ -6,7 +6,7 @@
 //   - Cursos: cada MOODLE_SYNC_INTERVAL_MINUTES (primera 30 s tras el arranque),
 //     solo si Moodle NO está en modo mock.
 // Comportamiento idéntico al que vivía inline en app.js.
-const moodleService = require('../../moodle-service');
+const moodleService = require('../integrations/moodle');
 const { syncMoodleCompletions, syncMoodleCourses } = require('../modules/moodle/service');
 
 const COMPLETION_SYNC_INTERVAL_MS = 6 * 60 * 60 * 1000; // 6 h

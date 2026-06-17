@@ -24,7 +24,7 @@ const { authenticate, requireRole } = require('../../lib/auth');
 const { sendStudentWelcomeEmail } = require('../../integrations/notifications');
 const { backfillPaidPurchaseVouchers } = require('../purchases/service');
 const { emitDomainEvent } = require('../../lib/events');
-const moodleService = require('../../../moodle-service');
+const moodleService = require('../../integrations/moodle');
 
 // Controles anti-spam del reenvío del partner (configurables por entorno).
 const MAX_PARTNER_EMAIL_RETRIES = parseInt(process.env.MAX_PARTNER_EMAIL_RETRIES) || 1;
