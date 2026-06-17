@@ -298,13 +298,23 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
   console.log('📨 Stripe Webhook received:', event.type, 'ID:', event.id);
 
   try {
-    // Store event for audit trail
-    await pool.query(
+    // Store event for audit trail. Idempotencia: si este event.id ya fue recibido y
+    // PROCESADO en una entrega anterior, omitimos el reprocesamiento — Stripe reintrega
+    // los webhooks (at-least-once) y sin esto cada reintento regeneraba vouchers.
+    const eventInsert = await pool.query(
       `INSERT INTO stripe_events (stripe_event_id, event_type, event_data)
        VALUES ($1, $2, $3)
-       ON CONFLICT (stripe_event_id) DO NOTHING`,
+       ON CONFLICT (stripe_event_id) DO NOTHING
+       RETURNING id`,
       [event.id, event.type, JSON.stringify(event.data)]
     );
+    if (eventInsert.rowCount === 0) {
+      const prev = await pool.query('SELECT processed FROM stripe_events WHERE stripe_event_id=$1', [event.id]);
+      if (prev.rows[0] && prev.rows[0].processed) {
+        console.log('↩️ Evento Stripe ya procesado, se omite:', event.id, event.type);
+        return res.json({ received: true, duplicate: true });
+      }
+    }
 
     switch (event.type) {
       // ✅ PAYMENT SUCCESSFUL
@@ -565,18 +575,25 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
         // Step 3: Create purchase
         let newPurchaseId = metadata.purchase_id;
         let previousPurchaseStatus = null;
+        // Cantidad de vouchers a generar. Para compras ya creadas en /checkout usamos su
+        // qty real: el checkout manda UN line item con quantity:1 y unit_amount=total, así
+        // que totalQty NO refleja la cantidad de vouchers comprada (sería siempre 1).
+        let voucherQty = totalQty;
 
         if (newPurchaseId) {
-          const prevPurchaseData = await pool.query('SELECT status FROM purchases WHERE id=$1', [newPurchaseId]);
+          const prevPurchaseData = await pool.query('SELECT status, qty FROM purchases WHERE id=$1', [newPurchaseId]);
           previousPurchaseStatus = prevPurchaseData.rows[0]?.status || 'UNKNOWN';
+          voucherQty = prevPurchaseData.rows[0]?.qty || totalQty;
 
+          // No se sobrescribe qty: la fijó /checkout con la cantidad real comprada.
           await pool.query(
             `UPDATE purchases
-             SET partner_id=$1, qty=$2, total_price=$3, status=$4, stripe_status=$5, stripe_session_id=$6, payment_intent_id=$7, updated_at=NOW()
-             WHERE id=$8`,
-            [partnerId, totalQty, amountTotal, paymentStatus === 'paid' ? 'PAID' : 'PENDING', paymentStatus, session.id, session.payment_intent, newPurchaseId]
+             SET partner_id=$1, total_price=$2, status=$3, stripe_status=$4, stripe_session_id=$5, payment_intent_id=$6, updated_at=NOW()
+             WHERE id=$7`,
+            [partnerId, amountTotal, paymentStatus === 'paid' ? 'PAID' : 'PENDING', paymentStatus, session.id, session.payment_intent, newPurchaseId]
           );
         } else {
+          // Compra iniciada en Stripe sin compra previa en la app: totalQty (de line items) es lo mejor que tenemos.
           const purchaseResult = await pool.query(
             `INSERT INTO purchases (partner_id, qty, total_price, status, stripe_status, stripe_session_id, payment_intent_id, updated_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
@@ -585,6 +602,7 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
           );
           newPurchaseId = purchaseResult.rows[0].id;
           previousPurchaseStatus = 'NEW';
+          voucherQty = totalQty;
         }
         console.log('💰 Purchase created:', newPurchaseId);
 
@@ -618,17 +636,24 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
 
         console.log('✅ Line items saved:', lineItems.data.length);
 
-        // Step 5: Generate vouchers
+        // Step 5: Generate vouchers — SOLO si la compra aún no tiene vouchers, para no
+        // duplicar con payment_intent.succeeded (otro evento del mismo pago) ni con
+        // reintentos del webhook. Mismo guard que usan payment_intent.succeeded y /status.
         if (paymentStatus === 'paid') {
-          console.log('🎫 Generating vouchers...', totalQty);
-          for (let i = 0; i < totalQty; i++) {
-            const code = crypto.randomBytes(6).toString('hex').toUpperCase();
-            await pool.query(
-              'INSERT INTO vouchers (partner_id, purchase_id, code, status) VALUES ($1, $2, $3, $4)',
-              [partnerId, newPurchaseId, code, 'AVAILABLE']
-            );
+          const existingVouchers = await pool.query('SELECT COUNT(*) FROM vouchers WHERE purchase_id=$1', [newPurchaseId]);
+          if (parseInt(existingVouchers.rows[0].count, 10) === 0) {
+            console.log('🎫 Generating vouchers...', voucherQty);
+            for (let i = 0; i < voucherQty; i++) {
+              const code = crypto.randomBytes(6).toString('hex').toUpperCase();
+              await pool.query(
+                'INSERT INTO vouchers (partner_id, purchase_id, code, status) VALUES ($1, $2, $3, $4)',
+                [partnerId, newPurchaseId, code, 'AVAILABLE']
+              );
+            }
+            console.log('🎉 Vouchers generated:', voucherQty);
+          } else {
+            console.log('↩️ La compra ya tenía vouchers; no se regeneran:', newPurchaseId);
           }
-          console.log('🎉 Vouchers generated:', totalQty);
         }
 
         logSecurityEvent('CHECKOUT_COMPLETED', {
@@ -1218,15 +1243,18 @@ router.post('/stripe/webhook', async (req,res)=>{
   try{
     const p = await pool.query('UPDATE purchases SET status=$1 WHERE id=$2 RETURNING *',[status,purchase_id]);
     if(status === 'PAID'){
-      // create vouchers for the purchase
+      // create vouchers for the purchase (idempotente: solo si aún no existen)
       const purchase = p.rows[0];
       const qty = purchase.qty;
       const partner_id = purchase.partner_id;
+      const existing = await pool.query('SELECT COUNT(*) FROM vouchers WHERE purchase_id=$1', [purchase_id]);
       const created = [];
-      for(let i=0;i<qty;i++){
-        const code = crypto.randomBytes(6).toString('hex').toUpperCase();
-        const v = await pool.query('INSERT INTO vouchers (partner_id,purchase_id,code) VALUES ($1,$2,$3) RETURNING *',[partner_id,purchase_id,code]);
-        created.push(v.rows[0]);
+      if (parseInt(existing.rows[0].count, 10) === 0) {
+        for(let i=0;i<qty;i++){
+          const code = crypto.randomBytes(6).toString('hex').toUpperCase();
+          const v = await pool.query('INSERT INTO vouchers (partner_id,purchase_id,code) VALUES ($1,$2,$3) RETURNING *',[partner_id,purchase_id,code]);
+          created.push(v.rows[0]);
+        }
       }
       res.json({ok:true,created});
     }else{
