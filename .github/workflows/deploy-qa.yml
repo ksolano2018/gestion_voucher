@@ -130,3 +130,9 @@ jobs:
 
             # Verificar estado
             docker compose --profile local-moodle ps
+
+            # Liberar disco: cada build deja imágenes huérfanas y ~300MB de build
+            # cache. El EC2 de QA solo tiene 8GB, así que limpiamos lo no usado tras
+            # cada deploy (no toca imágenes/volúmenes de contenedores en marcha).
+            docker image prune -f || true
+            docker builder prune -f || true
