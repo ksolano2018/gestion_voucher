@@ -25,17 +25,16 @@ services:
       retries: 5
 
   # API Gateway
+  # Gateway (Caddy): único ingreso. Enruta API/webhooks a servicio-usuarios y el
+  # resto (SPA) al frontend. Ver api-gateway/Caddyfile.
   api-gateway:
     build: ./api-gateway
     container_name: proyecto-gateway
     ports:
       - "8080:8080"
-    environment:
-      - SPRING_PROFILES_ACTIVE=docker
-      - EUREKA_CLIENT_ENABLED=false
     depends_on:
-      postgres:
-        condition: service_healthy
+      - servicio-usuarios
+      - frontend
     networks:
       - proyecto-network
 
@@ -127,8 +126,6 @@ services:
       - "3000:3000"
     environment:
       - REACT_APP_API_URL=http://localhost:8080
-    depends_on:
-      - api-gateway
     networks:
       - proyecto-network
     # Nota: NO se monta ./frontend/public como volumen. En Docker Desktop sobre

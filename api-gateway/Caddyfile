@@ -1,0 +1,20 @@
+# API Gateway (Caddy) — único ingreso de la plataforma.
+# Enruta las llamadas de API/webhooks a servicio-usuarios y todo lo demás (SPA,
+# estáticos) al frontend. Hoy sirve HTTP en :8080; cuando exista un dominio,
+# habilitar TLS confiable (Let's Encrypt) es cambiar ":8080" por el dominio.
+:8080 {
+	# Rutas de API y webhooks → servicio-usuarios (interno).
+	# /admin/* y /partner/* (con subpath) son API; /admin y /partner "pelados"
+	# son vistas de la SPA y caen al frontend en el handle por defecto.
+	@api {
+		path /admin/* /partner/* /oauth/* /permissions /permissions/* /catalogs /catalogs/* /health /webhook/*
+	}
+	handle @api {
+		reverse_proxy servicio-usuarios:8081
+	}
+
+	# Todo lo demás (SPA, estáticos, /, /admin, /partner) → frontend.
+	handle {
+		reverse_proxy frontend:3000
+	}
+}

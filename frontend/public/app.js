@@ -30,7 +30,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     try {
-      const baseUrl = apiUrl.replace(':8080', ':8081') + `/partner/${pid}/purchases/${purchaseId}/status` + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '');
+      const baseUrl = apiUrl + `/partner/${pid}/purchases/${purchaseId}/status` + (sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '');
       let data = null;
       let validated = false;
 
@@ -595,7 +595,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     isRefreshing = true;
     try {
-      const baseApi = apiUrl.replace(':8080', ':8081');
+      const baseApi = apiUrl;
       const resp = await fetch(baseApi + '/oauth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -662,7 +662,7 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
       setButtonLoading(loginBtn, true);
-      const url = apiUrl.replace(':8080', ':8081') + '/oauth/token';
+      const url = apiUrl + '/oauth/token';
       const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ grant_type:'password', username, password }) });
       const data = await resp.json();
       setButtonLoading(loginBtn, false);
@@ -739,7 +739,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try{
       setButtonLoading(btn, true);
-      const resp = await fetch(apiUrl.replace(':8080', ':8081') + '/oauth/change-password-first', {
+      const resp = await fetch(apiUrl + '/oauth/change-password-first', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username, current_password: currentPassword, new_password: newPassword })
@@ -909,7 +909,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function fetchPartnerPricingPreview(qty){
     const pid = getPartnerIdFromJwt();
     if(!pid) return null;
-    const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/pricing-preview?qty=${encodeURIComponent(qty)}`, {
+    const resp = await safeFetch(apiUrl + `/partner/${pid}/pricing-preview?qty=${encodeURIComponent(qty)}`, {
       headers: authHeaders()
     });
     const data = await resp.json();
@@ -1037,7 +1037,7 @@ document.addEventListener('DOMContentLoaded', () => {
       };
       
       // Usar endpoint de Stripe checkout
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/checkout`, {
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/checkout`, {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify(payload)
@@ -1074,7 +1074,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function fetchAdminPartners(){
-    const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/partners?page=1&limit=1000', {
+    const resp = await safeFetch(apiUrl + '/admin/partners?page=1&limit=1000', {
       headers: authHeaders()
     });
     const result = await resp.json();
@@ -1217,7 +1217,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function fetchPricingProfiles(){
-    const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/pricing/profiles', { headers: authHeaders() });
+    const resp = await safeFetch(apiUrl + '/admin/pricing/profiles', { headers: authHeaders() });
     const data = await resp.json();
     if(!resp.ok) throw new Error(data.error || 'No se pudieron cargar perfiles de pricing');
     return Array.isArray(data) ? data : [];
@@ -1232,7 +1232,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       clearInlineAlert('partner-pricing-message');
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/partners/${partnerId}/pricing`, { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + `/admin/partners/${partnerId}/pricing`, { headers: authHeaders() });
       const data = await resp.json();
       if(!resp.ok) throw new Error(data.error || 'No se pudo cargar configuración del partner');
 
@@ -1311,7 +1311,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const rules       = getBasePricingRulesFromEditor();
     try {
       const resp = await safeFetch(
-        apiUrl.replace(':8080', ':8081') + '/admin/pricing/profiles/' + encodeURIComponent(profileId),
+        apiUrl + '/admin/pricing/profiles/' + encodeURIComponent(profileId),
         {
           method: 'PUT', headers: authHeaders(),
           body: JSON.stringify({
@@ -1355,7 +1355,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const description = (el('special-profile-description') || {}).value || '';
 
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/pricing/profiles', {
+      const resp = await safeFetch(apiUrl + '/admin/pricing/profiles', {
         method: 'POST',
         headers: authHeaders(),
         body: JSON.stringify({ name, description, profile_type: 'SPECIAL' })
@@ -1395,7 +1395,7 @@ document.addEventListener('DOMContentLoaded', () => {
       confirmLabel: '💾 Guardar Perfil', confirmClass: 'btn-primary',
       onConfirm: async () => {
         try {
-          const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/pricing/profiles/${profileId}`, {
+          const resp = await safeFetch(apiUrl + `/admin/pricing/profiles/${profileId}`, {
             method: 'PUT', headers: authHeaders(),
             body: JSON.stringify({
               name: profileName,
@@ -1444,7 +1444,7 @@ document.addEventListener('DOMContentLoaded', () => {
       confirmLabel: '💾 Guardar Pricing', confirmClass: 'btn-primary',
       onConfirm: async () => {
         try {
-          const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/partners/${partnerId}/pricing`, {
+          const resp = await safeFetch(apiUrl + `/admin/partners/${partnerId}/pricing`, {
             method: 'PUT', headers: authHeaders(),
             body: JSON.stringify({
               pricing_profile_id: parseInt(pricingProfileId, 10),
@@ -1557,7 +1557,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = el('admin-courses-refresh');
     try {
       if(btn) setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/courses', { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + '/admin/courses', { headers: authHeaders() });
       const data = await safeJson(resp);
       if(!resp.ok) throw new Error(data.error || 'No se pudieron cargar certificaciones');
       _adminCourses = Array.isArray(data) ? data : [];
@@ -1584,7 +1584,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (badge) { badge.textContent = 'Verificando...'; badge.className = 'badge bg-secondary ms-2'; }
 
     try {
-      const base = apiUrl.replace(':8080', ':8081');
+      const base = apiUrl;
       const resp = await safeFetch(`${base}/admin/moodle/test-connection`, { headers: authHeaders() });
       const data = await resp.json();
       if (resp.ok && data.ok) {
@@ -1608,7 +1608,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (!previewList) return;
     previewList.innerHTML = '<div class="text-muted small">Cargando certificaciones desde Moodle...</div>';
     try {
-      const base = apiUrl.replace(':8080', ':8081');
+      const base = apiUrl;
       const resp = await safeFetch(`${base}/admin/moodle/courses`, { headers: authHeaders() });
       const data = await resp.json();
       if (!resp.ok) { previewList.innerHTML = `<div class="text-danger small">❌ ${escapeHTML(data.error || 'Error')}</div>`; return; }
@@ -1644,7 +1644,7 @@ document.addEventListener('DOMContentLoaded', () => {
       confirmLabel: '⬇ Importar', confirmClass: 'btn-success',
       onConfirm: async () => {
         try {
-          const base = apiUrl.replace(':8080', ':8081');
+          const base = apiUrl;
           const resp = await safeFetch(`${base}/admin/moodle/sync-courses`, { method: 'POST', headers: authHeaders() });
           const data = await resp.json();
           if (!resp.ok) { showToast(`❌ ${data.error || 'Error al sincronizar'}`, 'danger'); return; }
@@ -1709,7 +1709,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       setButtonLoading(btn, true);
-      const base = apiUrl.replace(':8080', ':8081') + '/admin/courses';
+      const base = apiUrl + '/admin/courses';
       let resp = null;
 
       if(_pendingCourseCrudAction.type === 'create'){
@@ -2057,7 +2057,7 @@ document.addEventListener('DOMContentLoaded', () => {
       params.set('limit', '10');
 
       const summaryParams = getAdminAuditFilters();
-      const baseApi = apiUrl.replace(':8080', ':8081');
+      const baseApi = apiUrl;
       const [movResp, summaryResp] = await Promise.all([
         safeFetch(baseApi + `/admin/audit/movements?${params.toString()}`, { headers: authHeaders() }),
         safeFetch(baseApi + `/admin/audit/movements/summary?${summaryParams.toString()}`, { headers: authHeaders() })
@@ -2105,7 +2105,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       if(btn) setButtonLoading(btn, true);
       const params = getAdminAuditFilters();
-      const baseApi = apiUrl.replace(':8080', ':8081');
+      const baseApi = apiUrl;
       const url = `${baseApi}/admin/audit/movements/export/csv?${params.toString()}`;
 
       const resp = await safeFetch(url, {
@@ -2156,7 +2156,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = el('list-purchases');
     try {
       setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/purchases', { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + '/admin/purchases', { headers: authHeaders() });
       const data = await resp.json();
       setButtonLoading(btn, false);
       if (!Array.isArray(data)) { showLoginMessage('Error al obtener compras', 'danger', 3000); return; }
@@ -2234,7 +2234,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = el('modal-external-purchase-submit');
         try {
           setButtonLoading(btn, true);
-          const base = apiUrl.replace(':8080', ':8081');
+          const base = apiUrl;
           const resp = await safeFetch(`${base}/admin/partners/${partnerId}/purchases/external`, {
             method: 'POST', headers: authHeaders(),
             body: JSON.stringify({ qty, total_price: price, payment_method: method, external_reference: ref || undefined, notes: notes || undefined })
@@ -2283,7 +2283,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = el('modal-complimentary-submit');
         try {
           setButtonLoading(btn, true);
-          const base = apiUrl.replace(':8080', ':8081');
+          const base = apiUrl;
           const resp = await safeFetch(`${base}/admin/partners/${partnerId}/vouchers/complimentary`, {
             method: 'POST', headers: authHeaders(),
             body: JSON.stringify({ quantity: qty, reason })
@@ -2385,7 +2385,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const btn = el('modal-adjust-purchase-submit');
         try {
           setButtonLoading(btn, true);
-          const base = apiUrl.replace(':8080', ':8081');
+          const base = apiUrl;
           const resp = await safeFetch(`${base}/admin/purchases/${purchaseId}/adjust`, {
             method: 'PUT', headers: authHeaders(),
             body: JSON.stringify(body)
@@ -2466,7 +2466,7 @@ document.addEventListener('DOMContentLoaded', () => {
     rptMsg('rpt-compras-msg', '');
     setButtonLoading(btn, true);
     try {
-      const base = apiUrl.replace(':8080', ':8081');
+      const base = apiUrl;
       const p = rptParams('rpt-compras-start', 'rpt-compras-end', 'rpt-compras-partner');
       p.set('page', '1'); p.set('limit', '1000');
       const resp = await safeFetch(base + '/admin/reports/purchases?' + p.toString(), { headers: authHeaders() });
@@ -2508,7 +2508,7 @@ document.addEventListener('DOMContentLoaded', () => {
     rptMsg('rpt-vouchers-msg', '');
     setButtonLoading(btn, true);
     try {
-      const base = apiUrl.replace(':8080', ':8081');
+      const base = apiUrl;
       const p = rptParams('rpt-vouchers-start', 'rpt-vouchers-end', 'rpt-vouchers-partner');
       const resp = await safeFetch(base + '/admin/reports/summary?' + p.toString(), { headers: authHeaders() });
       const data = await safeJson(resp);
@@ -2545,7 +2545,7 @@ document.addEventListener('DOMContentLoaded', () => {
     rptMsg('rpt-activaciones-msg', '');
     setButtonLoading(btn, true);
     try {
-      const base = apiUrl.replace(':8080', ':8081');
+      const base = apiUrl;
       const p = rptParams('rpt-activaciones-start', 'rpt-activaciones-end', null);
       p.set('limit', '100');
       const resp = await safeFetch(base + '/admin/reports/top-courses?' + p.toString(), { headers: authHeaders() });
@@ -2582,7 +2582,7 @@ document.addEventListener('DOMContentLoaded', () => {
     rptMsg('rpt-partners-msg', '');
     setButtonLoading(btn, true);
     try {
-      const base = apiUrl.replace(':8080', ':8081');
+      const base = apiUrl;
       const p = rptParams('rpt-partners-start', 'rpt-partners-end', null);
       p.set('limit', '100');
       const resp = await safeFetch(base + '/admin/reports/top-partners?' + p.toString(), { headers: authHeaders() });
@@ -2620,7 +2620,7 @@ document.addEventListener('DOMContentLoaded', () => {
     rptMsg('rpt-tendencia-msg', '');
     setButtonLoading(btn, true);
     try {
-      const base = apiUrl.replace(':8080', ':8081');
+      const base = apiUrl;
       const p = rptParams('rpt-tendencia-start', 'rpt-tendencia-end', null);
       const resp = await safeFetch(base + '/admin/reports/monthly?' + p.toString(), { headers: authHeaders() });
       const data = await safeJson(resp);
@@ -3019,7 +3019,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(courseId) params.set('course_id',     courseId);
 
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/activations?${params}`, { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + `/admin/activations?${params}`, { headers: authHeaders() });
       const data = await safeJson(resp);
       if(!resp.ok) { tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger p-3">${escapeHTML(data.error||'Error')}</td></tr>`; return; }
 
@@ -3093,7 +3093,7 @@ document.addEventListener('DOMContentLoaded', () => {
           btn.disabled = true;
           btn.textContent = '⏳';
           try {
-            const r = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/moodle/enrollments/${actId}/retry`, { method:'POST', headers: authHeaders() });
+            const r = await safeFetch(apiUrl + `/admin/moodle/enrollments/${actId}/retry`, { method:'POST', headers: authHeaders() });
             const d = await safeJson(r);
             if(r.ok && d.ok) showToast(`Retry exitoso — estado: ${d.moodle_status}`, 'success');
             else             showToast(d.error || 'Error en retry', 'danger');
@@ -3126,7 +3126,7 @@ document.addEventListener('DOMContentLoaded', () => {
               const original = btn.innerHTML;
               btn.disabled = true; btn.innerHTML = '⏳';
               try {
-                const r = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/activations/${actId}/resend-email`, { method:'POST', headers: authHeaders() });
+                const r = await safeFetch(apiUrl + `/admin/activations/${actId}/resend-email`, { method:'POST', headers: authHeaders() });
                 const d = await safeJson(r);
                 if(r.ok && d.ok) { showToast('Correo reenviado ✓', 'success'); loadAdminActivaciones(_adminActPage); }
                 else { showToast(d.error || 'No se pudo reenviar el correo', 'danger', 5000); btn.disabled = false; btn.innerHTML = original; }
@@ -3172,8 +3172,8 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadAdminActivacionesFilterOptions() {
     try {
       const [partnersResp, coursesResp] = await Promise.all([
-        safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/partners?page=1&limit=1000', { headers: authHeaders() }),
-        safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/courses',  { headers: authHeaders() })
+        safeFetch(apiUrl + '/admin/partners?page=1&limit=1000', { headers: authHeaders() }),
+        safeFetch(apiUrl + '/admin/courses',  { headers: authHeaders() })
       ]);
       const partnersResult = await safeJson(partnersResp);
       const partners = Array.isArray(partnersResult) ? partnersResult : (partnersResult && Array.isArray(partnersResult.data) ? partnersResult.data : []);
@@ -3202,7 +3202,7 @@ document.addEventListener('DOMContentLoaded', () => {
     btn.innerHTML = '⏳ Sincronizando...';
     try {
       // El sync manual siempre fuerza (ignora ventana de 4 h) para reflejar cambios inmediatos
-      const url   = apiUrl.replace(':8080', ':8081') + '/admin/moodle/sync-completions?force=true';
+      const url   = apiUrl + '/admin/moodle/sync-completions?force=true';
       const r = await safeFetch(url, { method: 'POST', headers: authHeaders() });
       const d = await safeJson(r);
       if(r.ok && d.ok) {
@@ -3238,7 +3238,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = el('btn-refresh-dashboard');
     if(btn) setButtonLoading(btn, true);
     try{
-      const base = apiUrl.replace(':8080', ':8081');
+      const base = apiUrl;
       const hdrs = authHeaders();
 
       const fetchJsonSafe = async (url) => {
@@ -3349,7 +3349,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function loadRolesConfig() {
     if (_rolesConfig) return _rolesConfig;
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/roles/config', { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + '/admin/roles/config', { headers: authHeaders() });
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       _rolesConfig = await safeJson(resp);
     } catch(e) {
@@ -3414,7 +3414,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // ── POLÍTICA DE CONTRASEÑAS ─────────────────────────────
   async function loadPasswordPolicy(){
-    const base = apiUrl.replace(':8080', ':8081');
+    const base = apiUrl;
     try {
       const resp = await safeFetch(base + '/admin/password-policy', { headers: authHeaders() });
       const data = await safeJson(resp);
@@ -3449,7 +3449,7 @@ document.addEventListener('DOMContentLoaded', () => {
           days = parseInt(presetSel.value) || 0;
         }
       }
-      const base = apiUrl.replace(':8080', ':8081');
+      const base = apiUrl;
       const resp = await safeFetch(base + '/admin/password-policy', { method:'PUT', headers: authHeaders(), body: JSON.stringify({ expiry_days: days }) });
       const data = await safeJson(resp);
       if(!resp.ok) throw new Error(data.error || 'Error al guardar');
@@ -3465,7 +3465,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadAdminActivationSettings(){
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/settings/activation', { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + '/admin/settings/activation', { headers: authHeaders() });
       if(!resp.ok) return;
       const data = await resp.json();
       const inp = el('max-activation-months-input');
@@ -3486,7 +3486,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     setButtonLoading(btn, true);
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/settings/activation', {
+      const resp = await safeFetch(apiUrl + '/admin/settings/activation', {
         method: 'PUT', headers: authHeaders(), body: JSON.stringify({ max_activation_months: months })
       });
       const data = await safeJson(resp);
@@ -3509,7 +3509,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(_rd.role !== 'admin') return _adminRoles;
     if(!force && _adminRoles.length) return _adminRoles;
     await loadRolesConfig();
-    const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/roles', { headers: authHeaders() });
+    const resp = await safeFetch(apiUrl + '/admin/roles', { headers: authHeaders() });
     const data = await safeJson(resp);
     if(!resp.ok) throw new Error(data.error || 'No se pudieron cargar roles');
     _adminRoles = Array.isArray(data) ? data : [];
@@ -3607,7 +3607,7 @@ document.addEventListener('DOMContentLoaded', () => {
           onConfirm: async () => {
             try {
               const resp = await safeFetch(
-                apiUrl.replace(':8080', ':8081') + '/admin/roles/' + encodeURIComponent(roleName),
+                apiUrl + '/admin/roles/' + encodeURIComponent(roleName),
                 { method: 'DELETE', headers: authHeaders() }
               );
               const data = await safeJson(resp);
@@ -3686,7 +3686,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       setButtonLoading(btn, true);
       const resp = await safeFetch(
-        apiUrl.replace(':8080', ':8081') + '/admin/roles/' + encodeURIComponent(roleName) + '/permissions',
+        apiUrl + '/admin/roles/' + encodeURIComponent(roleName) + '/permissions',
         { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ permissions }) }
       );
       const data = await safeJson(resp);
@@ -3728,7 +3728,7 @@ document.addEventListener('DOMContentLoaded', () => {
     setButtonLoading(btn, true);
     try {
       const resp = await safeFetch(
-        apiUrl.replace(':8080', ':8081') + '/admin/roles/' + encodeURIComponent(roleName),
+        apiUrl + '/admin/roles/' + encodeURIComponent(roleName),
         { method: 'PUT', headers: authHeaders(), body: JSON.stringify({ display_name: displayName, role_type: roleType }) }
       );
       const data = await safeJson(resp);
@@ -3788,7 +3788,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     try {
       setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/roles', {
+      const resp = await safeFetch(apiUrl + '/admin/roles', {
         method: 'POST', headers: authHeaders(),
         body: JSON.stringify({ name: roleName, display_name: displayName, role_type: roleType, permissions })
       });
@@ -3844,7 +3844,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if(firstName) payload.first_name = firstName;
       if(lastName)  payload.last_name  = lastName;
       if(passwordExpiresDays !== 0) payload.password_expires_days = passwordExpiresDays < 0 ? 0 : passwordExpiresDays;
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/users', { method:'POST', headers: authHeaders(), body: JSON.stringify(payload) });
+      const resp = await safeFetch(apiUrl + '/admin/users', { method:'POST', headers: authHeaders(), body: JSON.stringify(payload) });
 
       let data = {};
       try {
@@ -4167,7 +4167,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!userId) return;
     try{
       setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/users/${userId}`, {
+      const resp = await safeFetch(apiUrl + `/admin/users/${userId}`, {
         method:'PUT', headers: authHeaders(), body: JSON.stringify({ active: newActive })
       });
       setButtonLoading(btn, false);
@@ -4192,7 +4192,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!userId) return;
     try{
       setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/admin/users/${userId}`, {
+      const resp = await safeFetch(apiUrl + `/admin/users/${userId}`, {
         method:'PUT', headers: authHeaders(), body: JSON.stringify({ must_change_password: true })
       });
       setButtonLoading(btn, false);
@@ -4230,7 +4230,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = el('list-users');
     try{
       setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/admin/users', { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + '/admin/users', { headers: authHeaders() });
       const data = await resp.json();
       setButtonLoading(btn, false);
       if(!Array.isArray(data)){
@@ -4313,7 +4313,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if(newRole)  payload.role = newRole;
       if(nameChanged){ payload.first_name = firstName; payload.last_name = lastName; }
       
-      const resp = await fetch(apiUrl.replace(':8080', ':8081') + `/admin/users/${userId}`, {
+      const resp = await fetch(apiUrl + `/admin/users/${userId}`, {
         method: 'PUT',
         headers: authHeaders(),
         body: JSON.stringify(payload)
@@ -4343,7 +4343,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function deleteUser(userId){
     try{
-      const resp = await fetch(apiUrl.replace(':8080', ':8081') + `/admin/users/${userId}`, {
+      const resp = await fetch(apiUrl + `/admin/users/${userId}`, {
         method: 'DELETE',
         headers: authHeaders()
       });
@@ -4532,7 +4532,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try{
       setButtonLoading(btn, true);
-      const baseApi = apiUrl.replace(':8080', ':8081');
+      const baseApi = apiUrl;
 
       let stats = { total: 0, available: 0, used: 0 };
       let vouchers = [];
@@ -4665,7 +4665,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Panel de completaciones por curso para la vista por partner
         const partnerAllVouchers = await (async () => {
           try {
-            const r = await safeFetch(apiUrl.replace(':8080',':8081') + `/partner/${pid}/vouchers`, { headers: authHeaders() });
+            const r = await safeFetch(apiUrl + `/partner/${pid}/vouchers`, { headers: authHeaders() });
             return r.ok ? await r.json() : [];
           } catch { return []; }
         })();
@@ -4775,7 +4775,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = el('load-stats');
     try{
       if(btn) setButtonLoading(btn, true);
-      const baseApi = apiUrl.replace(':8080', ':8081');
+      const baseApi = apiUrl;
       const [statsResp, paymentsResp, vouchersResp] = await Promise.all([
         safeFetch(baseApi + `/partner/${pid}/stats`, { headers: authHeaders() }),
         safeFetch(baseApi + `/partner/${pid}/payments`, { headers: authHeaders() }),
@@ -4925,7 +4925,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const original = btn.innerHTML;
           btn.disabled = true; btn.innerHTML = 'Enviando…';
           try{
-            const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/activations/${activationId}/resend-email`, {
+            const resp = await safeFetch(apiUrl + `/partner/${pid}/activations/${activationId}/resend-email`, {
               method: 'POST', headers: authHeaders()
             });
             const data = await resp.json().catch(() => ({}));
@@ -5265,7 +5265,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = el('load-vouchers');
     try{
       if(btn) setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/vouchers`, { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/vouchers`, { headers: authHeaders() });
       const data = await resp.json();
       if(btn) setButtonLoading(btn, false);
       if(!el('vouchers-table-body')) return;
@@ -5361,7 +5361,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!tbody){ return; }
 
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/payments`, { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/payments`, { headers: authHeaders() });
       const data = await resp.json();
 
       if(!resp.ok || !Array.isArray(data) || data.length === 0){
@@ -5411,7 +5411,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     try {
       select.innerHTML = '<option value="">Cargando certificaciones...</option>';
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/courses`, { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/courses`, { headers: authHeaders() });
       const data = await resp.json();
 
       if(!resp.ok || !Array.isArray(data) || data.length === 0){
@@ -5436,7 +5436,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const select = el('activate-months');
     if(!select) return;
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + '/partner/settings', { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + '/partner/settings', { headers: authHeaders() });
       if(resp.ok){
         const data = await resp.json();
         _maxActivationMonths = data.max_activation_months || 12;
@@ -5466,7 +5466,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const countNum    = el('activate-count-num');
 
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/activation-eligibility`, { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/activation-eligibility`, { headers: authHeaders() });
       const data = await resp.json();
 
       if(!resp.ok){
@@ -5527,7 +5527,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const months = parseInt((el('activate-months') || {}).value || '12');
     try{
       setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/activate`, { method:'POST', headers: authHeaders(), body: JSON.stringify({ course_id: parseInt(courseId, 10), user_name: name, user_email: email, final_client: finalClient, activation_months: months }) });
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, { method:'POST', headers: authHeaders(), body: JSON.stringify({ course_id: parseInt(courseId, 10), user_name: name, user_email: email, final_client: finalClient, activation_months: months }) });
       const data = await resp.json();
       setButtonLoading(btn, false);
       bootstrap.Modal.getInstance(document.getElementById('confirmActivateModal')).hide();
@@ -5577,7 +5577,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbody = el('final-clients-tbody');
     if(!tbody) return;
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/final-clients`, { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/final-clients`, { headers: authHeaders() });
       const data = await safeJson(resp);
       _partnerFinalClients = Array.isArray(data) ? data : [];
       renderFinalClientsTable();
@@ -5645,7 +5645,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!name){ showFinalClientMessage('El nombre no puede estar vacío', 'warning'); return; }
         try {
           btn.disabled = true;
-          const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/final-clients/${cid}`, {
+          const resp = await safeFetch(apiUrl + `/partner/${pid}/final-clients/${cid}`, {
             method: 'PUT', headers: authHeaders(), body: JSON.stringify({ name })
           });
           const data = await safeJson(resp);
@@ -5691,7 +5691,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!cid || !pid) return;
     try {
       setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/final-clients/${cid}`, { method: 'DELETE', headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/final-clients/${cid}`, { method: 'DELETE', headers: authHeaders() });
       setButtonLoading(btn, false);
       if(resp.ok){
         _partnerFinalClients = _partnerFinalClients.filter(c => String(c.id) !== String(cid));
@@ -5731,7 +5731,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const btn = el('btn-confirm-create-client');
     try {
       setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/final-clients`, {
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/final-clients`, {
         method: 'POST', headers: authHeaders(), body: JSON.stringify({ name })
       });
       const data = await safeJson(resp);
@@ -5758,7 +5758,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pid = getPartnerIdFromJwt();
     if(!pid) return;
     try {
-      const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/final-clients`, { headers: authHeaders() });
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/final-clients`, { headers: authHeaders() });
       const data = await safeJson(resp);
       _partnerFinalClients = Array.isArray(data) ? data : [];
       syncFinalClientsSelect();
@@ -5908,7 +5908,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-          const resp = await safeFetch(apiUrl.replace(':8080', ':8081') + `/partner/${pid}/activate`, {
+          const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, {
             method: 'POST', headers: authHeaders(),
             body: JSON.stringify({ course_id: courseId, user_name: userName, user_email: userEmail, final_client: finalClient, activation_months: actMonths })
           });
