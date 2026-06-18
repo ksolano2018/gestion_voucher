@@ -130,11 +130,27 @@ async function syncMoodleCourses() {
         skipped.push({ moodle_id: mc.id, reason: 'unchanged' });
       }
     } else {
-      const ins = await pool.query(
-        'INSERT INTO courses (name, moodle_course_id, active) VALUES ($1,$2,TRUE) RETURNING id',
-        [name, mc.id]
+      // Reconciliación por nombre: si ya existe un curso con ese nombre SIN vínculo a
+      // Moodle (los que siembra ensureDefaultCatalogAndCourses en initDb), lo "adoptamos"
+      // asignándole el moodle_course_id en vez de crear un duplicado. Evita que la app
+      // muestre dos veces el mismo curso (uno matriculable y otro "fantasma" no enrolable).
+      const orphan = await pool.query(
+        'SELECT id FROM courses WHERE LOWER(name) = LOWER($1) AND moodle_course_id IS NULL ORDER BY id LIMIT 1',
+        [name]
       );
-      created.push({ id: ins.rows[0].id, moodle_id: mc.id, name });
+      if (orphan.rowCount > 0) {
+        await pool.query(
+          'UPDATE courses SET moodle_course_id=$1, active=TRUE, updated_at=NOW() WHERE id=$2',
+          [mc.id, orphan.rows[0].id]
+        );
+        updated.push({ id: orphan.rows[0].id, moodle_id: mc.id, name, linked: true });
+      } else {
+        const ins = await pool.query(
+          'INSERT INTO courses (name, moodle_course_id, active) VALUES ($1,$2,TRUE) RETURNING id',
+          [name, mc.id]
+        );
+        created.push({ id: ins.rows[0].id, moodle_id: mc.id, name });
+      }
     }
   }
 
