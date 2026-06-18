@@ -88,7 +88,7 @@ jobs:
             STRIPE_PUBLISHABLE_KEY=$STRIPE_PUBLISHABLE_KEY
             STRIPE_SECRET_KEY=$STRIPE_SECRET_KEY
             STRIPE_WEBHOOK_SECRET=$STRIPE_WEBHOOK_SECRET
-            FRONTEND_URL=http://$EC2_HOST:3000
+            FRONTEND_URL=https://demo-certjoin.duckdns.org
             PORT=8081
             NODE_ENV=production
             REFRESH_TOKEN_TTL_DAYS=7
@@ -127,12 +127,13 @@ jobs:
               -o /usr/local/lib/docker/cli-plugins/docker-buildx
             sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-buildx
 
-            # Levantar contenedores (incluye Moodle dockerizado vía perfil local-moodle)
-            docker compose --profile local-moodle down --remove-orphans
-            docker compose --profile local-moodle up -d --build
+            # Levantar contenedores. Se incluye el override TLS (docker-compose.tls.yml):
+            # gateway en :80/:443 con TLS Let's Encrypt (SITE_ADDRESS=dominio DuckDNS).
+            docker compose -f docker-compose.yml -f docker-compose.tls.yml --profile local-moodle down --remove-orphans
+            docker compose -f docker-compose.yml -f docker-compose.tls.yml --profile local-moodle up -d --build
 
             # Verificar estado
-            docker compose --profile local-moodle ps
+            docker compose -f docker-compose.yml -f docker-compose.tls.yml --profile local-moodle ps
 
             # Liberar disco: cada build deja imágenes huérfanas y ~300MB de build
             # cache. El EC2 de QA solo tiene 8GB, así que limpiamos lo no usado tras

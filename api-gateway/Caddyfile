@@ -1,8 +1,10 @@
 # API Gateway (Caddy) — único ingreso de la plataforma.
 # Enruta API/webhooks a los microservicios y todo lo demás (SPA, estáticos) al frontend.
-# Hoy sirve HTTP en :8080 (el host publica :3000 → :8080); con un dominio, cambiar
-# ":8080" por el dominio habilita TLS confiable (Let's Encrypt) automáticamente.
-:8080 {
+# Site address por entorno:
+#   - Local: SITE_ADDRESS sin definir → ":8080" (HTTP plano; el host publica :3000→:8080).
+#   - QA:    SITE_ADDRESS=demo-certjoin.duckdns.org → Caddy emite/renueva cert Let's Encrypt
+#            automáticamente (HTTP-01 en :80, sirve :443). Requiere :80 y :443 abiertos.
+{$SITE_ADDRESS::8080} {
 	# Compras + pagos Stripe → servicio-compras. Se usa path_regexp (no glob) para
 	# capturar TAMBIÉN los sub-paths profundos (/purchases/:id/status, /transaction-history,
 	# /adjust, etc.). Debe ir antes de @api: el primer handle que matchea gana.

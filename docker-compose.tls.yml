@@ -1,0 +1,21 @@
+# Override de despliegue (QA/PD) para TLS. Se usa con:
+#   docker compose -f docker-compose.yml -f docker-compose.tls.yml ... up
+# El gateway pasa a escuchar en :80 (challenge ACME + redirect) y :443 (HTTPS), con
+# SITE_ADDRESS = dominio público (DuckDNS) → Caddy emite/renueva el cert Let's Encrypt.
+# El volumen caddy_data persiste los certificados entre redeploys (clave para no
+# agotar el rate-limit de Let's Encrypt). En QA el mapeo :3000→:8080 de la base queda
+# inactivo (Caddy escucha en 80/443); el ingreso real es https://<dominio>.
+services:
+  api-gateway:
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - SITE_ADDRESS=demo-certjoin.duckdns.org
+    volumes:
+      - caddy_data:/data
+      - caddy_config:/config
+
+volumes:
+  caddy_data:
+  caddy_config:
