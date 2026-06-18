@@ -22,7 +22,8 @@ const { apiLimiter } = require('../../lib/rateLimit');
 const { handleValidationErrors } = require('../../lib/validation');
 const { authenticate, requireRole } = require('../../lib/auth');
 const { sendStudentWelcomeEmail } = require('../../integrations/notifications');
-const { backfillPaidPurchaseVouchers } = require('../purchases/service');
+// El backfill de vouchers vive ahora en servicio-compras (cliente HTTP).
+const { backfillPaidPurchaseVouchers } = require('../../integrations/purchases');
 const { emitDomainEvent } = require('../../lib/events');
 const moodleService = require('../../integrations/moodle');
 

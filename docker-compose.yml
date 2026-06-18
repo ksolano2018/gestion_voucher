@@ -34,6 +34,7 @@ services:
       - "8080:8080"
     depends_on:
       - servicio-usuarios
+      - servicio-compras
       - frontend
     networks:
       - proyecto-network
@@ -63,11 +64,14 @@ services:
       - DB_PASSWORD=${DB_PASSWORD}
       - NOTIFICATIONS_URL=http://servicio-notificaciones:8083
       - MOODLE_SERVICE_URL=http://servicio-moodle:8084
+      - COMPRAS_URL=http://servicio-compras:8085
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-dev-internal-token}
     depends_on:
       postgres:
         condition: service_healthy
       servicio-moodle:
+        condition: service_started
+      servicio-compras:
         condition: service_started
     networks:
       - proyecto-network

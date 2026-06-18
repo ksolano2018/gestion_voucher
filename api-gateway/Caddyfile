@@ -1,11 +1,19 @@
 # API Gateway (Caddy) — único ingreso de la plataforma.
-# Enruta las llamadas de API/webhooks a servicio-usuarios y todo lo demás (SPA,
-# estáticos) al frontend. Hoy sirve HTTP en :8080; cuando exista un dominio,
-# habilitar TLS confiable (Let's Encrypt) es cambiar ":8080" por el dominio.
+# Enruta API/webhooks a los microservicios y todo lo demás (SPA, estáticos) al frontend.
+# Hoy sirve HTTP en :8080; con un dominio, cambiar ":8080" por el dominio habilita
+# TLS confiable (Let's Encrypt) automáticamente.
 :8080 {
-	# Rutas de API y webhooks → servicio-usuarios (interno).
-	# /admin/* y /partner/* (con subpath) son API; /admin y /partner "pelados"
-	# son vistas de la SPA y caen al frontend en el handle por defecto.
+	# Compras + pagos Stripe → servicio-compras. DEBE ir antes de @api (rutas más
+	# específicas dentro del espacio /admin/* y /partner/*). El primer handle que
+	# matchea gana; /webhook/stripe va aquí, /webhook/moodle/* cae en @api.
+	@compras {
+		path /admin/purchases /admin/purchases/* /admin/stripe/* /admin/stripe-customers /admin/transaction-events /admin/transaction-events/* /admin/partners/*/vouchers/complimentary /admin/partners/*/purchases/external /partner/*/purchases /partner/*/purchases/* /partner/*/checkout /partner/*/payments /partner/*/transaction-events /webhook/stripe /stripe/webhook
+	}
+	handle @compras {
+		reverse_proxy servicio-compras:8085
+	}
+
+	# Resto de la API y webhooks → servicio-usuarios (interno).
 	@api {
 		path /admin/* /partner/* /oauth/* /permissions /permissions/* /catalogs /catalogs/* /health /webhook/*
 	}
@@ -13,7 +21,7 @@
 		reverse_proxy servicio-usuarios:8081
 	}
 
-	# Todo lo demás (SPA, estáticos, /, /admin, /partner) → frontend.
+	# Todo lo demás (SPA, estáticos, /, /admin, /partner pelados) → frontend.
 	handle {
 		reverse_proxy frontend:3000
 	}

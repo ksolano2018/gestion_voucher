@@ -140,7 +140,7 @@ const { initDb } = require("./src/schema/init");
 
 // logTransactionEvent ahora vive en src/lib/audit.js (importado arriba).
 
-// backfillPaidPurchaseVouchers → src/modules/purchases/service.js (importado arriba).
+// backfillPaidPurchaseVouchers → servicio-compras vía src/integrations/purchases (HTTP).
 
 // Synchronize user with Stripe - find or create customer
 // syncUserWithStripe → src/integrations/stripe.js (importado arriba).
@@ -164,8 +164,9 @@ app.use(require('./src/modules/partners/routes'));
 // Pricing (perfiles, reglas, asignación por partner, preview) → src/modules/pricing
 app.use(require('./src/modules/pricing/routes'));
 
-// Compras + pagos Stripe (checkout, webhook, transaction-events, pagos, cortesía/externas/ajuste) → src/modules/purchases
-app.use(require("./src/modules/purchases/routes"));
+// Compras + pagos Stripe → EXTRAÍDO al microservicio servicio-compras (el gateway
+// enruta /admin/purchases, /partner/:id/checkout, /webhook/stripe, etc. allá).
+// La activación rellena vouchers vía src/integrations/purchases (HTTP interno).
 
 // Moodle (webhook + matrículas/retry + sync + test/courses/mapping) → src/modules/moodle
 app.use(require('./src/modules/moodle/routes'));
@@ -189,7 +190,7 @@ app.use(require('./src/modules/final-clients/routes'));
 
 // (rutas de matrículas/retry de Moodle movidas a src/modules/moodle)
 
-// Vouchers de cortesía, compras externas, ajuste y detalle de compra → src/modules/purchases
+// Vouchers de cortesía, compras externas, ajuste y detalle de compra → servicio-compras
 
 // La lógica de sync Moodle vive en src/modules/moodle/service.js; los jobs en src/schedulers.
 // (rutas /admin/moodle/* y /admin/courses/:id/moodle-mapping movidas a src/modules/moodle)
