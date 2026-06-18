@@ -30,10 +30,10 @@ services:
   api-gateway:
     build: ./api-gateway
     container_name: proyecto-gateway
-    # Puerto del host configurable: local usa 8080; en QA se fija GATEWAY_PORT=3000
-    # (puerto ya abierto en el Security Group) para no depender de abrir :8080.
+    # Puerto del host = ingreso único. Default :3000 (igual que QA, donde GATEWAY_PORT
+    # se fija explícitamente). El frontend ya no usa :3000, así que el gateway lo toma.
     ports:
-      - "${GATEWAY_PORT:-8080}:8080"
+      - "${GATEWAY_PORT:-3000}:8080"
     depends_on:
       - servicio-usuarios
       - servicio-compras
