@@ -30,8 +30,10 @@ services:
   api-gateway:
     build: ./api-gateway
     container_name: proyecto-gateway
+    # Puerto del host configurable: local usa 8080; en QA se fija GATEWAY_PORT=3000
+    # (puerto ya abierto en el Security Group) para no depender de abrir :8080.
     ports:
-      - "8080:8080"
+      - "${GATEWAY_PORT:-8080}:8080"
     depends_on:
       - servicio-usuarios
       - servicio-compras
@@ -150,10 +152,10 @@ services:
   frontend:
     build: ./frontend
     container_name: proyecto-frontend
-    ports:
-      - "3000:3000"
+    # Sin puerto al host: el frontend se sirve SOLO a través del gateway (mismo origen).
+    # El gateway lo alcanza por la red interna como frontend:3000.
     environment:
-      - REACT_APP_API_URL=http://localhost:8080
+      - REACT_APP_API_URL=
     networks:
       - proyecto-network
     # Nota: NO se monta ./frontend/public como volumen. En Docker Desktop sobre

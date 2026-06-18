@@ -1,6 +1,8 @@
 document.addEventListener('DOMContentLoaded', () => {
-  const apiUrlEl = document.getElementById('api-url');
-  const apiUrl = apiUrlEl?.textContent?.trim() || 'http://localhost:8080';
+  // API en el MISMO origen: la app se sirve por el gateway (Caddy), que enruta /api
+  // (admin/partner/oauth/…) a los microservicios. Usar ruta relativa evita CORS y no
+  // depende del puerto (gateway en :8080 local / :3000 en QA).
+  const apiUrl = '';
 
   // Handle Stripe checkout result
   function handleCheckoutResult(){

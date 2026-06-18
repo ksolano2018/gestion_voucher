@@ -57,10 +57,12 @@ jobs:
             git fetch origin qa
             git reset --hard origin/qa
 
-            # Inyectar URL real del servidor en el frontend
-            sed -i "s|%API_URL%|http://$EC2_HOST:8080|g" frontend/public/index.html
+            # El frontend usa rutas relativas (mismo origen vía gateway); el %API_URL%
+            # queda vestigial pero se reemplaza por compatibilidad.
+            sed -i "s|%API_URL%||g" frontend/public/index.html
 
-            # .env raíz para docker-compose (postgres, healthcheck y Moodle dockerizado)
+            # .env raíz para docker-compose. GATEWAY_PORT=3000: el gateway (Caddy) se
+            # publica en :3000 (puerto ya abierto en el Security Group), como ingreso único.
             cat > .env << ENVEOF
             DB_NAME=voucherdb
             DB_USER=admin
@@ -68,6 +70,7 @@ jobs:
             MOODLE_SITE_URL=http://$EC2_HOST:8095
             MOODLE_ADMIN_PASSWORD=$MOODLE_ADMIN_PASSWORD
             INTERNAL_API_TOKEN=$INTERNAL_API_TOKEN
+            GATEWAY_PORT=3000
             ENVEOF
 
             # .env del servicio Node.js
