@@ -1,19 +1,18 @@
 # API Gateway (Caddy) — único ingreso de la plataforma.
 # Enruta API/webhooks a los microservicios y todo lo demás (SPA, estáticos) al frontend.
-# Hoy sirve HTTP en :8080; con un dominio, cambiar ":8080" por el dominio habilita
-# TLS confiable (Let's Encrypt) automáticamente.
+# Hoy sirve HTTP en :8080 (el host publica :3000 → :8080); con un dominio, cambiar
+# ":8080" por el dominio habilita TLS confiable (Let's Encrypt) automáticamente.
 :8080 {
-	# Compras + pagos Stripe → servicio-compras. DEBE ir antes de @api (rutas más
-	# específicas dentro del espacio /admin/* y /partner/*). El primer handle que
-	# matchea gana; /webhook/stripe va aquí, /webhook/moodle/* cae en @api.
-	@compras {
-		path /admin/purchases /admin/purchases/* /admin/stripe/* /admin/stripe-customers /admin/transaction-events /admin/transaction-events/* /admin/partners/*/vouchers/complimentary /admin/partners/*/purchases/external /partner/*/purchases /partner/*/purchases/* /partner/*/checkout /partner/*/payments /partner/*/transaction-events /webhook/stripe /stripe/webhook
-	}
+	# Compras + pagos Stripe → servicio-compras. Se usa path_regexp (no glob) para
+	# capturar TAMBIÉN los sub-paths profundos (/purchases/:id/status, /transaction-history,
+	# /adjust, etc.). Debe ir antes de @api: el primer handle que matchea gana.
+	# Sólo matchea rutas de compras; el resto de /admin/* y /partner/* cae en @api.
+	@compras path_regexp ^/(admin/(purchases|stripe|transaction-events)|admin/partners/[^/]+/(vouchers/complimentary|purchases/external)|partner/[^/]+/(purchases|checkout|payments|transaction-events)|webhook/stripe|stripe/webhook)
 	handle @compras {
 		reverse_proxy servicio-compras:8085
 	}
 
-	# Resto de la API y webhooks → servicio-usuarios (interno).
+	# Resto de la API y webhooks (incluye /webhook/moodle/*) → servicio-usuarios.
 	@api {
 		path /admin/* /partner/* /oauth/* /permissions /permissions/* /catalogs /catalogs/* /health /webhook/*
 	}
