@@ -1,0 +1,22 @@
+{
+  "name": "servicio-compras",
+  "version": "1.0.0",
+  "description": "Dominio de compras + pagos Stripe (extraído de servicio-usuarios)",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "bcrypt": "^5.1.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.3.1",
+    "express": "^4.18.2",
+    "express-rate-limit": "^8.2.1",
+    "express-validator": "^7.3.1",
+    "helmet": "^8.1.0",
+    "jsonwebtoken": "^9.0.0",
+    "pg": "^8.11.0",
+    "stripe": "^12.0.0",
+    "uuid": "^9.0.0"
+  }
+}

@@ -118,6 +118,30 @@ services:
     networks:
       - proyecto-network
 
+  # Microservicio servicio-compras (compras + pagos Stripe). Extraído de servicio-usuarios.
+  # Sirve sus rutas de usuario vía el gateway (valida JWT/RBAC con la BD compartida) y
+  # expone /internal/backfill/:partnerId (token) para la activación en servicio-usuarios.
+  servicio-compras:
+    build: ./servicios/servicio-compras
+    container_name: servicio-compras
+    expose:
+      - "8085"
+    env_file:
+      - ./servicios/servicio-usuarios/.env
+    environment:
+      - DB_HOST=postgres
+      - DB_PORT=5432
+      - DB_NAME=${DB_NAME}
+      - DB_USER=${DB_USER}
+      - DB_PASSWORD=${DB_PASSWORD}
+      - PORT=8085
+      - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-dev-internal-token}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - proyecto-network
+
   # Frontend
   frontend:
     build: ./frontend
