@@ -191,7 +191,8 @@ async function initDb(){
         user_id INTEGER REFERENCES users(id),
         token VARCHAR(200) UNIQUE NOT NULL,
         revoked BOOLEAN DEFAULT FALSE,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
       );
 
       CREATE TABLE IF NOT EXISTS transaction_events (
@@ -251,6 +252,9 @@ async function initDb(){
     ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS password_expires_at TIMESTAMP;
+
+    -- Inactividad: marca de último uso del refresh token (ventana deslizante de sesión).
+    ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
     ALTER TABLE roles ADD COLUMN IF NOT EXISTS display_name VARCHAR(100);
     ALTER TABLE roles ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;

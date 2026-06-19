@@ -118,6 +118,10 @@ const JWT_SECRET = process.env.JWT_SECRET;
 // ADMIN_EMAIL/ADMIN_PASSWORD ya solo los usa el seed en src/schema/init.js (lee de env).
 const REFRESH_TOKEN_TTL_DAYS = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS) || 7;
 const SESSION_TIMEOUT_MINUTES = parseInt(process.env.SESSION_TIMEOUT_MINUTES) || 15;
+// Inactividad: si pasan más de REFRESH_IDLE_MINUTES sin renovar (sin actividad), el
+// refresh token expira (ventana deslizante: se renueva en cada /oauth/refresh).
+// REFRESH_TOKEN_TTL_DAYS es el tope ABSOLUTO de la sesión aunque haya actividad.
+const REFRESH_IDLE_MINUTES = parseInt(process.env.REFRESH_IDLE_MINUTES) || 30;
 // El cliente Stripe y la lógica de sync viven en src/integrations/stripe.js (importados arriba).
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
@@ -355,7 +359,7 @@ app.post('/oauth/refresh', authLimiter, async (req,res)=>{
     }
     const row = r.rows[0];
     
-    // Check token expiration
+    // Tope ABSOLUTO de la sesión (aunque haya actividad continua).
     const tokenAge = Date.now() - new Date(row.created_at).getTime();
     const maxAge = REFRESH_TOKEN_TTL_DAYS * 24 * 60 * 60 * 1000;
     if(tokenAge > maxAge) {
@@ -363,6 +367,16 @@ app.post('/oauth/refresh', authLimiter, async (req,res)=>{
       logSecurityEvent('REFRESH_FAILED', { reason: 'expired_token', ip: req.ip });
       await logSystemEvent('REFRESH_FAILED', 'AUTH', row.user_id, null, null, { reason: 'expired_token' }, 'FAILED', 'token_expired', req);
       return res.status(401).json({error:'token_expired'});
+    }
+
+    // Inactividad (ventana deslizante): si pasó más de REFRESH_IDLE_MINUTES sin renovar,
+    // la sesión expira por inactividad. last_used_at se desliza en cada refresh exitoso.
+    const idleMs = Date.now() - new Date(row.last_used_at || row.created_at).getTime();
+    if(idleMs > REFRESH_IDLE_MINUTES * 60 * 1000) {
+      await pool.query('UPDATE refresh_tokens SET revoked=true WHERE id=$1',[row.id]);
+      logSecurityEvent('REFRESH_FAILED', { reason: 'idle_timeout', userId: row.user_id, ip: req.ip });
+      await logSystemEvent('REFRESH_FAILED', 'AUTH', row.user_id, null, null, { reason: 'idle_timeout' }, 'FAILED', 'idle_timeout', req);
+      return res.status(401).json({error:'idle_timeout'});
     }
     
     const u = await pool.query(
@@ -386,6 +400,9 @@ app.post('/oauth/refresh', authLimiter, async (req,res)=>{
       permissions: user.role_permissions || {},
       must_change_password:user.must_change_password
     }, JWT_SECRET, { expiresIn: `${SESSION_TIMEOUT_MINUTES}m` });
+
+    // Deslizar la ventana de inactividad: marca este refresh como último uso.
+    await pool.query('UPDATE refresh_tokens SET last_used_at = NOW() WHERE id=$1', [row.id]);
 
     logSecurityEvent('REFRESH_SUCCESS', { userId: user.id, email: user.email, ip: req.ip });
     await logSystemEvent('REFRESH_SUCCESS', 'AUTH', user.id, user.stripe_customer_id || null, null, { email: user.email }, 'SUCCESS', null, req);

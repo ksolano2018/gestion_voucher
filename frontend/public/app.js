@@ -402,6 +402,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ── Timeout por inactividad (30 min) ───────────────────────────────────────
+  // Mantiene viva la sesión mientras hay actividad (refresh proactivo antes de que
+  // expire el access token → desliza la ventana del refresh token en el server) y
+  // cierra la sesión tras IDLE_LIMIT_MS sin actividad (también revoca en el server).
+  const IDLE_LIMIT_MS = 30 * 60 * 1000;
+  let lastActivity = Date.now();
+  let idleLoggingOut = false;
+  ['mousemove','mousedown','keydown','scroll','touchstart','click'].forEach(ev =>
+    document.addEventListener(ev, () => { lastActivity = Date.now(); }, { passive: true }));
+
+  async function idleLogout(){
+    if(idleLoggingOut || !getToken()) return;
+    idleLoggingOut = true;
+    try { await fetch(apiUrl + '/oauth/logout', { method: 'POST', credentials: 'include' }); }
+    catch(e) { /* best-effort: la sesión igual expira por inactividad en el server */ }
+    setToken(null);
+    showLoginMessage('Tu sesión se cerró por inactividad. Inicia sesión de nuevo.', 'warning', 6000);
+    idleLoggingOut = false;
+  }
+
+  setInterval(() => {
+    const tok = getToken();
+    if(!tok) return; // sin sesión activa
+    if(Date.now() - lastActivity >= IDLE_LIMIT_MS){ idleLogout(); return; }
+    // Activo: si el access token está por expirar (<2 min), refrescar para deslizar
+    // la ventana del server y no cortar la sesión por el vencimiento del access token.
+    const d = decodeJwt(tok);
+    if(d && d.exp && (d.exp * 1000 - Date.now()) < 2 * 60 * 1000){
+      refreshAccessToken();
+    }
+  }, 30 * 1000);
+
   function showUser(){
     const t = getToken();
     if(!t){
@@ -761,7 +793,11 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  if(logoutBtn) logoutBtn.addEventListener('click', () => { setToken(null); if(userDropdownWrap) userDropdownWrap.classList.remove('open'); });
+  if(logoutBtn) logoutBtn.addEventListener('click', async () => {
+    try { await fetch(apiUrl + '/oauth/logout', { method: 'POST', credentials: 'include' }); } catch(e) {}
+    setToken(null);
+    if(userDropdownWrap) userDropdownWrap.classList.remove('open');
+  });
 
   // Users sub-navigation
   document.addEventListener('click', (e) => {
