@@ -735,6 +735,20 @@
         flex-shrink: 0;
       }
 
+      /* Encabezado de grupo del sidebar admin (no clicable) */
+      .admin-side-group {
+        padding: 0.85rem 1.25rem 0.3rem;
+        font-size: 0.66rem;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--muted);
+        opacity: 0.6;
+        user-select: none;
+        pointer-events: none;
+      }
+      .admin-side-group:first-of-type { padding-top: 0.5rem; }
+
       .admin-content-area {
         flex: 1;
         padding: 1.5rem;
@@ -2283,35 +2297,45 @@
               <div class="admin-sidebar-brand">
                 <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" onerror="this.style.display='none';" />
               </div>
+              <!-- Dashboard: en la raíz, sin grupo -->
               <div class="admin-side-item active admin-menu-item" data-target="admin-dashboard">
                 <span class="side-icon">🏠</span> Dashboard
               </div>
+
+              <!-- ── OPERACIÓN ── -->
+              <div class="admin-side-group">Operación</div>
               <div class="admin-side-item admin-menu-item" data-target="admin-purchases">
                 <span class="side-icon">🛒</span> Compras
               </div>
-              <div class="admin-side-item admin-menu-item" data-target="admin-users">
-                <span class="side-icon">👤</span> Usuarios
+              <div class="admin-side-item admin-menu-item" data-target="admin-activaciones">
+                <span class="side-icon">🎓</span> Activaciones
               </div>
+
+              <!-- ── ANÁLISIS Y AUDITORÍA ── -->
+              <div class="admin-side-group">Análisis y auditoría</div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-stats">
+                <span class="side-icon">📊</span> Estadísticas
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-reports">
+                <span class="side-icon">📈</span> Reportería
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-audit">
+                <span class="side-icon">🧾</span> Auditoría
+              </div>
+
+              <!-- ── CONFIGURACIÓN ── -->
+              <div class="admin-side-group">Configuración</div>
               <div class="admin-side-item admin-menu-item" data-target="admin-courses">
                 <span class="side-icon">📚</span> Certificaciones
               </div>
               <div class="admin-side-item admin-menu-item" data-target="admin-pricing">
                 <span class="side-icon">🏷️</span> Pricing
               </div>
-              <div class="admin-side-item admin-menu-item" data-target="admin-stats">
-                <span class="side-icon">📊</span> Estadísticas
-              </div>
-              <div class="admin-side-item admin-menu-item" data-target="admin-audit">
-                <span class="side-icon">🧾</span> Auditoría
-              </div>
-              <div class="admin-side-item admin-menu-item" data-target="admin-reports">
-                <span class="side-icon">📈</span> Reportería
-              </div>
-              <div class="admin-side-item admin-menu-item" data-target="admin-activaciones">
-                <span class="side-icon">🎓</span> Activaciones
-              </div>
               <div class="admin-side-item admin-menu-item" data-target="admin-email-templates">
                 <span class="side-icon">✉️</span> Plantillas de correo
+              </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-users">
+                <span class="side-icon">👤</span> Usuarios y roles
               </div>
             </div>
 
