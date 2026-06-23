@@ -378,6 +378,27 @@ async function initDb(){
     ON CONFLICT (key) DO NOTHING;
   `);
 
+  // Plantillas de correo editables (cuerpo Mustache). Versionadas: 1 activa por clave.
+  // Si una clave no tiene fila activa, el microservicio usa la plantilla por defecto
+  // (diseño oficial en código) → el correo nunca depende de que exista una fila.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS email_templates (
+      id SERIAL PRIMARY KEY,
+      template_key VARCHAR(64) NOT NULL,
+      subject TEXT NOT NULL,
+      body_html TEXT NOT NULL,
+      body_text TEXT,
+      description TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT FALSE,
+      version INT NOT NULL DEFAULT 1,
+      updated_by VARCHAR(255),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_email_templates_key ON email_templates(template_key);
+    CREATE UNIQUE INDEX IF NOT EXISTS uniq_email_templates_active ON email_templates(template_key) WHERE is_active;
+  `);
+
   const roleSeeds = [
     { name: 'admin',   display_name: 'Administrador', is_system: true, role_type: 'system_role' },
     { name: 'partner', display_name: 'Partner',        is_system: true, role_type: 'client_role' },

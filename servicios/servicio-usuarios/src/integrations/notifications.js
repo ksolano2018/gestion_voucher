@@ -28,4 +28,47 @@ async function sendStudentWelcomeEmail(args = {}) {
   }
 }
 
-module.exports = { sendStudentWelcomeEmail };
+// ── Soporte al editor de plantillas: proxys al microservicio de notificaciones ──
+function authHeaders() {
+  const headers = { 'Content-Type': 'application/json' };
+  if (INTERNAL_API_TOKEN) headers['x-internal-token'] = INTERNAL_API_TOKEN;
+  return headers;
+}
+
+async function getTemplateDefault(key) {
+  const resp = await fetch(`${NOTIFICATIONS_URL}/internal/template-default/${encodeURIComponent(key)}`, { headers: authHeaders() });
+  if (!resp.ok) throw new Error(`notificaciones ${resp.status}`);
+  return resp.json();
+}
+
+async function previewTemplate(payload) {
+  const resp = await fetch(`${NOTIFICATIONS_URL}/internal/template-preview`, {
+    method: 'POST', headers: authHeaders(), body: JSON.stringify(payload)
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) { const err = new Error(data.message || 'render_error'); err.status = resp.status; throw err; }
+  return data;
+}
+
+async function testTemplate(payload) {
+  const resp = await fetch(`${NOTIFICATIONS_URL}/internal/template-test`, {
+    method: 'POST', headers: authHeaders(), body: JSON.stringify(payload)
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) { const err = new Error(data.message || 'test_error'); err.status = resp.status; throw err; }
+  return data;
+}
+
+// Best-effort: invalida la caché de plantillas del microservicio tras guardar/activar.
+async function invalidateTemplateCache(key) {
+  try {
+    await fetch(`${NOTIFICATIONS_URL}/internal/template-cache-invalidate`, {
+      method: 'POST', headers: authHeaders(), body: JSON.stringify({ key })
+    });
+  } catch (e) { /* no crítico: la caché expira sola en ~60s */ }
+}
+
+module.exports = {
+  sendStudentWelcomeEmail,
+  getTemplateDefault, previewTemplate, testTemplate, invalidateTemplateCache
+};

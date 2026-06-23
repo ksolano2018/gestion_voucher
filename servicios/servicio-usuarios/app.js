@@ -440,6 +440,9 @@ app.use(require('./src/modules/users/routes'));
 // Settings (política de contraseñas + configuración de activación) → src/modules/settings
 app.use(require('./src/modules/settings/routes'));
 
+// Email Templates (editor de plantillas de correo, versionado) → src/modules/email-templates
+app.use(require('./src/modules/email-templates/routes'));
+
 // Roles and permissions (admin only)
 
 // Roles & permisos → src/modules/roles

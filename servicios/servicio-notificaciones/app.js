@@ -18,7 +18,8 @@
 const express = require('express');
 const { Pool } = require('pg');
 const mailer = require('./mailer');
-const { buildStudentWelcomeEmail } = require('./email-templates');
+const { renderEmail, renderProvided, invalidateCache } = require('./template-store');
+const { DEFAULT_TEMPLATES, TEMPLATE_VARIABLES, sampleContext, keyFor } = require('./default-templates');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -63,7 +64,7 @@ async function sendStudentWelcomeEmail({ activationId, to, studentName, courseNa
       if (prev.rowCount > 0 && prev.rows[0].email_status === 'SENT') return null;
     }
 
-    const { subject, html, text } = buildStudentWelcomeEmail({
+    const { subject, html, text } = await renderEmail(pool, keyFor(isNewEnrollment), {
       studentName, email: to, courseName, username, tempPassword, months, expiresAt, campusUrl: CAMPUS_URL, isNewEnrollment
     });
 
@@ -115,6 +116,44 @@ function requireInternalToken(req, res, next) {
 app.post('/internal/send', requireInternalToken, async (req, res) => {
   const emailStatus = await sendStudentWelcomeEmail(req.body || {});
   res.json({ email_status: emailStatus });
+});
+
+// ── Soporte al editor de plantillas (panel admin de servicio-usuarios) ──
+// Devuelve la plantilla por defecto (diseño oficial) + variables disponibles.
+app.get('/internal/template-default/:key', requireInternalToken, (req, res) => {
+  const def = DEFAULT_TEMPLATES[req.params.key];
+  if (!def) return res.status(404).json({ error: 'unknown_template_key' });
+  res.json({ template: def, variables: TEMPLATE_VARIABLES });
+});
+
+// Render de un cuerpo (posiblemente sin guardar) con datos de ejemplo → vista previa.
+app.post('/internal/template-preview', requireInternalToken, (req, res) => {
+  const { key, subject, body_html, body_text } = req.body || {};
+  try {
+    const out = renderProvided({ subject, body_html, body_text }, sampleContext(key || 'student_welcome'));
+    res.json(out);
+  } catch (e) {
+    res.status(400).json({ error: 'render_error', message: e.message });
+  }
+});
+
+// Envía un correo de PRUEBA con el cuerpo dado (datos de ejemplo) a una dirección.
+app.post('/internal/template-test', requireInternalToken, async (req, res) => {
+  const { key, to, subject, body_html, body_text } = req.body || {};
+  if (!to) return res.status(400).json({ error: 'missing_to' });
+  try {
+    const rendered = renderProvided({ subject, body_html, body_text }, sampleContext(key || 'student_welcome'));
+    const result = await mailer.sendMail({ to, subject: `[PRUEBA] ${rendered.subject}`, html: rendered.html, text: rendered.text });
+    res.json({ sent: !!result.sent, skipped: !!result.skipped, error: result.error || null, reason: result.reason || null });
+  } catch (e) {
+    res.status(400).json({ error: 'render_error', message: e.message });
+  }
+});
+
+// Invalida la caché de plantillas tras guardar/activar desde el panel.
+app.post('/internal/template-cache-invalidate', requireInternalToken, (req, res) => {
+  invalidateCache((req.body && req.body.key) || null);
+  res.json({ ok: true });
 });
 
 const PORT = process.env.PORT || 8083;

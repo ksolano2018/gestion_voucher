@@ -864,6 +864,9 @@ document.addEventListener('DOMContentLoaded', () => {
         loadAdminActivaciones(1);
         loadAdminActivacionesFilterOptions();
       }
+      if(target === 'admin-email-templates'){
+        loadEmailTemplates();
+      }
     }
     const partnerCard = e.target.closest('.partner-menu-item');
     if(partnerCard){
@@ -3536,6 +3539,185 @@ document.addEventListener('DOMContentLoaded', () => {
     } finally {
       setButtonLoading(btn, false);
     }
+  });
+
+  // ── PLANTILLAS DE CORREO ────────────────────────────────
+  let _etCurrent = null; // { key, label, active, default, history, variables, using_default }
+  let _etKeysLoaded = false;
+
+  async function loadEmailTemplates(){
+    try {
+      const sel = el('et-key-select');
+      if(sel && !_etKeysLoaded){
+        const resp = await safeFetch(apiUrl + '/admin/email-templates', { headers: authHeaders() });
+        const data = await safeJson(resp);
+        if(!resp.ok) throw new Error((data && data.error) || 'No se pudieron cargar las plantillas');
+        sel.innerHTML = (data.templates || []).map(t =>
+          `<option value="${escapeHTML(t.key)}">${escapeHTML(t.label)}</option>`).join('');
+        _etKeysLoaded = true;
+      }
+      const key = sel ? sel.value : 'student_welcome';
+      if(key) await loadEmailTemplate(key);
+    } catch(e){ showToast(e.message, 'error'); }
+  }
+
+  async function loadEmailTemplate(key){
+    const msg = el('et-msg'); if(msg) msg.innerHTML = '';
+    try {
+      const resp = await safeFetch(apiUrl + '/admin/email-templates/' + encodeURIComponent(key), { headers: authHeaders() });
+      const data = await safeJson(resp);
+      if(!resp.ok) throw new Error((data && data.error) || 'No se pudo cargar la plantilla');
+      _etCurrent = data;
+      const src = data.active || data.default || { subject:'', body_html:'', body_text:'' };
+      if(el('et-subject')) el('et-subject').value = src.subject || '';
+      if(el('et-html'))    el('et-html').value    = src.body_html || '';
+      if(el('et-text'))    el('et-text').value    = src.body_text || '';
+      if(el('et-desc'))    el('et-desc').value    = '';
+      etRenderStatus();
+      etRenderVars(data.variables || []);
+      etRenderHistory(data.history || []);
+      etPreview(); // vista previa automática
+    } catch(e){ showToast(e.message, 'error'); }
+  }
+
+  function etRenderStatus(){
+    const badge = el('et-status'); if(!badge || !_etCurrent) return;
+    if(_etCurrent.active){
+      badge.className = 'badge bg-success';
+      badge.textContent = 'Versión activa ' + _etCurrent.active.version;
+    } else {
+      badge.className = 'badge bg-secondary';
+      badge.textContent = 'Usando diseño oficial';
+    }
+  }
+
+  function etRenderVars(vars){
+    const box = el('et-vars'); if(!box) return;
+    box.innerHTML = (vars || []).map(v =>
+      `<span class="badge bg-light text-dark border" style="cursor:pointer;font-weight:500;" title="${escapeHTML(v.desc||'')}" data-token="${escapeHTML(v.token)}">${escapeHTML(v.token)}</span>`).join('') ||
+      '<span class="text-muted small">—</span>';
+  }
+
+  function etRenderHistory(history){
+    const box = el('et-history'); if(!box) return;
+    if(!history.length){ box.innerHTML = '<div class="text-muted small">Aún no se ha guardado ninguna versión. Se envía el diseño oficial.</div>'; return; }
+    box.innerHTML = history.map(h => {
+      const when = h.updated_at ? new Date(h.updated_at).toLocaleString('es-ES') : '';
+      const by = h.updated_by ? ' · ' + escapeHTML(h.updated_by) : '';
+      const active = h.is_active
+        ? '<span class="badge bg-success">activa</span>'
+        : `<button class="btn btn-outline-secondary btn-sm py-0 px-2 et-activate-btn" data-version="${h.version}">activar</button>`;
+      const note = h.description ? `<div class="text-muted small">${escapeHTML(h.description)}</div>` : '';
+      return `<div class="d-flex align-items-center justify-content-between border-bottom py-1">
+        <div><strong>v${h.version}</strong> <span class="text-muted small">${when}${by}</span>${note}</div>
+        <div>${active}</div></div>`;
+    }).join('');
+  }
+
+  function etEditorBody(){
+    return {
+      key: _etCurrent ? _etCurrent.key : (el('et-key-select') ? el('et-key-select').value : 'student_welcome'),
+      subject: (el('et-subject')||{}).value || '',
+      body_html: (el('et-html')||{}).value || '',
+      body_text: (el('et-text')||{}).value || ''
+    };
+  }
+
+  async function etPreview(){
+    const frame = el('et-preview-frame'); if(!frame) return;
+    const b = etEditorBody();
+    try {
+      const resp = await safeFetch(apiUrl + '/admin/email-templates/' + encodeURIComponent(b.key) + '/preview', {
+        method:'POST', headers: authHeaders(), body: JSON.stringify(b)
+      });
+      const data = await safeJson(resp);
+      if(!resp.ok) throw new Error((data && (data.message||data.error)) || 'Error de render');
+      frame.srcdoc = data.html || '';
+    } catch(e){
+      frame.srcdoc = `<p style="font-family:sans-serif;color:#b91c1c;padding:12px;">Error de plantilla: ${escapeHTML(e.message)}</p>`;
+    }
+  }
+
+  on('btn-et-preview', 'click', etPreview);
+
+  on('et-key-select', 'change', () => { const k = el('et-key-select').value; if(k) loadEmailTemplate(k); });
+
+  on('btn-et-save', 'click', async () => {
+    const btn = el('btn-et-save'); const msg = el('et-msg'); if(msg) msg.innerHTML = '';
+    const b = etEditorBody();
+    if(!b.subject.trim()){ if(msg) msg.innerHTML = '<span class="text-danger">El asunto es obligatorio.</span>'; return; }
+    if(!b.body_html.trim()){ if(msg) msg.innerHTML = '<span class="text-danger">El cuerpo HTML es obligatorio.</span>'; return; }
+    const activate = !!(el('et-activate') && el('et-activate').checked);
+    setButtonLoading(btn, true);
+    try {
+      const resp = await safeFetch(apiUrl + '/admin/email-templates/' + encodeURIComponent(b.key), {
+        method:'PUT', headers: authHeaders(),
+        body: JSON.stringify({ ...b, description: (el('et-desc')||{}).value || '', activate })
+      });
+      const data = await safeJson(resp);
+      if(!resp.ok) throw new Error((data && data.error) || 'Error al guardar');
+      showToast(activate ? `Versión ${data.version} guardada y activada.` : `Versión ${data.version} guardada (sin activar).`, 'success');
+      await loadEmailTemplate(b.key);
+    } catch(e){ if(msg) msg.innerHTML = `<span class="text-danger">${escapeHTML(e.message)}</span>`; }
+    finally { setButtonLoading(btn, false); }
+  });
+
+  on('btn-et-test', 'click', async () => {
+    const btn = el('btn-et-test'); const to = (el('et-test-email')||{}).value || '';
+    if(!to.trim()){ showToast('Indica un correo de destino para la prueba.', 'error'); return; }
+    const b = etEditorBody();
+    setButtonLoading(btn, true);
+    try {
+      const resp = await safeFetch(apiUrl + '/admin/email-templates/' + encodeURIComponent(b.key) + '/test', {
+        method:'POST', headers: authHeaders(), body: JSON.stringify({ ...b, to })
+      });
+      const data = await safeJson(resp);
+      if(!resp.ok) throw new Error((data && (data.message||data.error)) || 'Error al enviar');
+      if(data.sent) showToast('Correo de prueba enviado a ' + to, 'success');
+      else if(data.skipped) showToast('Envío omitido (SMTP deshabilitado en este entorno).', 'info');
+      else showToast('No se pudo enviar: ' + (data.error || 'error'), 'error');
+    } catch(e){ showToast(e.message, 'error'); }
+    finally { setButtonLoading(btn, false); }
+  });
+
+  on('btn-et-restore', 'click', () => {
+    if(!_etCurrent || !_etCurrent.default){ showToast('No hay diseño oficial disponible.', 'error'); return; }
+    if(!confirm('¿Cargar el diseño oficial en el editor? Reemplaza el contenido actual (no se guarda hasta que pulses Guardar).')) return;
+    const d = _etCurrent.default;
+    if(el('et-subject')) el('et-subject').value = d.subject || '';
+    if(el('et-html'))    el('et-html').value    = d.body_html || '';
+    if(el('et-text'))    el('et-text').value    = d.body_text || '';
+    etPreview();
+    showToast('Diseño oficial cargado en el editor. Revisa y pulsa Guardar para aplicarlo.', 'info');
+  });
+
+  // Insertar variable en el cuerpo HTML al hacer clic en un chip.
+  on('et-vars', 'click', (e) => {
+    const chip = e.target.closest('[data-token]'); if(!chip) return;
+    const ta = el('et-html'); if(!ta) return;
+    const token = chip.dataset.token;
+    const start = ta.selectionStart ?? ta.value.length;
+    const end = ta.selectionEnd ?? ta.value.length;
+    ta.value = ta.value.slice(0, start) + token + ta.value.slice(end);
+    ta.focus();
+    ta.selectionStart = ta.selectionEnd = start + token.length;
+  });
+
+  // Activar/rollback de una versión desde el historial.
+  on('et-history', 'click', async (e) => {
+    const b = e.target.closest('.et-activate-btn'); if(!b) return;
+    const key = _etCurrent ? _etCurrent.key : null; const version = parseInt(b.dataset.version, 10);
+    if(!key || !Number.isInteger(version)) return;
+    b.disabled = true;
+    try {
+      const resp = await safeFetch(apiUrl + '/admin/email-templates/' + encodeURIComponent(key) + '/activate', {
+        method:'POST', headers: authHeaders(), body: JSON.stringify({ version })
+      });
+      const data = await safeJson(resp);
+      if(!resp.ok) throw new Error((data && data.error) || 'Error al activar');
+      showToast('Versión ' + version + ' activada.', 'success');
+      await loadEmailTemplate(key);
+    } catch(err){ showToast(err.message, 'error'); b.disabled = false; }
   });
 
   async function loadAdminRoles(force = false){
