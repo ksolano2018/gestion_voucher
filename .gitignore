@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.production.example
 servicios/**/.env
 servicios/**/.env.*
 
@@ -22,10 +23,15 @@ docker-compose.staging.yml
 # ── Scripts y colecciones de prueba locales ──────────────────────────────────
 scripts/
 postman/
+tests/
 simulate_payment.ps1
 test-sync-events.ps1
 test_admin_login.js
 TEST_RESULTS_*.md
+
+# ── Config local de herramientas / entregables binarios ─────────────────────
+.claude/settings.local.json
+GUIA_USUARIO.docx
 
 # ── Artefactos de build ───────────────────────────────────────────────────────
 dist/
