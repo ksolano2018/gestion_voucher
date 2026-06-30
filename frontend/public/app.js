@@ -2485,7 +2485,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Formato numérico
   const rptFmt      = n => (n == null || isNaN(n)) ? '0' : Number(n).toLocaleString('es-CL');
-  const rptFmtMoney = n => '$' + rptFmt(n);
+  // Dinero con 2 decimales, igual que el Historial de Compras y el export a Excel.
+  const rptFmtMoney = n => '$' + (isNaN(parseFloat(n)) ? 0 : parseFloat(n)).toFixed(2);
 
   // ── TAB switching ───────────────────────────────────────
   document.addEventListener('click', ev => {
