@@ -1,60 +1,61 @@
 # Requisitos previos al despliegue a Producción — CertJoin Vouchers
 
 > **Contexto:** la aplicación es un stack **Docker** (gateway Caddy + 4 microservicios Node
-> + PostgreSQL + frontend) que corre en su **propio host** y se integra con el **Moodle
+> + PostgreSQL + frontend) que corre en su propio host y se integra con el **Moodle
 > existente** del cliente por Web Services. La página web del cliente solo **enlaza** a la
-> app en un subdominio (no la contiene). Una cuenta de **hosting compartido** no sirve
-> (sin Docker/sudo, puertos 80/443 ocupados, RAM insuficiente): se requiere un **VPS con
-> Docker y acceso root**.
+> app en un subdominio (no la contiene).
+>
+> **Servidor de destino (confirmado por SSH, 2026-07-03):** el mismo VPS que ya aloja la web
+> y Moodle — `srv1255468` / `72.62.173.253`, **Ubuntu 24.04**, **1 vCPU**, **4 GB RAM**,
+> disco 47 GB (~50% libre), gestionado con **CloudPanel** (NGINX). El acceso entregado
+> (`cert-v`) es un **usuario del panel** (sin Docker ni sudo). **La app irá detrás del
+> reverse proxy de CloudPanel.**
 
-## Arquitectura objetivo
+## Arquitectura objetivo (detrás de CloudPanel)
 
 ```
-[ Página web del cliente ]  --enlace-->  https://vouchers.tudominio.com
-      (hosting actual)                            │
-                                                  ▼
-                                   [ VPS con Docker ]  ← la app (gateway + microservicios
-                                                  │        + frontend + PostgreSQL)
-                                                  │  (llamadas Web Services)
-                                                  ▼
-                                   [ Moodle del cliente ]  (se queda donde está)
+Internet ─▶ NGINX de CloudPanel (:80/:443, SSL Let's Encrypt)
+                │  sitio "Reverse Proxy": vouchers.dominio.com
+                ▼
+          http://127.0.0.1:3000  ← gateway (Caddy, solo localhost, SIN TLS propio)
+                └▶ stack Docker (usuarios / compras / moodle / notificaciones / frontend / Postgres)
+                                  └▶ Moodle del cliente (por Web Services)
 ```
 
-- La web solo suma un botón/enlace al subdominio de la app.
-- Moodle no se mueve; la app lo consume por WS.
-- En Producción **no** se despliega el Moodle dockerizado (`--profile local-moodle` desactivado).
+- CloudPanel/NGINX es el **único que toca 80/443** y termina el HTTPS → nosotros **no** los ocupamos ni usamos `docker-compose.tls.yml`.
+- El gateway se enlaza a **`127.0.0.1:3000`** (no expuesto a internet); CloudPanel le hace proxy.
+- La página web del cliente solo suma un **enlace** al subdominio.
+- Moodle no se mueve; la app lo consume por WS. En Producción **no** se despliega el Moodle dockerizado (`--profile local-moodle` desactivado).
 
 ---
 
-## A) Preguntas para el proveedor / infraestructura (el servidor)
+## A) El servidor — estado y acciones (con el proveedor / admin)
 
-1. ¿Ofrecen un **VPS con acceso root/sudo** (no hosting compartido/panel)?
-2. ¿Podemos **instalar Docker Engine + Docker Compose v2**?
-3. ¿Los **puertos 80 y 443 quedan libres** para la app (sin otro servidor web escuchándolos)? + 22 para SSH.
-4. ¿Da **IP pública fija**?
+**Estado confirmado del VPS:**
 
-**Especificaciones mínimas del servidor:**
+| Recurso | Valor | Veredicto |
+|---|---|---|
+| SO | Ubuntu 24.04 | ✅ |
+| CPU | 1 vCPU (load < 1) | ✅ ok |
+| **RAM** | **4 GB, ~90% en uso (≈400 MB libres)** | ❌ **insuficiente — bloqueante** |
+| Disco | 47 GB, ~50% libre (~23 GB) | ✅ ok |
+| Panel | CloudPanel (NGINX + reverse proxy + Let's Encrypt) | ✅ resuelve HTTPS/proxy |
+| Salida a internet | GitHub / Docker Hub alcanzables | ✅ |
 
-| Recurso | Mínimo |
-|---|---|
-| SO | Ubuntu 22.04 / 24.04 (o Debian) |
-| Acceso | root / sudo |
-| RAM | ≥ 2 GB **libres** (recomendado 4 GB) |
-| CPU | 1–2 vCPU |
-| Disco | ≥ 20 GB libres |
-| Puertos | 80, 443 y 22 libres |
-| Red | salida a internet (GitHub, Docker Hub, Let's Encrypt) |
+**Acciones / preguntas pendientes:**
 
-> Cualquier plan **VPS** estándar cumple (Hetzner, DigitalOcean, Linode, Contabo, o el tier
-> VPS del mismo proveedor). Lo que **no** encaja es un plan de **hosting compartido/panel**.
+1. **RAM — el bloqueante.** Con ~400 MB libres el stack **no arranca** (necesita ~0.7–1 GB en marcha + picos en el build). **Ampliar el VPS a ≥ 6 GB (ideal 8 GB).**
+   - *Stopgap si no se puede ya:* añadir **swap** (~4 GB) para evitar OOM — funciona pero más lento, no recomendado como solución final.
+2. **Acceso root/sudo** para instalar **Docker Engine + Docker Compose v2**. El usuario del panel `cert-v` **no sirve** (sin sudo). *(El admin de CloudPanel suele tener root SSH del servidor; alternativa: que el admin instale Docker y nos dé un usuario en el grupo `docker`.)*
+3. **CloudPanel:** crear un sitio **Reverse Proxy** para el subdominio → destino `http://127.0.0.1:3000`, con **SSL Let's Encrypt** activado. *(CloudPanel ya maneja 80/443 → no hace falta liberarlos.)*
 
 ---
 
 ## B) Datos a solicitar al cliente (integraciones)
 
 ### Dominio / DNS
-- Un **subdominio** (ej. `vouchers.sudominio.com`) con registro **A → IP del VPS**.
-  Se usa para el HTTPS de la app, el webhook de Stripe y el enlace desde la web.
+- Un **subdominio** (ej. `vouchers.sudominio.com`) con registro **A → `72.62.173.253`**
+  (la IP del mismo VPS). CloudPanel le pone el SSL. La web del cliente enlazará a él.
 
 ### Moodle (el suyo — no desplegamos uno)
 - **URL base** del Moodle, accesible desde el VPS.
@@ -99,14 +100,25 @@
 
 ## D) Pendientes de nuestro lado (antes de desplegar)
 
-- Ajustar **`deploy.sh`** para incluir el override TLS (`docker-compose.tls.yml`) y el
-  dominio del cliente (`SITE_ADDRESS`).
+- Adaptar el stack al modo **"detrás de CloudPanel"**: gateway enlazado a **`127.0.0.1:3000`**
+  (solo localhost), **sin** `docker-compose.tls.yml` (CloudPanel termina el HTTPS),
+  `FRONTEND_URL = https://<subdominio>`.
+- Ajustar **`deploy.sh`** a ese modo y **sin** `--profile local-moodle` (Moodle externo):
+  `COMPOSE_PROFILES=` vacío y `MOODLE_URL` = Moodle del cliente.
 - Crear **`servicios/servicio-usuarios/.env.production.example`** (plantilla de la app) y la
-  guía **`DEPLOY-PD.md`** (primer arranque).
-- PRD corre **sin** `--profile local-moodle` (Moodle externo): `COMPOSE_PROFILES=` vacío y
-  `MOODLE_URL` = Moodle del cliente.
+  guía **`DEPLOY-PD.md`** (primer arranque + provisión de Moodle si aplica).
 
 ---
 
-**Bloqueante #1: el punto A.** Sin un host con Docker/root y 80/443 libres, no se puede
-desplegar. El resto (dominio, Moodle, Stripe, SMTP) se puede ir consiguiendo en paralelo.
+## Resumen ejecutivo (qué falta para arrancar)
+
+| # | Pendiente | Responsable |
+|---|---|---|
+| 1 | **Ampliar RAM del VPS a ≥6 GB** (bloqueante #1) | Proveedor / cliente |
+| 2 | **Root/sudo** para instalar Docker | Proveedor / admin |
+| 3 | Elegir **subdominio** + registro A → 72.62.173.253 | Cliente |
+| 4 | Datos de **Moodle, Stripe, SMTP** (sección B) | Cliente |
+| 5 | Adaptar `deploy.sh` + `.env` + `DEPLOY-PD.md` (modo CloudPanel) | Nosotros |
+
+**Sin (1) y (2) no se puede desplegar.** El reverse proxy + SSL ya están resueltos por
+CloudPanel; el resto se consigue en paralelo.
