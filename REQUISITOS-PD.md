@@ -5,17 +5,17 @@
 > existente** del cliente por Web Services. La página web del cliente solo **enlaza** a la
 > app en un subdominio (no la contiene).
 >
-> **Servidor de destino (confirmado por SSH, 2026-07-03):** el mismo VPS que ya aloja la web
-> y Moodle — `srv1255468` / `72.62.173.253`, **Ubuntu 24.04**, **1 vCPU**, **4 GB RAM**,
-> disco 47 GB (~50% libre), gestionado con **CloudPanel** (NGINX). El acceso entregado
-> (`cert-v`) es un **usuario del panel** (sin Docker ni sudo). **La app irá detrás del
-> reverse proxy de CloudPanel.**
+> **Servidor de destino (confirmado por SSH, 2026-07-03):** `76.13.114.140`, **Ubuntu 24.04**,
+> **8 vCPU**, **31 GB RAM** (~26 GB disponibles), disco **387 GB (317 GB libres)**, gestionado
+> con **CloudPanel** (NGINX). Recursos de sobra. El acceso entregado (`certjoin-v`) es un
+> **usuario de sitio de CloudPanel** (sin Docker ni sudo). **La app irá detrás del reverse
+> proxy de CloudPanel.**
 
 ## Arquitectura objetivo (detrás de CloudPanel)
 
 ```
 Internet ─▶ NGINX de CloudPanel (:80/:443, SSL Let's Encrypt)
-                │  sitio "Reverse Proxy": vouchers.dominio.com
+                │  sitio "Reverse Proxy": vouchers.certjoin.com
                 ▼
           http://127.0.0.1:3000  ← gateway (Caddy, solo localhost, SIN TLS propio)
                 └▶ stack Docker (usuarios / compras / moodle / notificaciones / frontend / Postgres)
@@ -29,33 +29,51 @@ Internet ─▶ NGINX de CloudPanel (:80/:443, SSL Let's Encrypt)
 
 ---
 
-## A) El servidor — estado y acciones (con el proveedor / admin)
+## A) El servidor — estado y acciones
 
-**Estado confirmado del VPS:**
+**Estado confirmado (`76.13.114.140`):**
 
 | Recurso | Valor | Veredicto |
 |---|---|---|
-| SO | Ubuntu 24.04 | ✅ |
-| CPU | 1 vCPU (load < 1) | ✅ ok |
-| **RAM** | **4 GB, ~90% en uso (≈400 MB libres)** | ❌ **insuficiente — bloqueante** |
-| Disco | 47 GB, ~50% libre (~23 GB) | ✅ ok |
+| SO | Ubuntu 24.04.3 LTS | ✅ |
+| CPU | 8 vCPU | ✅ |
+| RAM | 31 GB (~26 GB disponibles) + 2 GB swap | ✅ de sobra |
+| Disco | 387 GB, 317 GB libres | ✅ de sobra |
 | Panel | CloudPanel (NGINX + reverse proxy + Let's Encrypt) | ✅ resuelve HTTPS/proxy |
+| git / curl / wget | ya instalados | ✅ |
 | Salida a internet | GitHub / Docker Hub alcanzables | ✅ |
 
-**Acciones / preguntas pendientes:**
+> Los recursos (RAM/CPU/disco) **ya no son un problema** en este servidor. Antes se evaluó
+> uno de 4 GB que no alcanzaba; este de 31 GB corre el stack cómodo.
 
-1. **RAM — el bloqueante.** Con ~400 MB libres el stack **no arranca** (necesita ~0.7–1 GB en marcha + picos en el build). **Ampliar el VPS a ≥ 6 GB (ideal 8 GB).**
-   - *Stopgap si no se puede ya:* añadir **swap** (~4 GB) para evitar OOM — funciona pero más lento, no recomendado como solución final.
-2. **Acceso root/sudo** para instalar **Docker Engine + Docker Compose v2**. El usuario del panel `cert-v` **no sirve** (sin sudo). *(El admin de CloudPanel suele tener root SSH del servidor; alternativa: que el admin instale Docker y nos dé un usuario en el grupo `docker`.)*
-3. **CloudPanel:** crear un sitio **Reverse Proxy** para el subdominio → destino `http://127.0.0.1:3000`, con **SSL Let's Encrypt** activado. *(CloudPanel ya maneja 80/443 → no hace falta liberarlos.)*
+**Acción pendiente — LA ÚNICA de infra:**
+
+1. **Instalar Docker** (requiere **root**). El usuario `certjoin-v` no tiene sudo ni pertenece
+   al grupo `docker`. El admin de CloudPanel (con root SSH) ejecuta **una sola vez**:
+   ```bash
+   curl -fsSL https://get.docker.com | sh        # Docker Engine + Compose v2 + buildx
+   usermod -aG docker certjoin-v                  # que nuestro usuario use docker sin sudo
+   ```
+   *(Alternativa: que nos den un acceso root/sudo y lo instalamos nosotros.)*
+
+**Nada más que instalar:** todo lo demás va en contenedores (Node, PostgreSQL, Caddy) o ya
+está (NGINX de CloudPanel). git y curl ya están presentes.
+
+**Reverse proxy (CloudPanel, cuando el stack esté arriba):** crear/convertir el sitio de
+`vouchers.certjoin.com` a **Reverse Proxy** → destino `http://127.0.0.1:3000`, y emitir el
+certificado en **SSL/TLS → New Let's Encrypt Certificate** (hoy hay uno self-signed).
 
 ---
 
 ## B) Datos a solicitar al cliente (integraciones)
 
 ### Dominio / DNS
-- Un **subdominio** (ej. `vouchers.sudominio.com`) con registro **A → `72.62.173.253`**
-  (la IP del mismo VPS). CloudPanel le pone el SSL. La web del cliente enlazará a él.
+- El subdominio **`vouchers.certjoin.com`** con registro **A → `76.13.114.140`** (la IP de
+  este servidor). CloudPanel le pone el SSL. La web del cliente enlazará a él.
+
+### Acceso al repositorio (para `git clone` / `git pull`)
+- Una **deploy key SSH** (agregar una clave pública de solo lectura al repo privado
+  `gestion_voucher`) **o** un token. Sin esto, el `deploy.sh` no puede traer el código.
 
 ### Moodle (el suyo — no desplegamos uno)
 - **URL base** del Moodle, accesible desde el VPS.
@@ -78,7 +96,7 @@ Internet ─▶ NGINX de CloudPanel (:80/:443, SSL Let's Encrypt)
 
 ### Stripe (cuenta del cliente, modo live)
 - **Publishable key** + **Secret key**.
-- **Webhook** apuntando a `https://<subdominio>/webhook/stripe` y su **signing secret**.
+- **Webhook** apuntando a `https://vouchers.certjoin.com/webhook/stripe` y su **signing secret**.
 
 ### Correo (SMTP del cliente)
 - Host, puerto, seguridad (SSL/TLS), usuario y contraseña.
@@ -98,27 +116,24 @@ Internet ─▶ NGINX de CloudPanel (:80/:443, SSL Let's Encrypt)
 
 ---
 
-## D) Pendientes de nuestro lado (antes de desplegar)
+## D) De nuestro lado — LISTO ✅
 
-- Adaptar el stack al modo **"detrás de CloudPanel"**: gateway enlazado a **`127.0.0.1:3000`**
-  (solo localhost), **sin** `docker-compose.tls.yml` (CloudPanel termina el HTTPS),
-  `FRONTEND_URL = https://<subdominio>`.
-- Ajustar **`deploy.sh`** a ese modo y **sin** `--profile local-moodle` (Moodle externo):
-  `COMPOSE_PROFILES=` vacío y `MOODLE_URL` = Moodle del cliente.
-- Crear **`servicios/servicio-usuarios/.env.production.example`** (plantilla de la app) y la
-  guía **`DEPLOY-PD.md`** (primer arranque + provisión de Moodle si aplica).
+Ya está preparado en la rama **`production`** del repo:
+- `docker-compose.yml` con binds configurables (gateway en `127.0.0.1:3000` en PD).
+- `.env.production.example` (raíz y app) y `deploy.sh` (sin TLS ni perfil moodle).
+- `DEPLOY-PD.md` con la guía de primer arranque (CloudPanel + reverse proxy).
 
 ---
 
 ## Resumen ejecutivo (qué falta para arrancar)
 
-| # | Pendiente | Responsable |
-|---|---|---|
-| 1 | **Ampliar RAM del VPS a ≥6 GB** (bloqueante #1) | Proveedor / cliente |
-| 2 | **Root/sudo** para instalar Docker | Proveedor / admin |
-| 3 | Elegir **subdominio** + registro A → 72.62.173.253 | Cliente |
-| 4 | Datos de **Moodle, Stripe, SMTP** (sección B) | Cliente |
-| 5 | Adaptar `deploy.sh` + `.env` + `DEPLOY-PD.md` (modo CloudPanel) | Nosotros |
+| # | Pendiente | Responsable | Estado |
+|---|---|---|---|
+| 1 | **Instalar Docker** + agregar `certjoin-v` al grupo `docker` (root) | Admin/proveedor | ⛔ **único bloqueante** |
+| 2 | **Deploy key** de solo lectura en el repo privado | Cliente/nosotros | pendiente |
+| 3 | Registro **A** de `vouchers.certjoin.com` → `76.13.114.140` | Cliente | verificar |
+| 4 | Datos de **Moodle, Stripe, SMTP** (sección B) | Cliente | pendiente |
+| 5 | Artefactos de despliegue (rama `production`) | Nosotros | ✅ listo |
 
-**Sin (1) y (2) no se puede desplegar.** El reverse proxy + SSL ya están resueltos por
-CloudPanel; el resto se consigue en paralelo.
+**El único bloqueante real es (1): instalar Docker.** Recursos, panel, dominio y código ya
+están. Con Docker disponible para `certjoin-v`, se despliega siguiendo `DEPLOY-PD.md`.
