@@ -5,6 +5,7 @@
 !.env.production.example
 servicios/**/.env
 servicios/**/.env.*
+!servicios/**/.env.production.example
 
 # ── Dependencias ─────────────────────────────────────────────────────────────
 node_modules/

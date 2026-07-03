@@ -8,7 +8,9 @@ services:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     ports:
-      - "5432:5432"
+      # Interfaz de publicación configurable. Default 0.0.0.0 (local/QA). En PD detrás
+      # de CloudPanel: DB_BIND=127.0.0.1 para no exponer Postgres a internet.
+      - "${DB_BIND:-0.0.0.0}:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       # Nota: NO se monta ./database/init.sql como volumen. En Docker Desktop sobre
@@ -32,8 +34,10 @@ services:
     container_name: proyecto-gateway
     # Puerto del host = ingreso único. Default :3000 (igual que QA, donde GATEWAY_PORT
     # se fija explícitamente). El frontend ya no usa :3000, así que el gateway lo toma.
+    # En PD detrás de CloudPanel: GATEWAY_BIND=127.0.0.1 (solo localhost; CloudPanel
+    # hace reverse proxy + TLS a este puerto y no se expone a internet).
     ports:
-      - "${GATEWAY_PORT:-3000}:8080"
+      - "${GATEWAY_BIND:-0.0.0.0}:${GATEWAY_PORT:-3000}:8080"
     depends_on:
       - servicio-usuarios
       - servicio-compras
@@ -55,7 +59,8 @@ services:
     build: ./servicios/servicio-usuarios
     container_name: servicio-usuarios
     ports:
-      - "8081:8081"
+      # En PD: USUARIOS_BIND=127.0.0.1 (no exponer la API directa; el ingreso es el gateway).
+      - "${USUARIOS_BIND:-0.0.0.0}:8081:8081"
     env_file:
       - ./servicios/servicio-usuarios/.env
     environment:

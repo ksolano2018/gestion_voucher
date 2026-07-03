@@ -38,8 +38,12 @@ if [ "${SKIP_GIT_PULL:-0}" != "1" ] && [ -d .git ]; then
   git pull --ff-only || echo "   (git pull omitido o sin cambios; continúo con el código actual)"
 fi
 
+# Directorio de logs que montan los contenedores (bind-mount ./logs/usuarios).
+mkdir -p logs/usuarios
+
 # Levantar / reconstruir. Los perfiles (p.ej. local-moodle) se activan vía
 # COMPOSE_PROFILES dentro del .env raíz, así que aquí no hace falta pasarlos.
+# En PD (detrás de CloudPanel) NO se usa el override TLS: CloudPanel termina el HTTPS.
 echo "==> docker compose up -d --build"
 docker compose up -d --build
 
