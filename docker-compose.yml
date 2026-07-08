@@ -45,12 +45,16 @@ services:
     networks:
       - proyecto-network
 
-  # Mock Moodle Web Services (solo desarrollo local)
+  # Mock Moodle Web Services (SOLO desarrollo local — vestigial).
+  # Gateado tras el perfil 'dev-mock' para que NO arranque en QA/PD (donde Moodle es
+  # el dockerizado o el externo del cliente). Levantarlo en local con:
+  #   docker compose --profile dev-mock up -d
   moodle-mock:
     build: ./servicios/moodle-mock
     container_name: moodle-mock
+    profiles: [dev-mock]
     ports:
-      - "8082:8082"
+      - "127.0.0.1:8082:8082"
     networks:
       - proyecto-network
 
@@ -123,9 +127,8 @@ services:
     environment:
       - PORT=8084
       - INTERNAL_API_TOKEN=${INTERNAL_API_TOKEN:-dev-internal-token}
-    depends_on:
-      moodle-mock:
-        condition: service_started
+    # (Sin depends_on de moodle-mock: el adaptador usa MOODLE_URL — mock in-process
+    #  en local, Moodle dockerizado en QA o externo del cliente en PD.)
     networks:
       - proyecto-network
 
