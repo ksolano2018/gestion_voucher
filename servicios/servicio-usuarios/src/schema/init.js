@@ -429,6 +429,17 @@ async function initDb(){
     }
   }
 
+  // Rol "soporte": admin OPERATIVO sin gestión de usuarios/roles (users='none').
+  // Es la cuenta con la que opera el equipo de soporte en PRD, distinta del admin
+  // del cliente y revocable por él. Idempotente (no pisa si ya existe).
+  const soportePerms = sanitizeRolePermissions({ ...getDefaultPermissionsForRole('admin'), users: 'none' }, 'system_role');
+  await pool.query(
+    `INSERT INTO roles (name, display_name, permissions, active, is_system, role_type, updated_at)
+     VALUES ('soporte', 'Soporte', $1::jsonb, TRUE, FALSE, 'system_role', NOW())
+     ON CONFLICT (name) DO NOTHING`,
+    [JSON.stringify(soportePerms)]
+  );
+
   const distinctUserRoles = await pool.query("SELECT DISTINCT role FROM users WHERE role IS NOT NULL AND TRIM(role) <> ''");
   for (const row of distinctUserRoles.rows) {
     const normalizedRole = normalizeRoleName(row.role);
@@ -446,12 +457,30 @@ async function initDb(){
   await ensureDefaultCatalogAndCourses();
   await ensureDefaultPricingProfilesAndRules();
 
+  // En PRD el admin y el soporte se siembran con contraseña TEMPORAL y se fuerza el
+  // cambio en el primer login (el cliente/soporte pone la suya; nosotros no la sabemos).
+  // Gateado por env para NO afectar local/QA (donde el admin ya existe y los tests
+  // esperan login directo). El wizard setup.sh pone SEED_FORCE_PASSWORD_CHANGE=true.
+  const forceChange = process.env.SEED_FORCE_PASSWORD_CHANGE === 'true';
+
   // Seed admin user if none
   const u = await pool.query("SELECT count(*) FROM users WHERE role='admin'");
   if(parseInt(u.rows[0].count) === 0){
     const hash = await bcrypt.hash(ADMIN_PASSWORD, 10);
-    await pool.query('INSERT INTO users (email,password,role) VALUES ($1,$2,$3)',[ADMIN_EMAIL,hash,'admin']);
-    console.log('Seeded admin user:', ADMIN_EMAIL);
+    await pool.query('INSERT INTO users (email,password,role,must_change_password) VALUES ($1,$2,$3,$4)',[ADMIN_EMAIL,hash,'admin',forceChange]);
+    console.log('Seeded admin user:', ADMIN_EMAIL, forceChange ? '(debe cambiar contraseña)' : '');
+  }
+
+  // Seed usuario de SOPORTE (nuestro) si se define por env y no existe. Rol 'soporte'.
+  const supportEmail = process.env.SUPPORT_EMAIL;
+  const supportPass = process.env.SUPPORT_PASSWORD;
+  if (supportEmail && supportPass) {
+    const se = await pool.query('SELECT 1 FROM users WHERE email=$1', [supportEmail]);
+    if (se.rowCount === 0) {
+      const shash = await bcrypt.hash(supportPass, 10);
+      await pool.query('INSERT INTO users (email,password,role,must_change_password) VALUES ($1,$2,$3,$4)',[supportEmail, shash, 'soporte', forceChange]);
+      console.log('Seeded support user:', supportEmail, forceChange ? '(debe cambiar contraseña)' : '');
+    }
   }
 
   // Seed a demo partner and partner user if none
