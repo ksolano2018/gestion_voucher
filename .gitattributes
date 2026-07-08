@@ -1,0 +1,19 @@
+# Normalización de fin de línea. Los archivos que se ejecutan/parsean en Linux
+# (scripts, Dockerfiles, Caddyfile, plantillas .env) DEBEN ir en LF, si no el
+# despliegue en el VPS falla (p.ej. "set: pipefail: invalid option name" por CRLF).
+* text=auto eol=lf
+*.sh              text eol=lf
+Dockerfile        text eol=lf
+**/Dockerfile     text eol=lf
+Caddyfile         text eol=lf
+**/Caddyfile      text eol=lf
+*.env.example     text eol=lf
+.env.example      text eol=lf
+.env.production.example        text eol=lf
+**/.env.production.example     text eol=lf
+# Binarios: que git no los toque
+*.png binary
+*.jpg binary
+*.svg text
+*.docx binary
+*.pem binary
