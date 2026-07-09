@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-07-08
+
+Entrada consolidada del trabajo posterior a 1.0.0 (arquitectura, integraciones y despliegue).
+
+### Added
+- Integración con Moodle vía WebServices: matrícula automática al activar voucher y seguimiento de estados de curso (completado / certificado).
+- Correo de bienvenida al estudiante con **plantillas editables desde el panel admin** (BD + Mustache, versionadas), con fallback al default en código.
+- Reenvío de notificaciones (partner/admin) y aviso a cuentas Moodle existentes.
+- Timeout de sesión por inactividad (30 min): access JWT + refresh deslizante (server + frontend).
+- Rol **soporte** (admin operativo sin gestión de usuarios/roles) y cambio de contraseña obligatorio al primer login (`must_change_password`), para la gobernanza de credenciales en producción.
+- Agrupación del sidebar (admin y partner) por tipo de operación.
+- Rama `production` con artefactos de despliegue a PD: `setup.sh` (wizard de primer arranque), `deploy.sh`, `docker-compose.tls.yml`, plantillas `.env.production.example`, `DEPLOY-PD.md`, `REQUISITOS-PD.md` y `.gitattributes` (normalización LF).
+- Despliegue automatizado a QA (`.github/workflows/deploy-qa.yml`) sobre EC2 con TLS (Caddy + Let's Encrypt vía DuckDNS).
+
+### Changed
+- **Gateway real** con Caddy como ingreso único (`:3000`): enruta API/webhooks a los servicios y el resto (SPA) al frontend; el frontend y los servicios internos dejan de exponer puertos.
+- Modularización del monolito `servicio-usuarios` en `src/` (auth, users, roles, partners, pricing, purchases, moodle, audit-reports, vouchers/activación, schedulers, schema) — patrón strangler.
+- Extracción de microservicios: **servicio-compras** (compras + Stripe), **servicio-moodle** (adaptador WS) y **servicio-notificaciones** (correo), comunicados por red interna con token.
+- Reportería: los totales de dinero muestran 2 decimales, consistentes con el historial.
+
+### Fixed
+- Generación de vouchers atómica e idempotente: evita duplicados por carrera entre webhook de Stripe y backfill.
+- Reconciliación de cursos por nombre en el sync de Moodle para no duplicar.
+
 ## [1.0.0] - 2026-05-05
 
 ### Added

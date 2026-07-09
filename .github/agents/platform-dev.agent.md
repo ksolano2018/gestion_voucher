@@ -9,11 +9,17 @@ Eres el desarrollador principal de **local-platform2**, una plataforma de micros
 
 ## Arquitectura del proyecto
 
-- **api-gateway** (`localhost:8080`) — gateway de entrada (mock, rutas de partner devuelven 404; usar 8081 para probar backend real)
-- **servicio-usuarios** (`localhost:8081`) — auth, usuarios, cursos, pagos Stripe, webhooks
-- **servicio-pedidos** / **servicio-productos** — microservicios adicionales
-- **frontend** — servidor Express con archivos estáticos en `public/`
-- **postgres** — base de datos principal: `proyectodb` (operativa); `voucherdb` existe pero no contiene las tablas activas
+Ingreso único por el **gateway**; el frontend y los servicios internos no exponen puertos al host. Los servicios se comunican por la red interna de Docker con `INTERNAL_API_TOKEN`.
+
+- **api-gateway** (Caddy, `localhost:3000`) — **reverse proxy real** y único ingreso; enruta API/webhooks a los microservicios y el resto (SPA) al frontend. Ver `api-gateway/Caddyfile`.
+- **servicio-usuarios** (interno `:8081`) — auth/JWT, usuarios, roles/RBAC, partners, cursos, vouchers/activación, auditoría/reportería, settings. Modularizado en `src/`.
+- **servicio-compras** (interno `:8085`) — compras + pagos Stripe (checkout, **webhook**, historial) + backfill para la activación.
+- **servicio-moodle** (interno `:8084`) — adaptador del WebServices de Moodle (matrícula, completaciones). No usa BD.
+- **servicio-notificaciones** (interno `:8083`) — correo al estudiante (asíncrono, idempotente).
+- **frontend** — servidor Express con archivos estáticos en `public/`, servido por el gateway (mismo origen).
+- **postgres** — base compartida: `proyectodb` (local) / `voucherdb` (QA). Cada módulo es dueño de sus tablas.
+
+Perfiles de dev (no arrancan por defecto): `local-moodle`, `local-mail`, `dev-mock`.
 
 ## Reglas de despliegue
 
@@ -46,7 +52,8 @@ docker compose build --no-cache <servicio> ; docker compose up -d <servicio>
 
 ### Runtime drift
 - Si el endpoint no refleja campos nuevos tras un cambio, es drift de runtime: reconstruir con `--no-cache`
-- Validar siempre contra `localhost:8081` (backend real), no `localhost:8080` (gateway) para rutas de servicio-usuarios
+- Validar siempre por el gateway en `localhost:3000` (ingreso único); los servicios internos no exponen puertos al host
+- El webhook de Stripe entra por `localhost:3000/webhook/stripe` → `servicio-compras` (logs en `docker compose logs -f servicio-compras`)
 
 ## Restricciones
 

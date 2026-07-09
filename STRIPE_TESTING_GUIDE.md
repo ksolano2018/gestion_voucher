@@ -1,4 +1,11 @@
-# 🧪 Testing del Nuevo Flujo (Stripe-First)
+# 🧪 Testing de Pagos con Stripe
+
+> **Nota de vigencia:** el flujo real de la app es **carrito → Checkout Session** (no payment
+> links manuales). Los pagos y el webhook los procesa el microservicio **`servicio-compras`**,
+> al que se llega **por el gateway**: el webhook entra por `http://localhost:3000/webhook/stripe`
+> (Caddy lo enruta a `servicio-compras:8085`). Para ver los logs del webhook usa
+> `docker compose logs -f servicio-compras`. Los ejemplos con payment links de abajo siguen
+> sirviendo para probar la integración/webhook de forma aislada.
 
 ## ✅ Requisitos Previos
 
@@ -100,7 +107,7 @@ SELECT * FROM vouchers ORDER BY created_at DESC LIMIT 5;
 Terminal con `stripe listen` debería mostrar:
 ```
 2024-01-15 14:30:12 --> checkout.session.completed [evt_xxxxxxxxxxxxx]
-2024-01-15 14:30:12 <-- [200] POST http://localhost:8081/webhook/stripe
+2024-01-15 14:30:12 <-- [200] POST http://localhost:3000/webhook/stripe
 ```
 
 ### Paso 5: Verificar en Frontend
@@ -230,7 +237,7 @@ WHERE customer_email = 'john.doe@example.com';
 
 ### Paso 3: Verificar Endpoint API
 ```bash
-curl -X GET http://localhost:8081/admin/stripe-customers \
+curl -X GET http://localhost:3000/admin/stripe-customers \
   -H "Authorization: Bearer YOUR_ADMIN_TOKEN"
 ```
 

@@ -94,28 +94,38 @@ Los filtros se pueden combinar; siempre que cambies un criterio el tablero recar
 3. **Planificar inventario**: Usa el ranking de cursos y el mapa de calor para dimensionar sesiones extra o instructores.
 4. **Revisión semanal**: Los lunes compara el periodo "Últimos 7 días" vs "Semana anterior" para detectar desvíos tempranos.
 
-## Roles Disponibles
+## Roles y Permisos (RBAC)
+
+Los roles se definen en la tabla `roles` con permisos granulares por **módulo**
+(`dashboard`, `purchases`, `users`, `courses`, `pricing`, `stats`, `audit`, `reports`,
+`financial_ops`) × **nivel** (`none` / `view` / `edit`). El módulo `users` cubre tanto la
+gestión de usuarios como la de roles.
 
 ### Admin (Administrador)
-- Acceso completo a la consola de administración
-- Puede crear, editar y eliminar usuarios
-- Puede gestionar partners
-- Puede generar compras y vouchers
-- Acceso a todas las secciones
+- Acceso completo, incluye gestión de usuarios y roles.
+- En **producción** el admin lo genera el cliente; el equipo de soporte no debe tener admin.
+
+### Soporte
+- Admin **operativo** SIN gestión de usuarios/roles (`users: none`).
+- Pensado para el equipo de soporte; el cliente puede revocarlo.
+- Se siembra con contraseña temporal y **cambio obligatorio al primer login**.
 
 ### Partner
-- Acceso limitado a la sección de partners
-- Puede cargar y activar vouchers
-- No puede gestionar usuarios ni partners
-- No puede ver datos sensibles
+- Acceso limitado a la sección de partners: carga y activa vouchers.
+- No puede gestionar usuarios ni partners, ni ver datos de otros partners.
+
+> **Cambio de contraseña forzado:** los usuarios con `must_change_password = true` son
+> redirigidos a cambiar su contraseña en el primer inicio de sesión (se usa en producción
+> para admin y soporte con contraseña temporal).
 
 ## API de Gestión de Usuarios
 
-Si prefieres usar la API directamente:
+Si prefieres usar la API directamente (todo pasa por el gateway en `:3000`; internamente
+`servicio-usuarios` escucha en `:8081`):
 
 ### Crear Usuario
 ```bash
-POST http://localhost:8081/admin/users
+POST http://localhost:3000/admin/users
 Header: Authorization: Bearer <access_token>
 Body: {
   "email": "newuser@example.com",
@@ -127,13 +137,13 @@ Body: {
 
 ### Listar Usuarios
 ```bash
-GET http://localhost:8081/admin/users
+GET http://localhost:3000/admin/users
 Header: Authorization: Bearer <access_token>
 ```
 
 ### Actualizar Usuario
 ```bash
-PUT http://localhost:8081/admin/users/:id
+PUT http://localhost:3000/admin/users/:id
 Header: Authorization: Bearer <access_token>
 Body: {
   "password": "newpassword123",  // Opcional
@@ -143,7 +153,7 @@ Body: {
 
 ### Eliminar Usuario
 ```bash
-DELETE http://localhost:8081/admin/users/:id
+DELETE http://localhost:3000/admin/users/:id
 Header: Authorization: Bearer <access_token>
 ```
 
