@@ -34,12 +34,24 @@ docker --version && docker compose version       # verificar
 > En el servidor actual Docker ya está instalado y el usuario de sitio (`certjoin-v`) ya
 > puede usarlo — este paso puede no ser necesario.
 
-## 2. Clonar el repositorio
-Como usuario de despliegue (ej. `certjoin-v`), en su **home** (fuera de `htdocs`):
+## 2. Clonar el repositorio (solo runtime, con sparse-checkout)
+Como usuario de despliegue (ej. `certjoin-v`), en su **home** (fuera de `htdocs`).
+Usamos **sparse-checkout** para que en el servidor queden **solo los archivos necesarios para
+correr** — sin documentación interna, tests, ni artefactos de dev/QA — manteniendo el `git pull`:
 ```bash
-git clone -b production <URL_DEL_REPO> ~/app
+git clone --no-checkout -b production <URL_DEL_REPO> ~/app
 cd ~/app        # ej. /home/certjoin-v/app
+git sparse-checkout init --no-cone
+git sparse-checkout set '/*' '!/*.md' '!/.claude/' '!/tests/' '!/postman/' '!/.github/' \
+    '!/.vscode/' '!/docker-compose.tls.yml' '!/servicios/moodle-mock/'
+git checkout production
 ```
+> Deja el stack para levantar (`docker-compose.yml`, `deploy.sh`, `setup.sh`, `api-gateway/`,
+> `frontend/`, `servicios/`, `database/`, más `.env*.example`/`.gitattributes`/`VERSION`) y
+> **nada** de `*.md`, `.claude/`, `tests/`, `postman/`, `.github/`, `.vscode/`, `moodle-mock`
+> ni el override TLS de QA. Las actualizaciones siguen siendo `git pull` (respeta el
+> sparse-checkout automáticamente). *(Validado 2026-07-09 en un clon de prueba.)*
+>
 > Los **datos** (Postgres, etc.) viven en **volúmenes de Docker** (`/var/lib/docker/volumes`),
 > no en esta carpeta → sobreviven a `git pull`, rebuilds y a borrar/reclonar `app`.
 

@@ -45,7 +45,7 @@ Runbook cronológico del despliegue a producción, separando responsabilidades:
 
 | # | Tarea | Responsable |
 |---|---|---|
-| 2.1 | `git clone -b production https://<TOKEN>@github.com/.../gestion_voucher.git ~/app` | Orkus |
+| 2.1 | Clonar **solo runtime** con `sparse-checkout` (excluye docs/tests/dev; mantiene `git pull`) — ver `DEPLOY-PD.md` §2 | Orkus |
 | 2.2 | `cd ~/app && bash setup.sh` → cargar datos de CertJoin; genera secretos y levanta el stack | Orkus |
 | 2.3 | Verificar `docker compose ps` (8 contenedores) y `/health` 200 en `127.0.0.1:3000` | Orkus |
 | 2.4 | Guardar el resumen de contraseñas temporales (admin de CertJoin / soporte de Orkus) | Orkus |
