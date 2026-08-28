@@ -48,7 +48,7 @@ ask() {  # ask VAR "Prompt" ["default"]
 ask_req() { ask "$@"; local v=${!1}; while [ -z "$v" ]; do warn "obligatorio"; ask "$@"; v=${!1}; done; }
 ask_secret() { local __var=$1 __prompt=$2 __in; read -r -s -p "  $__prompt: " __in; echo; printf -v "$__var" '%s' "$__in"; }
 gen_secret() { openssl rand -hex "${1:-32}"; }
-gen_pass()   { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "${1:-16}"; }
+gen_pass()   { tr -dc 'A-Za-z0-9' </dev/urandom | head -c "${1:-16}" || true; }
 
 # ── Secretos de infra (automáticos) ───────────────────────────────────────────
 DB_PASSWORD=$(gen_secret 24)
