@@ -252,6 +252,31 @@ async function initDb(){
     ALTER TABLE users ADD COLUMN IF NOT EXISTS permissions JSONB DEFAULT '{}'::jsonb;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
     ALTER TABLE users ADD COLUMN IF NOT EXISTS password_expires_at TIMESTAMP;
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS first_name VARCHAR(100);
+    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_name VARCHAR(100);
+    -- Backfill igual que database/migrations/20260412_users_first_last_name.sql
+    UPDATE users SET
+      first_name = CASE
+        WHEN position('.' IN split_part(email, '@', 1)) > 0
+          THEN initcap(split_part(split_part(email, '@', 1), '.', 1))
+        WHEN position('_' IN split_part(email, '@', 1)) > 0
+          THEN initcap(split_part(split_part(email, '@', 1), '_', 1))
+        WHEN position('-' IN split_part(email, '@', 1)) > 0
+          THEN initcap(split_part(split_part(email, '@', 1), '-', 1))
+        ELSE
+          initcap(split_part(email, '@', 1))
+      END,
+      last_name = CASE
+        WHEN position('.' IN split_part(email, '@', 1)) > 0
+          THEN NULLIF(initcap(split_part(split_part(email, '@', 1), '.', 2)), '')
+        WHEN position('_' IN split_part(email, '@', 1)) > 0
+          THEN NULLIF(initcap(split_part(split_part(email, '@', 1), '_', 2)), '')
+        WHEN position('-' IN split_part(email, '@', 1)) > 0
+          THEN NULLIF(initcap(split_part(split_part(email, '@', 1), '-', 2)), '')
+        ELSE
+          NULL
+      END
+    WHERE first_name IS NULL;
 
     -- Inactividad: marca de último uso del refresh token (ventana deslizante de sesión).
     ALTER TABLE refresh_tokens ADD COLUMN IF NOT EXISTS last_used_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
