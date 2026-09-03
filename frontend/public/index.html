@@ -3763,9 +3763,13 @@
                       <div class="row g-3">
                         <div class="col-md-4">
                           <label class="form-label">Certificación</label>
-                          <select id="activate-course-id" class="form-control">
-                            <option value="">Selecciona una certificación</option>
-                          </select>
+                          <div class="position-relative">
+                            <input type="text" id="activate-course-search" class="form-control" placeholder="Busca una certificación..." autocomplete="off">
+                            <div id="activate-course-dropdown" class="list-group position-absolute w-100 shadow-sm" style="z-index:1050; max-height:260px; overflow-y:auto; display:none; top:100%;"></div>
+                            <select id="activate-course-id" class="d-none">
+                              <option value="">Selecciona una certificación</option>
+                            </select>
+                          </div>
                         </div>
                         <div class="col-md-4">
                           <label class="form-label">Nombre</label>

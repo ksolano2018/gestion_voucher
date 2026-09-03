@@ -5628,28 +5628,91 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!pid){ return; }
 
     const select = el('activate-course-id');
+    const search = el('activate-course-search');
     if(!select){ return; }
 
     try {
       select.innerHTML = '<option value="">Cargando certificaciones...</option>';
+      if(search){ search.value = ''; search.placeholder = 'Cargando certificaciones...'; }
       const resp = await safeFetch(apiUrl + `/partner/${pid}/courses`, { headers: authHeaders() });
       const data = await resp.json();
 
       if(!resp.ok || !Array.isArray(data) || data.length === 0){
         select.innerHTML = '<option value="">No hay certificaciones disponibles</option>';
         _availableCourses = [];
+        if(search) search.placeholder = 'No hay certificaciones disponibles';
         return;
       }
 
       _availableCourses = data;
       select.innerHTML = '<option value="">Selecciona una certificación</option>' +
         data.map(c => `<option value="${escapeHTML(String(c.id))}">${escapeHTML(c.id + ' - ' + c.name)}</option>`).join('');
+      if(search) search.placeholder = 'Busca una certificación...';
       loadActivationMonthsSelect();
     } catch (e) {
       select.innerHTML = '<option value="">Error cargando certificaciones</option>';
       _availableCourses = [];
+      if(search) search.placeholder = 'Error cargando certificaciones';
     }
   }
+
+  // Autocompletado de certificación: input de texto + lista de sugerencias filtradas,
+  // manteniendo el <select> oculto como fuente de verdad para el resto del código
+  // (activate-btn/btn-do-activate ya leen .value / .options[selectedIndex].text de él).
+  const MAX_COURSE_SUGGESTIONS = 30;
+
+  function renderCourseSuggestions(term){
+    const dropdown = el('activate-course-dropdown');
+    if(!dropdown) return;
+    const q = (term || '').trim().toLowerCase();
+    const matches = (q ? _availableCourses.filter(c => c.name.toLowerCase().includes(q) || String(c.id).includes(q)) : _availableCourses)
+      .slice(0, MAX_COURSE_SUGGESTIONS);
+
+    if(!_availableCourses.length){ dropdown.style.display = 'none'; return; }
+
+    if(!matches.length){
+      dropdown.innerHTML = '<div class="list-group-item text-muted small">Sin resultados</div>';
+      dropdown.style.display = '';
+      return;
+    }
+
+    dropdown.innerHTML = matches.map(c =>
+      `<button type="button" class="list-group-item list-group-item-action py-1 px-2 small" data-course-id="${escapeHTML(String(c.id))}">${escapeHTML(c.id + ' - ' + c.name)}</button>`
+    ).join('') + (_availableCourses.length > matches.length
+      ? `<div class="list-group-item text-muted small">Sigue escribiendo para acotar (${_availableCourses.length} en total)…</div>`
+      : '');
+    dropdown.style.display = '';
+  }
+
+  function selectCourse(courseId){
+    const select = el('activate-course-id');
+    const search = el('activate-course-search');
+    const dropdown = el('activate-course-dropdown');
+    const course = _availableCourses.find(c => String(c.id) === String(courseId));
+    if(!select || !course) return;
+    select.value = String(course.id);
+    if(search) search.value = `${course.id} - ${course.name}`;
+    if(dropdown) dropdown.style.display = 'none';
+  }
+
+  on('activate-course-search', 'input', (e) => {
+    const select = el('activate-course-id');
+    if(select) select.value = '';
+    renderCourseSuggestions(e.target.value);
+  });
+  on('activate-course-search', 'focus', (e) => renderCourseSuggestions(e.target.value));
+
+  document.addEventListener('click', (e) => {
+    if(!e.target.closest('#activate-course-search') && !e.target.closest('#activate-course-dropdown')){
+      const dropdown = el('activate-course-dropdown');
+      if(dropdown) dropdown.style.display = 'none';
+    }
+  });
+
+  document.addEventListener('click', (e) => {
+    const item = e.target.closest('#activate-course-dropdown [data-course-id]');
+    if(item) selectCourse(item.dataset.courseId);
+  });
 
   let _maxActivationMonths = 12;
 
@@ -5754,6 +5817,7 @@ document.addEventListener('DOMContentLoaded', () => {
       bootstrap.Modal.getInstance(document.getElementById('confirmActivateModal')).hide();
       if(resp.ok){
         if(el('activate-course-id')) el('activate-course-id').value = '';
+        if(el('activate-course-search')) el('activate-course-search').value = '';
         if(el('activate-firstname')) el('activate-firstname').value = '';
         if(el('activate-lastname'))  el('activate-lastname').value = '';
         if(el('activate-email')) el('activate-email').value = '';
