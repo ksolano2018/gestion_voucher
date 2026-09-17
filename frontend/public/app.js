@@ -1724,6 +1724,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const MAX_CH_SUGGESTIONS = 30;
   const byCourseName = (a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
 
+  // NULL cuenta como español por defecto (mismo criterio que el backend). Certificaciones
+  // duplicadas por idioma (mismo nombre, `lang` distinto) son indistinguibles a simple vista
+  // sin esto — ver [[filtro-certificaciones-partner]].
+  function courseLangBadge(lang){
+    const code = (lang || 'es').toLowerCase();
+    const cls = code === 'en' ? 'bg-primary-subtle text-primary-emphasis border border-primary-subtle' : 'bg-light text-dark border';
+    return `<span class="badge ${cls} ms-1" style="font-size:.7em;">${escapeHTML(code.toUpperCase())}</span>`;
+  }
+
   function setCourseHierarchyMessage(msg, type){
     const node = el('ch-message');
     if(!node) return;
@@ -1750,10 +1759,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const isActive = course.active !== false;
       const status = isActive ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Suspendido</span>';
       const childrenSummary = children.length
-        ? children.map(c => `<div>${escapeHTML(c.name || '')} <span class="text-muted">#${escapeHTML(String(c.id))}</span></div>`).join('')
+        ? children.map(c => `<div>${escapeHTML(c.name || '')} <span class="text-muted">#${escapeHTML(String(c.id))}</span>${courseLangBadge(c.lang)}</div>`).join('')
         : '-';
       return `<tr data-id="${escapeHTML(String(course.id))}" style="cursor:pointer;">
-        <td>${escapeHTML(course.name || '')} <span class="text-muted">#${escapeHTML(String(course.id))}</span></td>
+        <td>${escapeHTML(course.name || '')} <span class="text-muted">#${escapeHTML(String(course.id))}</span>${courseLangBadge(course.lang)}</td>
         <td>${type}</td>
         <td>${status}</td>
         <td>${childrenSummary}</td>
@@ -1826,7 +1835,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function renderChModalContent(){
     const parent = _courseHierarchyCourses.find(c => c.id === _chModalParentId);
     const nameEl = el('ch-modal-parent-name');
-    if(nameEl) nameEl.textContent = parent ? `${parent.name} #${parent.id}` : '';
+    if(nameEl) nameEl.innerHTML = parent ? `${escapeHTML(parent.name)} <span class="text-muted">#${escapeHTML(String(parent.id))}</span>${courseLangBadge(parent.lang)}` : '';
 
     const isActive = parent ? parent.active !== false : true;
     const statusBadge = el('ch-modal-status-badge');
@@ -1847,7 +1856,7 @@ document.addEventListener('DOMContentLoaded', () => {
       currentEl.innerHTML = currentChildren.length
         ? currentChildren.map(c => `
           <div class="d-flex align-items-center justify-content-between border rounded px-2 py-1 mb-1 small">
-            <span>${escapeHTML(c.name || '')} <span class="text-muted">#${escapeHTML(String(c.id))}</span></span>
+            <span>${escapeHTML(c.name || '')} <span class="text-muted">#${escapeHTML(String(c.id))}</span>${courseLangBadge(c.lang)}</span>
             <button type="button" class="btn btn-outline-danger btn-sm ch-modal-unlink-btn" data-id="${escapeHTML(String(c.id))}">Desvincular</button>
           </div>`).join('')
         : '<div class="text-muted small">Todavía no hay cursos hijo vinculados.</div>';
@@ -1889,7 +1898,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
     dropdown.innerHTML = matches.map(c =>
-      `<button type="button" class="list-group-item list-group-item-action py-1 px-2 small" data-id="${escapeHTML(String(c.id))}">${escapeHTML(c.name || '')} <span class="text-muted">#${escapeHTML(String(c.id))}</span></button>`
+      `<button type="button" class="list-group-item list-group-item-action py-1 px-2 small" data-id="${escapeHTML(String(c.id))}">${escapeHTML(c.name || '')} <span class="text-muted">#${escapeHTML(String(c.id))}</span>${courseLangBadge(c.lang)}</button>`
     ).join('') + (options.length > matches.length
       ? `<div class="list-group-item text-muted small">Sigue escribiendo para acotar (${options.length} en total)…</div>`
       : '');
@@ -1928,8 +1937,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const hasOwnQuiz = suggestionMatch ? suggestionMatch.child_has_own_quiz : null;
 
     const rows = [
-      { label: 'Curso hijo:', value: child ? `${child.name} #${child.id}` : childId },
-      { label: 'Curso padre:', value: parent ? `${parent.name} #${parent.id}` : parentId },
+      { label: 'Curso hijo:', value: child ? `${child.name} #${child.id} (${(child.lang || 'es').toUpperCase()})` : childId },
+      { label: 'Curso padre:', value: parent ? `${parent.name} #${parent.id} (${(parent.lang || 'es').toUpperCase()})` : parentId },
       { label: 'Efecto:', value: 'El partner deja de verlo por separado; al activar el padre, también se matriculará en este curso.' }
     ];
     if (hasOwnQuiz === true) {
@@ -1951,8 +1960,8 @@ document.addEventListener('DOMContentLoaded', () => {
     showConfirmAction({
       title: 'Desvincular certificación', icon: '⚠️',
       rows: [
-        { label: 'Curso hijo:', value: child ? `${child.name} #${child.id}` : childId },
-        { label: 'Curso padre actual:', value: parent ? `${parent.name} #${parent.id}` : '—' },
+        { label: 'Curso hijo:', value: child ? `${child.name} #${child.id} (${(child.lang || 'es').toUpperCase()})` : childId },
+        { label: 'Curso padre actual:', value: parent ? `${parent.name} #${parent.id} (${(parent.lang || 'es').toUpperCase()})` : '—' },
         { label: 'Efecto:', value: 'Vuelve a aparecer como certificación independiente para el partner.' }
       ],
       confirmLabel: 'Desvincular', confirmClass: 'btn-danger',
