@@ -1177,17 +1177,35 @@ document.addEventListener('DOMContentLoaded', () => {
         .map(profile => `<option value="${profile.id}">${escapeHTML(profile.name)}</option>`).join('');
       specialSelect.innerHTML = '<option value="">Sin perfil especial</option>' + assignableOpts;
     }
-
-    // El editor de gestión sí lista todos (activos e inactivos) para poder
-    // reactivar un perfil suspendido.
-    const editorSelect = el('pricing-profile-editor-select');
-    if(editorSelect){
-      const editorOpts = specials.map(p =>
-        `<option value="${p.id}">${escapeHTML(p.name)}${p.active === false ? ' (suspendido)' : ''}</option>`
-      ).join('');
-      editorSelect.innerHTML = '<option value="">+ Crear nuevo perfil especial</option>' + editorOpts;
-    }
   }
+
+  // Tabla de "Perfiles Especiales": clic en una fila abre el popup para editar
+  // (crear/suspender viven en el mismo popup, ver openPricingProfileModal).
+  function renderPricingSpecialProfilesTable(){
+    const tbody = el('pricing-special-profiles-tbody');
+    if(!tbody) return;
+    const specials = (pricingState.profiles || []).filter(p => p.profile_type === 'SPECIAL');
+    if(!specials.length){
+      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted p-3">No hay perfiles especiales todavía</td></tr>';
+      return;
+    }
+    tbody.innerHTML = specials.map(profile => {
+      const isActive = profile.active !== false;
+      const status = isActive ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Suspendido</span>';
+      const rulesCount = Array.isArray(profile.rules) ? profile.rules.length : 0;
+      return `<tr data-id="${escapeHTML(String(profile.id))}" style="cursor:pointer;">
+        <td>${escapeHTML(profile.name || '')}</td>
+        <td class="text-muted">${escapeHTML(profile.description || '—')}</td>
+        <td>${rulesCount}</td>
+        <td>${status}</td>
+      </tr>`;
+    }).join('');
+  }
+
+  document.getElementById('pricing-special-profiles-tbody')?.addEventListener('click', (e) => {
+    const row = e.target.closest('tr[data-id]');
+    if(row) openPricingProfileModal(parseInt(row.dataset.id, 10));
+  });
 
   function renderPricingRulesEditor(rules){
     const tbody = el('pricing-rules-body');
@@ -1218,44 +1236,58 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
   }
 
-  // Sin profileId → modo "crear": formulario vacío, sin badge ni botón de suspender.
-  // Con profileId → modo "editar": precarga nombre/descripción/reglas + estado.
-  function loadPricingProfileIntoEditor(profileId){
+  // Estado del popup de perfil especial: null = modo "crear", id = modo "editar".
+  let _pricingModalProfileId = null;
+
+  // Sin profileId → popup en modo "crear": formulario vacío, sin fila de estado.
+  // Con profileId → modo "editar": precarga nombre/descripción/reglas + estado
+  // (mismo patrón que el popup de Jerarquía de Certificaciones).
+  function openPricingProfileModal(profileId){
+    _pricingModalProfileId = profileId || null;
+    clearInlineAlert('pricing-profile-modal-message');
+
     const nameEl = el('pricing-profile-name');
     const descEl = el('pricing-profile-description');
     const saveBtn = el('save-pricing-profile');
-    const statusBadge = el('pricing-profile-status-badge');
+    const titleEl = el('pricing-profile-modal-title');
+    const statusRow = el('pricing-profile-modal-status-row');
+    const statusBadge = el('pricing-profile-modal-status-badge');
     const toggleBtn = el('toggle-pricing-profile-status');
 
     if(!profileId){
+      if(titleEl) titleEl.textContent = 'Crear perfil especial';
       if(nameEl) nameEl.value = '';
       if(descEl) descEl.value = '';
       renderPricingRulesEditor([]);
       if(saveBtn) saveBtn.textContent = 'Crear perfil especial';
-      if(statusBadge) statusBadge.style.display = 'none';
-      if(toggleBtn) toggleBtn.style.display = 'none';
-      return;
+      // .d-flex de Bootstrap es !important y pisa un style="display:none" inline,
+      // así que la visibilidad se maneja intercambiando d-none/d-flex, no con .style.
+      if(statusRow) statusRow.classList.replace('d-flex', 'd-none');
+    } else {
+      const profile = pricingState.profiles.find(item => String(item.id) === String(profileId));
+      if(!profile) return;
+      if(titleEl) titleEl.textContent = `Editar perfil especial — ${profile.name || ''}`;
+      if(nameEl) nameEl.value = profile.name        || '';
+      if(descEl) descEl.value = profile.description || '';
+      renderPricingRulesEditor(profile.rules || []);
+      if(saveBtn) saveBtn.textContent = 'Guardar cambios';
+
+      const isActive = profile.active !== false;
+      if(statusRow) statusRow.classList.replace('d-none', 'd-flex');
+      if(statusBadge){
+        statusBadge.textContent = isActive ? 'Activo' : 'Suspendido';
+        statusBadge.className = `badge ${isActive ? 'bg-success' : 'bg-secondary'}`;
+      }
+      if(toggleBtn){
+        toggleBtn.textContent = isActive ? 'Suspender' : 'Reactivar';
+        toggleBtn.className = `btn btn-sm ${isActive ? 'btn-outline-warning' : 'btn-outline-success'}`;
+      }
     }
 
-    const profile = pricingState.profiles.find(item => String(item.id) === String(profileId));
-    if(!profile) return;
-    if(nameEl) nameEl.value = profile.name        || '';
-    if(descEl) descEl.value = profile.description || '';
-    renderPricingRulesEditor(profile.rules || []);
-
-    if(saveBtn) saveBtn.textContent = 'Guardar cambios';
-    const isActive = profile.active !== false;
-    if(statusBadge){
-      statusBadge.textContent = isActive ? 'Activo' : 'Suspendido';
-      statusBadge.className = `badge ${isActive ? 'bg-success' : 'bg-secondary'}`;
-      statusBadge.style.display = '';
-    }
-    if(toggleBtn){
-      toggleBtn.textContent = isActive ? 'Suspender' : 'Reactivar';
-      toggleBtn.className = `btn ms-auto ${isActive ? 'btn-outline-warning' : 'btn-outline-success'}`;
-      toggleBtn.style.display = '';
-    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('pricingProfileModal')).show();
   }
+
+  on('open-create-pricing-profile-btn', 'click', () => openPricingProfileModal(null));
 
   function renderBasePricingRulesEditor(rules){
     const tbody = el('pricing-base-rules-body');
@@ -1339,6 +1371,7 @@ document.addEventListener('DOMContentLoaded', () => {
       pricingState.partners = partners;
       populatePricingProfileSelectors();
       populatePricingPartnerSelect();
+      renderPricingSpecialProfilesTable();
 
       const categories  = pricingState.profiles.filter(p => p.profile_type === 'CATEGORY');
 
@@ -1347,12 +1380,13 @@ document.addEventListener('DOMContentLoaded', () => {
         loadBasePricingProfileIntoEditor(categories[0].id);
       }
 
-      // Re-selecciona el perfil que ya estaba abierto (ej. tras guardar); si no
-      // había ninguno, el formulario queda en modo "crear" por defecto.
-      const selectedProfile = (el('pricing-profile-editor-select') || {}).value;
-      loadPricingProfileIntoEditor(selectedProfile || null);
+      // Si el popup de perfil especial está abierto (ej. justo tras guardar),
+      // refresca su contenido con los datos ya recargados.
+      if(_pricingModalProfileId){
+        openPricingProfileModal(_pricingModalProfileId);
+      }
     } catch (e) {
-      showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger');
+      showInlineAlert('pricing-profiles-list-message', `Error: ${escapeHTML(e.message)}`, 'danger');
     }
   }
 
@@ -1401,11 +1435,6 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch(e) { showInlineAlert('pricing-base-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
   });
 
-  on('pricing-profile-editor-select', 'change', (event) => {
-    clearInlineAlert('pricing-profile-message');
-    loadPricingProfileIntoEditor(event.target.value);
-  });
-
   on('add-pricing-rule-row', 'click', () => {
     const tbody = el('pricing-rules-body');
     if(!tbody) return;
@@ -1440,15 +1469,15 @@ document.addEventListener('DOMContentLoaded', () => {
     return data;
   }
 
-  // Un mismo botón sirve para crear (sin perfil seleccionado) o guardar
-  // cambios (perfil existente) — el modo lo decide `loadPricingProfileIntoEditor`.
+  // Un mismo botón sirve para crear (popup sin perfil cargado) o guardar
+  // cambios (perfil existente) — el modo lo decide `openPricingProfileModal`.
   on('save-pricing-profile', 'click', async () => {
-    const profileId   = (el('pricing-profile-editor-select') || {}).value;
-    const profileName = (el('pricing-profile-name') || {}).value || '';
-    const rules        = getPricingRulesFromEditor();
+    const profileId    = _pricingModalProfileId;
+    const profileName  = (el('pricing-profile-name') || {}).value || '';
+    const rules         = getPricingRulesFromEditor();
 
     if(!profileName.trim()){
-      showInlineAlert('pricing-profile-message', 'El nombre del perfil es obligatorio.', 'danger');
+      showInlineAlert('pricing-profile-modal-message', 'El nombre del perfil es obligatorio.', 'danger');
       return;
     }
 
@@ -1469,14 +1498,11 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         showToast('Perfil especial creado correctamente', 'success');
-        showInlineAlert('pricing-profile-message', 'Perfil especial creado correctamente.', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('pricingProfileModal'))?.hide();
+        _pricingModalProfileId = null;
         await loadAdminPricingData();
-        if(el('pricing-profile-editor-select')) {
-          el('pricing-profile-editor-select').value = data.id;
-          loadPricingProfileIntoEditor(data.id);
-        }
       } catch (e) {
-        showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger');
+        showInlineAlert('pricing-profile-modal-message', `Error: ${escapeHTML(e.message)}`, 'danger');
       }
       return;
     }
@@ -1494,16 +1520,16 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           await savePricingProfile(profileId);
           showToast('Reglas de pricing guardadas correctamente', 'success');
-          showInlineAlert('pricing-profile-message', 'Reglas guardadas correctamente.', 'success');
+          bootstrap.Modal.getInstance(document.getElementById('pricingProfileModal'))?.hide();
+          _pricingModalProfileId = null;
           await loadAdminPricingData();
-          if(el('pricing-profile-editor-select')) { el('pricing-profile-editor-select').value = profileId; loadPricingProfileIntoEditor(profileId); }
-        } catch (e) { showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
+        } catch (e) { showInlineAlert('pricing-profile-modal-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
       }
     });
   });
 
   on('toggle-pricing-profile-status', 'click', () => {
-    const profileId = (el('pricing-profile-editor-select') || {}).value;
+    const profileId = _pricingModalProfileId;
     const profile = pricingState.profiles.find(item => String(item.id) === String(profileId));
     if(!profile) return;
     const willActivate = profile.active === false;
@@ -1526,11 +1552,16 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           await savePricingProfile(profileId, { overrideActive: willActivate });
           showToast(willActivate ? 'Perfil reactivado correctamente' : 'Perfil suspendido correctamente', 'success');
+          // El popup se queda abierto con el estado ya actualizado (mismo
+          // patrón que el popup de Jerarquía de Certificaciones).
           await loadAdminPricingData();
-          if(el('pricing-profile-editor-select')) { el('pricing-profile-editor-select').value = profileId; loadPricingProfileIntoEditor(profileId); }
-        } catch (e) { showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
+        } catch (e) { showInlineAlert('pricing-profile-modal-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
       }
     });
+  });
+
+  document.getElementById('pricingProfileModal')?.addEventListener('hidden.bs.modal', () => {
+    _pricingModalProfileId = null;
   });
 
   on('load-partner-pricing-config', 'click', () => loadPartnerPricingConfig());
