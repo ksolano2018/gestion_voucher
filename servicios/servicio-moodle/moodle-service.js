@@ -296,16 +296,16 @@ function generateMoodlePassword() {
 
 /**
  * Fetch all courses from Moodle.
- * Returns { courses: [{ id, shortname, fullname, summary, visible }] } or { error }.
+ * Returns { courses: [{ id, shortname, fullname, summary, visible, lang }] } or { error }.
  * Uses Moodle WS: core_course_get_courses (empty options = all courses, skips site course id=1)
  */
 async function getCourses() {
   if (MOODLE_MOCK) {
     return {
       courses: [
-        { id: 2, shortname: 'JAVA-01', fullname: 'Certificación Java Developer', summary: 'Curso de Java', visible: 1 },
-        { id: 3, shortname: 'AWS-01',  fullname: 'Certificación AWS Solutions Architect', summary: '', visible: 1 },
-        { id: 4, shortname: 'PMP-01',  fullname: 'Certificación PMP Project Management', summary: '', visible: 1 }
+        { id: 2, shortname: 'JAVA-01', fullname: 'Certificación Java Developer', summary: 'Curso de Java', visible: 1, lang: 'es' },
+        { id: 3, shortname: 'AWS-01',  fullname: 'Certificación AWS Solutions Architect', summary: '', visible: 1, lang: 'es' },
+        { id: 4, shortname: 'PMP-01',  fullname: 'Certificación PMP Project Management', summary: '', visible: 1, lang: 'es' }
       ]
     };
   }
@@ -321,7 +321,10 @@ async function getCourses() {
         shortname: c.shortname,
         fullname:  c.fullname,
         summary:   c.summary ? c.summary.replace(/<[^>]*>/g, '').trim() : '',
-        visible:   c.visible
+        visible:   c.visible,
+        // Idioma del curso ('es'/'en'/...) — algunas certificaciones existen
+        // duplicadas por idioma (mismo nombre, `lang` distinto); ver `courses.lang`.
+        lang:      c.lang || null
       }));
     return { courses };
   } catch (err) {

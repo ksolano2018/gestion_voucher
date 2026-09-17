@@ -8,11 +8,19 @@ const { authenticate, requireRole, requirePermission } = require('../../lib/auth
 const { apiLimiter } = require('../../lib/rateLimit');
 const { handleValidationErrors } = require('../../lib/validation');
 const { logSystemEvent } = require('../../lib/audit');
+const moodleService = require('../../integrations/moodle');
 
 // Admin: courses CRUD
 router.get('/admin/courses', authenticate, requirePermission('courses', 'view'), apiLimiter, async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name, COALESCE(active, TRUE) AS active, created_at, updated_at FROM courses ORDER BY name ASC');
+    const result = await pool.query(
+      `SELECT c.id, c.name, COALESCE(c.active, TRUE) AS active, c.created_at, c.updated_at,
+              c.parent_course_id, p.name AS parent_name,
+              (SELECT COUNT(*) FROM courses ch WHERE ch.parent_course_id = c.id)::int AS children_count
+       FROM courses c
+       LEFT JOIN courses p ON p.id = c.parent_course_id
+       ORDER BY c.name ASC`
+    );
     res.json(result.rows);
   } catch (e) {
     res.status(500).json({ error: 'Error al obtener cursos' });
@@ -138,7 +146,7 @@ router.delete('/admin/courses/:id',
     } catch (e) {
       if (e && e.code === '23503') {
         await logSystemEvent('COURSE_DELETE_ERROR', 'COURSE_MANAGEMENT', req.user.sub, null, null, { course_id: courseId }, 'FAILED', 'Curso con dependencias', req);
-        return res.status(409).json({ error: 'No se puede eliminar: el curso tiene activaciones o vouchers asociados' });
+        return res.status(409).json({ error: 'No se puede eliminar: el curso tiene activaciones, vouchers o cursos hijos vinculados' });
       }
       await logSystemEvent('COURSE_DELETE_ERROR', 'COURSE_MANAGEMENT', req.user.sub, null, null, { course_id: courseId }, 'FAILED', e.message, req);
       res.status(500).json({ error: 'Error al eliminar curso' });
@@ -146,7 +154,161 @@ router.delete('/admin/courses/:id',
   }
 );
 
-// Partner: cursos activos disponibles
+// Admin: vincular/desvincular un curso como hijo (Content/Simulator) de un padre.
+// Jerarquía de un solo nivel: un hijo no puede a su vez ser padre, ni un padre puede
+// convertirse en hijo de otro. body: { parent_course_id: number|null }
+router.post('/admin/courses/:id/parent',
+  authenticate,
+  requirePermission('courses', 'edit'),
+  apiLimiter,
+  param('id').isInt({ min: 1 }).withMessage('ID de curso inválido'),
+  body('parent_course_id').optional({ nullable: true }).isInt({ min: 1 }).withMessage('parent_course_id inválido'),
+  handleValidationErrors,
+  async (req, res) => {
+    const childId = parseInt(req.params.id, 10);
+    const parentId = req.body.parent_course_id != null ? parseInt(req.body.parent_course_id, 10) : null;
+
+    try {
+      if (parentId === null) {
+        const updated = await pool.query(
+          'UPDATE courses SET parent_course_id=NULL, updated_at=NOW() WHERE id=$1 RETURNING id, name',
+          [childId]
+        );
+        if (updated.rowCount === 0) {
+          return res.status(404).json({ error: 'Curso no encontrado' });
+        }
+        await logSystemEvent('COURSE_HIERARCHY_UNLINKED', 'COURSE_MANAGEMENT', req.user.sub, null, null, {
+          course_id: childId
+        }, 'SUCCESS', null, req);
+        return res.json({ ok: true, id: childId, parent_course_id: null });
+      }
+
+      if (parentId === childId) {
+        return res.status(400).json({ error: 'Un curso no puede ser su propio padre' });
+      }
+
+      const [childRow, parentRow, childHasChildren] = await Promise.all([
+        pool.query('SELECT id FROM courses WHERE id=$1', [childId]),
+        pool.query('SELECT id, parent_course_id FROM courses WHERE id=$1', [parentId]),
+        pool.query('SELECT COUNT(*) FROM courses WHERE parent_course_id=$1', [childId])
+      ]);
+
+      if (childRow.rowCount === 0) {
+        return res.status(404).json({ error: 'Curso a vincular no encontrado' });
+      }
+      if (parentRow.rowCount === 0) {
+        return res.status(404).json({ error: 'Curso padre no encontrado' });
+      }
+      if (parentRow.rows[0].parent_course_id) {
+        return res.status(409).json({ error: 'El curso elegido como padre es a su vez hijo de otro curso (jerarquía de un solo nivel)' });
+      }
+      if (parseInt(childHasChildren.rows[0].count, 10) > 0) {
+        return res.status(409).json({ error: 'Este curso ya es padre de otros cursos y no puede convertirse en hijo' });
+      }
+
+      const updated = await pool.query(
+        'UPDATE courses SET parent_course_id=$1, updated_at=NOW() WHERE id=$2 RETURNING id, name, parent_course_id',
+        [parentId, childId]
+      );
+      await logSystemEvent('COURSE_HIERARCHY_LINKED', 'COURSE_MANAGEMENT', req.user.sub, null, null, {
+        course_id: childId,
+        parent_course_id: parentId
+      }, 'SUCCESS', null, req);
+      res.json({ ok: true, ...updated.rows[0] });
+    } catch (e) {
+      await logSystemEvent('COURSE_HIERARCHY_ERROR', 'COURSE_MANAGEMENT', req.user.sub, null, null, {
+        course_id: childId, parent_course_id: parentId
+      }, 'FAILED', e.message, req);
+      res.status(500).json({ error: 'Error al actualizar la jerarquía del curso' });
+    }
+  }
+);
+
+// Admin: sugerencias automáticas de jerarquía por patrón de nombre (" - Content" / " Simulator").
+// Solo lectura — nunca vincula automáticamente, el admin confirma cada par vía POST .../parent.
+router.get('/admin/courses/hierarchy-suggestions',
+  authenticate,
+  requirePermission('courses', 'view'),
+  apiLimiter,
+  async (req, res) => {
+    try {
+      // Guion opcional en todos los sufijos: en la data real hay variantes con y sin
+      // guion ("X Simulator" y "X - Simulator" conviven), y con solo \s+ delante de
+      // "simulator" el guion queda colgado en el nombre base y nunca calza con el padre.
+      // También conviven "Simulator" (inglés) y "Simulador" (español) para el mismo tipo de curso.
+      const SUFFIXES = [/\s*-?\s*content\s*$/i, /\s*-?\s*simulator\s*$/i, /\s*-?\s*simulador\s*$/i];
+      // Pool de "sin padre": incluye cursos que YA son padre de otros (siguen siendo
+      // destino válido de más hijos, ej. tras vincular Content todavía debe poder
+      // sugerirse Simulator para el mismo padre) — el filtro de "no puede ser hijo
+      // si ya es padre" se aplica solo del lado del candidato a HIJO (has_children).
+      const rows = (await pool.query(
+        `SELECT c.id, c.name, c.moodle_course_id,
+                EXISTS (SELECT 1 FROM courses ch WHERE ch.parent_course_id = c.id) AS has_children
+         FROM courses c
+         WHERE COALESCE(c.active, TRUE) = TRUE
+           AND c.parent_course_id IS NULL
+         ORDER BY c.name ASC`
+      )).rows;
+
+      // Agrupa por nombre (no solo el primero): hay certificaciones con nombre
+      // duplicado en Moodle (mismo nombre, distinto id) — si no se agrupan todas,
+      // una de las dos quedaría sin sugerencias aunque el patrón sí calce.
+      const byLowerName = new Map();
+      for (const r of rows) {
+        const key = r.name.trim().toLowerCase();
+        if (!byLowerName.has(key)) byLowerName.set(key, []);
+        byLowerName.get(key).push(r);
+      }
+      const suggestions = [];
+      for (const course of rows) {
+        if (course.has_children) continue; // ya es padre de otros — no puede sugerirse como hijo
+        for (const suffix of SUFFIXES) {
+          if (suffix.test(course.name)) {
+            const baseName = course.name.replace(suffix, '').trim().toLowerCase();
+            const parentCandidates = byLowerName.get(baseName) || [];
+            for (const parentCandidate of parentCandidates) {
+              if (parentCandidate.id !== course.id) {
+                suggestions.push({
+                  parent_candidate: { id: parentCandidate.id, name: parentCandidate.name },
+                  child_candidate: { id: course.id, name: course.name, moodle_course_id: course.moodle_course_id }
+                });
+              }
+            }
+            break;
+          }
+        }
+      }
+
+      // Verificación en Moodle: el nombre NO garantiza que un "hijo" sea un
+      // satélite real — hay cursos que el cliente unificó (les agregó su propio
+      // examen) sin cambiarles el nombre (confirmado con data real de PD, ej.
+      // "Agile Marketing Certified Associate - Content" ya trae 4 quizzes propios).
+      // Si el candidato a hijo ya tiene su propio quiz en Moodle, se marca como
+      // advertencia — no se descarta la sugerencia, el admin decide.
+      const uniqueChildMoodleIds = [...new Set(
+        suggestions.map(s => s.child_candidate.moodle_course_id).filter(Boolean)
+      )];
+      const ownQuizByMoodleId = {};
+      await Promise.all(uniqueChildMoodleIds.map(async (mcid) => {
+        const r = await moodleService.getCourseQuizzes(mcid);
+        // null = no se pudo verificar (Moodle no disponible / función no whitelisteada
+        // en este ambiente) — se distingue de `false` (verificado, sin quiz propio).
+        ownQuizByMoodleId[mcid] = r.error ? null : (Array.isArray(r.quizzes) && r.quizzes.length > 0);
+      }));
+
+      for (const s of suggestions) {
+        const mcid = s.child_candidate.moodle_course_id;
+        s.child_has_own_quiz = mcid ? (ownQuizByMoodleId[mcid] ?? null) : null;
+      }
+
+      res.json({ suggestions });
+    } catch (e) {
+      res.status(500).json({ error: 'Error al calcular sugerencias de jerarquía' });
+    }
+  }
+);
+
+// Partner: cursos activos disponibles (solo padres/standalone, nunca hijos Content/Simulator)
 router.get('/partner/:id/courses', authenticate, apiLimiter, async (req, res) => {
   const pid = req.params.id;
   if (req.user && req.user.role !== 'admin') {
@@ -156,7 +318,13 @@ router.get('/partner/:id/courses', authenticate, apiLimiter, async (req, res) =>
   }
 
   try {
-    const courses = await pool.query('SELECT id, name FROM courses WHERE COALESCE(active, TRUE)=TRUE ORDER BY name ASC');
+    // Solo español: varias certificaciones existen duplicadas por idioma (mismo
+    // nombre, `lang` distinto en Moodle) — el partner no debe ver ni activar las
+    // versiones en inglés. `lang IS NULL` (cursos sembrados/no sincronizados aún)
+    // cuenta como español por defecto, nunca se oculta por falta de este dato.
+    const courses = await pool.query(
+      "SELECT id, name FROM courses WHERE COALESCE(active, TRUE)=TRUE AND parent_course_id IS NULL AND (lang IS NULL OR lang='es') ORDER BY name ASC"
+    );
     res.json(courses.rows);
   } catch (e) {
     res.status(400).json({ error: 'Error al obtener cursos' });
