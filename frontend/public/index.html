@@ -2325,9 +2325,6 @@
 
               <!-- ── CONFIGURACIÓN ── -->
               <div class="admin-side-group">Configuración</div>
-              <div class="admin-side-item admin-menu-item" data-target="admin-courses">
-                <span class="side-icon">📚</span> Certificaciones
-              </div>
               <div class="admin-side-item admin-menu-item" data-target="admin-course-hierarchy">
                 <span class="side-icon">🔗</span> Jerarquía de Certificaciones
               </div>
@@ -2779,17 +2776,16 @@
                   </div>
                 </div>
 
-                <div id="admin-courses" class="content-section glass-panel p-4">
+                <div id="admin-course-hierarchy" class="content-section glass-panel p-4">
                   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
                     <div class="d-flex align-items-center gap-2">
-                      <span style="font-size:2rem;">📚</span>
+                      <span style="font-size:2rem;">🔗</span>
                       <div>
-                        <h4 class="mb-0">Gestión de Certificaciones</h4>
-                        <div class="small-muted">Lista de Certificaciones disponibles</div>
+                        <h4 class="mb-0">Jerarquía de Certificaciones</h4>
                       </div>
                     </div>
                     <div class="d-flex gap-2">
-                      <button id="admin-courses-refresh" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
+                      <button id="ch-refresh-btn" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
                       <button id="admin-moodle-sync-courses-btn" class="btn btn-outline-success btn-sm">🎓 Sincronizar desde Moodle</button>
                     </div>
                   </div>
@@ -2808,43 +2804,6 @@
                         <button id="admin-moodle-do-sync-btn" class="btn btn-success btn-sm">⬇ Importar al sistema</button>
                       </div>
                       <div id="admin-moodle-preview-list" class="mt-3"></div>
-                    </div>
-                  </div>
-
-                  <div id="admin-courses-message"></div>
-
-                  <div class="card shadow-sm">
-                    <div class="card-body p-0">
-                      <div class="table-responsive">
-                        <table class="table table-hover mb-0 align-middle">
-                          <thead>
-                            <tr>
-                              <th>ID</th>
-                              <th>Certificación</th>
-                              <th>Estado</th>
-                              <th>Creado</th>
-                              <th>Actualizado</th>
-                            </tr>
-                          </thead>
-                          <tbody id="admin-courses-tbody">
-                            <tr><td colspan="5" class="text-center text-muted p-3">Haz clic en Actualizar para cargar certificaciones</td></tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div id="admin-course-hierarchy" class="content-section glass-panel p-4">
-                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
-                    <div class="d-flex align-items-center gap-2">
-                      <span style="font-size:2rem;">🔗</span>
-                      <div>
-                        <h4 class="mb-0">Jerarquía de Certificaciones</h4>
-                      </div>
-                    </div>
-                    <div class="d-flex gap-2">
-                      <button id="ch-refresh-btn" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
                     </div>
                   </div>
 
@@ -4107,25 +4066,6 @@
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
             <button type="button" class="btn btn-primary" id="btn-do-save-perms">💾 Guardar</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal Confirmar CRUD de cursos -->
-    <div class="modal fade" id="confirmCourseCrudModal" tabindex="-1" aria-hidden="true">
-      <div class="modal-dialog modal-sm">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h5 class="modal-title">✅ Confirmar cambio</h5>
-            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-          </div>
-          <div class="modal-body">
-            <p id="confirm-course-crud-text" class="mb-0">¿Deseas continuar?</p>
-          </div>
-          <div class="modal-footer">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-            <button type="button" class="btn btn-primary" id="btn-confirm-course-crud">Confirmar</button>
           </div>
         </div>
       </div>
