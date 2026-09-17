@@ -14,7 +14,7 @@ const moodleService = require('../../integrations/moodle');
 router.get('/admin/courses', authenticate, requirePermission('courses', 'view'), apiLimiter, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT c.id, c.name, COALESCE(c.active, TRUE) AS active, c.created_at, c.updated_at,
+      `SELECT c.id, c.name, c.lang, COALESCE(c.active, TRUE) AS active, c.created_at, c.updated_at,
               c.parent_course_id, p.name AS parent_name,
               (SELECT COUNT(*) FROM courses ch WHERE ch.parent_course_id = c.id)::int AS children_count
        FROM courses c
