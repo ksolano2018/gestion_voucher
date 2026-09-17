@@ -847,9 +847,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if(target === 'admin-pricing'){
         loadAdminPricingData();
       }
-      if(target === 'admin-courses'){
-        loadAdminCourses();
-      }
       if(target === 'admin-course-hierarchy'){
         loadCourseHierarchy();
       }
@@ -1508,115 +1505,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  // ---- Admin Courses CRUD ----
-  let _adminCourses = [];
-  let _pendingCourseCrudAction = null;
-
-  function resetAdminCourseForm(){
-    if(el('admin-course-edit-id')) el('admin-course-edit-id').value = '';
-    if(el('admin-course-name')) el('admin-course-name').value = '';
-    if(el('admin-course-cancel')) el('admin-course-cancel').style.display = 'none';
-    if(el('admin-course-save')) el('admin-course-save').innerHTML = '💾 Guardar';
-  }
-
-  function setAdminCoursesMessage(msg, type){
-    const node = el('admin-courses-message');
-    if(!node) return;
-    if(!msg){
-      node.innerHTML = '';
-      return;
-    }
-    const cls = type === 'success' ? 'alert-success' : (type === 'danger' ? 'alert-danger' : 'alert-info');
-    node.innerHTML = `<div class="alert ${cls} mb-3">${sanitizeHTML(msg)}</div>`;
-  }
-
-  function renderAdminCoursesTable(){
-    const tbody = el('admin-courses-tbody');
-    if(!tbody) return;
-
-    if(!_adminCourses.length){
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted p-3">No hay certificaciones registradas</td></tr>';
-      return;
-    }
-
-    tbody.innerHTML = _adminCourses.map(course => {
-      const createdAt  = course.created_at  ? new Date(course.created_at).toLocaleDateString('es-ES')  : '-';
-      const updatedAt  = course.updated_at  ? new Date(course.updated_at).toLocaleDateString('es-ES')  : '-';
-      const isActive = course.active !== false;
-      const statusBadge = isActive
-        ? '<span class="badge bg-success">Habilitado</span>'
-        : '<span class="badge bg-secondary">Deshabilitado</span>';
-      return `<tr>
-        <td>${escapeHTML(String(course.id))}</td>
-        <td>${escapeHTML(course.name || '')}</td>
-        <td>${statusBadge}</td>
-        <td>${escapeHTML(createdAt)}</td>
-        <td>${escapeHTML(updatedAt)}</td>
-      </tr>`;
-    }).join('');
-
-    tbody.querySelectorAll('.admin-course-edit-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const course = _adminCourses.find(c => String(c.id) === String(btn.dataset.id));
-        if(!course) return;
-        if(el('admin-course-edit-id')) el('admin-course-edit-id').value = String(course.id);
-        if(el('admin-course-name')) el('admin-course-name').value = course.name || '';
-        if(el('admin-course-cancel')) el('admin-course-cancel').style.display = '';
-        if(el('admin-course-save')) el('admin-course-save').innerHTML = '💾 Guardar cambios';
-        setAdminCoursesMessage('Modo edición activado. Modifica el nombre y guarda.', 'info');
-      });
-    });
-
-    tbody.querySelectorAll('.admin-course-delete-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const course = _adminCourses.find(c => String(c.id) === String(btn.dataset.id));
-        if(!course) return;
-        _pendingCourseCrudAction = { type: 'delete', id: course.id, name: course.name };
-        if(el('confirm-course-crud-text')){
-          el('confirm-course-crud-text').innerHTML = `¿Confirmas eliminar la certificación <strong>${escapeHTML(course.name || '')}</strong>?`;
-        }
-        if(el('btn-confirm-course-crud')) el('btn-confirm-course-crud').className = 'btn btn-danger';
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmCourseCrudModal')).show();
-      });
-    });
-
-    tbody.querySelectorAll('.admin-course-toggle-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const course = _adminCourses.find(c => String(c.id) === String(btn.dataset.id));
-        if(!course) return;
-        const nextActive = course.active === false;
-        _pendingCourseCrudAction = { type: 'toggle', id: course.id, active: nextActive, name: course.name };
-        if(el('confirm-course-crud-text')){
-          el('confirm-course-crud-text').innerHTML = nextActive
-            ? `¿Confirmas habilitar la certificación <strong>${escapeHTML(course.name || '')}</strong>?`
-            : `¿Confirmas deshabilitar la certificación <strong>${escapeHTML(course.name || '')}</strong>?`;
-        }
-        if(el('btn-confirm-course-crud')) el('btn-confirm-course-crud').className = 'btn btn-primary';
-        bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmCourseCrudModal')).show();
-      });
-    });
-  }
-
-  async function loadAdminCourses(){
-    const btn = el('admin-courses-refresh');
-    try {
-      if(btn) setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl + '/admin/courses', { headers: authHeaders() });
-      const data = await safeJson(resp);
-      if(!resp.ok) throw new Error(data.error || 'No se pudieron cargar certificaciones');
-      _adminCourses = Array.isArray(data) ? data : [];
-      renderAdminCoursesTable();
-      setAdminCoursesMessage('', 'info');
-    } catch (e) {
-      setAdminCoursesMessage('Error al cargar certificaciones: ' + escapeHTML(e.message), 'danger');
-    } finally {
-      if(btn) setButtonLoading(btn, false);
-    }
-  }
-
-  on('admin-courses-refresh', 'click', () => loadAdminCourses());
-
-  // ── Sincronización desde Moodle ──────────────────────────────────────────────
+  // ── Sincronización desde Moodle (vive en Jerarquía de Certificaciones) ──────
   on('admin-moodle-sync-courses-btn', 'click', async () => {
     const panel = el('admin-moodle-sync-panel');
     const badge = el('admin-moodle-connection-badge');
@@ -1708,7 +1597,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 ${deactHtml}
               </div>`;
           }
-          loadAdminCourses();
+          refreshHierarchyData();
         } catch(e) {
           showToast(`❌ ${e.message}`, 'danger');
         }
@@ -2037,98 +1926,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   on('ch-refresh-btn', 'click', () => loadCourseHierarchy());
-
-  on('admin-course-cancel', 'click', () => {
-    resetAdminCourseForm();
-    setAdminCoursesMessage('', 'info');
-  });
-
-  on('admin-course-save', 'click', () => {
-    const id = ((el('admin-course-edit-id') || {}).value || '').trim();
-    const name = ((el('admin-course-name') || {}).value || '').trim();
-
-    if(!name){
-      setAdminCoursesMessage('Debes ingresar el nombre de la certificación.', 'danger');
-      return;
-    }
-
-    if(id){
-      _pendingCourseCrudAction = { type: 'update', id: parseInt(id, 10), name };
-      if(el('confirm-course-crud-text')){
-        el('confirm-course-crud-text').innerHTML = `¿Confirmas actualizar la certificación a <strong>${escapeHTML(name)}</strong>?`;
-      }
-    } else {
-      _pendingCourseCrudAction = { type: 'create', name };
-      if(el('confirm-course-crud-text')){
-        el('confirm-course-crud-text').innerHTML = `¿Confirmas crear la certificación <strong>${escapeHTML(name)}</strong>?`;
-      }
-    }
-
-    if(el('btn-confirm-course-crud')) el('btn-confirm-course-crud').className = 'btn btn-primary';
-    bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmCourseCrudModal')).show();
-  });
-
-  on('btn-confirm-course-crud', 'click', async () => {
-    const btn = el('btn-confirm-course-crud');
-    if(!_pendingCourseCrudAction) return;
-
-    try {
-      setButtonLoading(btn, true);
-      const base = apiUrl + '/admin/courses';
-      let resp = null;
-
-      if(_pendingCourseCrudAction.type === 'create'){
-        resp = await safeFetch(base, {
-          method: 'POST',
-          headers: authHeaders(),
-          body: JSON.stringify({ name: _pendingCourseCrudAction.name })
-        });
-      }
-
-      if(_pendingCourseCrudAction.type === 'update'){
-        resp = await safeFetch(base + `/${_pendingCourseCrudAction.id}`, {
-          method: 'PUT',
-          headers: authHeaders(),
-          body: JSON.stringify({ name: _pendingCourseCrudAction.name })
-        });
-      }
-
-      if(_pendingCourseCrudAction.type === 'delete'){
-        resp = await safeFetch(base + `/${_pendingCourseCrudAction.id}`, {
-          method: 'DELETE',
-          headers: authHeaders()
-        });
-      }
-
-      if(_pendingCourseCrudAction.type === 'toggle'){
-        resp = await safeFetch(base + `/${_pendingCourseCrudAction.id}/status`, {
-          method: 'PATCH',
-          headers: authHeaders(),
-          body: JSON.stringify({ active: _pendingCourseCrudAction.active })
-        });
-      }
-
-      const data = await safeJson(resp);
-      if(!resp.ok) throw new Error(data.error || 'No se pudo completar la operación');
-
-      bootstrap.Modal.getInstance(document.getElementById('confirmCourseCrudModal')).hide();
-
-      if(_pendingCourseCrudAction.type === 'create') showToast('Certificación creada correctamente', 'success');
-      if(_pendingCourseCrudAction.type === 'update') showToast('Certificación actualizada correctamente', 'success');
-      if(_pendingCourseCrudAction.type === 'delete') showToast('Certificación eliminada correctamente', 'success');
-      if(_pendingCourseCrudAction.type === 'toggle') showToast(_pendingCourseCrudAction.active ? 'Certificación habilitada correctamente' : 'Certificación deshabilitada correctamente', 'success');
-
-      resetAdminCourseForm();
-      await loadAdminCourses();
-    } catch (e) {
-      setAdminCoursesMessage('Error: ' + escapeHTML(e.message), 'danger');
-    } finally {
-      _pendingCourseCrudAction = null;
-      setButtonLoading(btn, false);
-    }
-  });
-  
-  
 
   function paymentMethodBadge(method) {
     switch ((method || '').toLowerCase()) {
