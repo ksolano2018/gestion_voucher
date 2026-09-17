@@ -242,13 +242,15 @@ router.get('/admin/courses/hierarchy-suggestions',
       // sugerirse Simulator para el mismo padre) — el filtro de "no puede ser hijo
       // si ya es padre" se aplica solo del lado del candidato a HIJO (has_children).
       const rows = (await pool.query(
-        `SELECT c.id, c.name, c.moodle_course_id,
+        `SELECT c.id, c.name, c.moodle_course_id, c.lang,
                 EXISTS (SELECT 1 FROM courses ch WHERE ch.parent_course_id = c.id) AS has_children
          FROM courses c
          WHERE COALESCE(c.active, TRUE) = TRUE
            AND c.parent_course_id IS NULL
          ORDER BY c.name ASC`
       )).rows;
+      // NULL cuenta como español por defecto, igual que el filtro de /partner/:id/courses.
+      const effectiveLang = (l) => l || 'es';
 
       // Agrupa por nombre (no solo el primero): hay certificaciones con nombre
       // duplicado en Moodle (mismo nombre, distinto id) — si no se agrupan todas,
@@ -265,7 +267,11 @@ router.get('/admin/courses/hierarchy-suggestions',
         for (const suffix of SUFFIXES) {
           if (suffix.test(course.name)) {
             const baseName = course.name.replace(suffix, '').trim().toLowerCase();
-            const parentCandidates = byLowerName.get(baseName) || [];
+            // Mismo idioma que el candidato a hijo: certificaciones duplicadas por
+            // idioma (mismo nombre, `lang` distinto) no deben cruzarse entre sí
+            // (ej. padre EN sugerido para un "- Content" ES).
+            const parentCandidates = (byLowerName.get(baseName) || [])
+              .filter(p => effectiveLang(p.lang) === effectiveLang(course.lang));
             for (const parentCandidate of parentCandidates) {
               if (parentCandidate.id !== course.id) {
                 suggestions.push({
