@@ -91,6 +91,14 @@ certificado en **SSL/TLS → New Let's Encrypt Certificate** (hoy hay uno self-s
   - `core_completion_get_activities_completion_status`
   - `mod_quiz_get_quizzes_by_courses`
   - `mod_quiz_get_user_best_grade`
+- **Grupo de Moodle = nombre del partner** (paridad con el CSV bulk-upload manual que
+  usaban antes de la app, ver `grupo-moodle-partner`). Si faltan, la matrícula al curso
+  sigue funcionando igual — solo no se crea/asigna el grupo (degrada con gracia):
+  - `core_group_get_course_groups` — **solo lectura**, pedir primero: también hace falta
+    para volcar los grupos históricos y validar que los partners que demos de alta por
+    SQL se llamen igual que en Moodle, antes de tocar nada de escritura.
+  - `core_group_create_groups` — escritura, pedir cuando se despliegue esta parte a PD.
+  - `core_group_add_group_members` — escritura, idem.
 - **Cursos/certificaciones** con estructura para validar *completado/certificado*
   (finalización activada + quiz con preguntas y nota de aprobación) y su **mapeo de IDs**.
   Si falta, lo provisionamos nosotros con acceso admin (ya tenemos los scripts).

@@ -124,9 +124,12 @@ router.post('/admin/moodle/enrollments/:activationId/retry',
     try {
       const actResult = await pool.query(
         `SELECT a.id, a.user_name, a.user_email, a.moodle_status, a.expires_at,
-                a.moodle_retry_count, c.moodle_course_id, c.name AS course_name
+                a.moodle_retry_count, c.moodle_course_id, c.name AS course_name,
+                p.name AS partner_name
          FROM activations a
          LEFT JOIN courses c ON c.id = a.course_id
+         LEFT JOIN vouchers v ON v.id = a.voucher_id
+         LEFT JOIN partners p ON p.id = v.partner_id
          WHERE a.id = $1`,
         [activationId]
       );
@@ -155,7 +158,8 @@ router.post('/admin/moodle/enrollments/:activationId/retry',
         firstName:      nameParts[0] || act.user_email.split('@')[0],
         lastName:       nameParts.slice(1).join(' ') || 'Student',
         moodleCourseId: act.moodle_course_id,
-        expiresAt:      act.expires_at
+        expiresAt:      act.expires_at,
+        groupName:      act.partner_name
       });
 
       let moodleStatus, moodleUserId, moodleError, moodleEnrolledAt;
@@ -177,10 +181,13 @@ router.post('/admin/moodle/enrollments/:activationId/retry',
         `UPDATE activations
          SET moodle_status=$1, moodle_user_id=$2, moodle_error=$3, moodle_enrolled_at=$4,
              moodle_username=COALESCE($5, moodle_username),
-             moodle_temp_password=COALESCE($6, moodle_temp_password)
-         WHERE id=$7`,
+             moodle_temp_password=COALESCE($6, moodle_temp_password),
+             moodle_group_status=$7, moodle_group_id=$8, moodle_group_error=$9
+         WHERE id=$10`,
         [moodleStatus, moodleUserId || null, moodleError || null, moodleEnrolledAt || null,
-         moodleUsername, moodleTempPassword, activationId]
+         moodleUsername, moodleTempPassword,
+         moodleResult.groupStatus || null, moodleResult.moodleGroupId || null, moodleResult.groupError || null,
+         activationId]
       );
 
       await logSystemEvent(
@@ -251,9 +258,12 @@ router.post('/admin/moodle/enrollments/retry-all-failed',
 
       for (const row of failed.rows) {
         const actResult = await pool.query(
-          `SELECT a.user_name, a.user_email, a.expires_at, c.moodle_course_id, c.name AS course_name
+          `SELECT a.user_name, a.user_email, a.expires_at, c.moodle_course_id, c.name AS course_name,
+                  p.name AS partner_name
            FROM activations a
            LEFT JOIN courses c ON c.id = a.course_id
+           LEFT JOIN vouchers v ON v.id = a.voucher_id
+           LEFT JOIN partners p ON p.id = v.partner_id
            WHERE a.id=$1`, [row.id]
         );
         if (actResult.rowCount === 0) continue;
@@ -265,7 +275,8 @@ router.post('/admin/moodle/enrollments/retry-all-failed',
           firstName:      nameParts[0] || act.user_email.split('@')[0],
           lastName:       nameParts.slice(1).join(' ') || 'Student',
           moodleCourseId: act.moodle_course_id,
-          expiresAt:      act.expires_at
+          expiresAt:      act.expires_at,
+          groupName:      act.partner_name
         });
 
         results.attempted++;
@@ -279,8 +290,9 @@ router.post('/admin/moodle/enrollments/retry-all-failed',
                moodle_enrolled_at=$4, moodle_retried_at=NOW(),
                moodle_retry_count = moodle_retry_count + 1,
                moodle_username=COALESCE($5, moodle_username),
-               moodle_temp_password=COALESCE($6, moodle_temp_password)
-           WHERE id=$7`,
+               moodle_temp_password=COALESCE($6, moodle_temp_password),
+               moodle_group_status=$7, moodle_group_id=$8, moodle_group_error=$9
+           WHERE id=$10`,
           [
             ok ? (moodleResult.mocked ? 'MOCKED' : 'ENROLLED') : 'FAILED',
             moodleResult.moodleUserId || null,
@@ -288,6 +300,7 @@ router.post('/admin/moodle/enrollments/retry-all-failed',
             ok ? new Date() : null,
             ok ? (moodleResult.moodleUsername    || null) : null,
             ok ? (moodleResult.moodleTempPassword || null) : null,
+            moodleResult.groupStatus || null, moodleResult.moodleGroupId || null, moodleResult.groupError || null,
             row.id
           ]
         );

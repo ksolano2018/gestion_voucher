@@ -140,6 +140,11 @@ router.post('/partner/:id/activate',
         return res.status(404).json({ error: 'Certificación no encontrada' });
       }
 
+      // Grupo de Moodle = nombre del partner (paridad con el CSV bulk-upload
+      // manual de antes de la app). Ver [[grupo-moodle-partner]].
+      const partnerRow = await pool.query('SELECT name FROM partners WHERE id=$1', [pid]);
+      const partnerName = partnerRow.rows[0] ? partnerRow.rows[0].name : null;
+
       // Cursos hijo (Content/Simulator) vinculados a este padre — certificaciones "legacy"
       // en transición. Si no tiene hijos (certificación nueva/standalone), esto queda vacío
       // y el comportamiento es idéntico al de hoy.
@@ -228,7 +233,8 @@ router.post('/partner/:id/activate',
         firstName,
         lastName,
         moodleCourseId,
-        expiresAt
+        expiresAt,
+        groupName: partnerName
       });
 
       let moodleStatus, moodleUserId, moodleError, moodleEnrolledAt;
@@ -258,10 +264,13 @@ router.post('/partner/:id/activate',
       await pool.query(
         `UPDATE activations
          SET moodle_status=$1, moodle_user_id=$2, moodle_error=$3, moodle_enrolled_at=$4,
-             moodle_username=$5, moodle_temp_password=$6
-         WHERE id=$7`,
+             moodle_username=$5, moodle_temp_password=$6,
+             moodle_group_status=$7, moodle_group_id=$8, moodle_group_error=$9
+         WHERE id=$10`,
         [moodleStatus, moodleUserId || null, moodleError || null, moodleEnrolledAt || null,
-         moodleUsername, moodleTempPassword, activationId]
+         moodleUsername, moodleTempPassword,
+         moodleResult.groupStatus || null, moodleResult.moodleGroupId || null, moodleResult.groupError || null,
+         activationId]
       );
 
       await logSystemEvent(
@@ -305,7 +314,8 @@ router.post('/partner/:id/activate',
           firstName,
           lastName,
           moodleCourseId: childMoodleCourseId,
-          expiresAt
+          expiresAt,
+          groupName: partnerName
         });
 
         let childStatus, childUserId = null, childError = null, childEnrolledAt = null;
@@ -335,9 +345,12 @@ router.post('/partner/:id/activate',
         await pool.query(
           `UPDATE activation_child_enrollments
            SET moodle_status=$1, moodle_user_id=$2, moodle_error=$3, moodle_enrolled_at=$4,
-               moodle_username=$5, moodle_temp_password=$6, updated_at=NOW()
-           WHERE id=$7`,
-          [childStatus, childUserId, childError, childEnrolledAt, childUsername, childTempPassword, childRowId]
+               moodle_username=$5, moodle_temp_password=$6,
+               moodle_group_status=$7, moodle_group_id=$8, moodle_group_error=$9, updated_at=NOW()
+           WHERE id=$10`,
+          [childStatus, childUserId, childError, childEnrolledAt, childUsername, childTempPassword,
+           childResult.groupStatus || null, childResult.moodleGroupId || null, childResult.groupError || null,
+           childRowId]
         );
 
         await logSystemEvent(
