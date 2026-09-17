@@ -2676,26 +2676,6 @@
                     </div>
                   </div>
 
-                  <div class="card shadow-sm mb-4">
-                    <div class="card-body">
-                      <h6 class="mb-3">Crear Perfil Especial</h6>
-                      <div id="special-profile-message"></div>
-                      <div class="row g-3 align-items-end">
-                        <div class="col-md-6">
-                          <label class="form-label">Nombre</label>
-                          <input id="special-profile-name" class="form-control" placeholder="Ej: Mayorista Q4">
-                        </div>
-                        <div class="col-md-6">
-                          <label class="form-label">Descripción</label>
-                          <input id="special-profile-description" class="form-control" placeholder="Condición especial temporal">
-                        </div>
-                        <div class="col-12">
-                          <button id="create-special-profile" class="btn btn-outline-primary">Crear perfil especial</button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
                   <!-- SECCIÓN A: Categorías Base (editables) -->
                   <div class="card shadow-sm mb-4">
                     <div class="card-body">
@@ -2734,23 +2714,26 @@
                     </div>
                   </div>
 
-                  <!-- SECCIÓN B: Perfiles Especiales (editables) -->
+                  <!-- SECCIÓN B: Perfiles Especiales — crear, editar reglas y suspender, todo en un mismo formulario -->
                   <div class="card shadow-sm">
                     <div class="card-body">
-                      <h6 class="mb-3">Reglas por Perfil Especial</h6>
+                      <div class="d-flex align-items-center gap-2 mb-3">
+                        <h6 class="mb-0">Perfiles Especiales</h6>
+                        <span id="pricing-profile-status-badge" class="badge bg-secondary" style="display:none;"></span>
+                      </div>
                       <div id="pricing-profile-message"></div>
                       <div class="row g-3 align-items-end mb-3">
-                        <div class="col-md-6">
-                          <label class="form-label">Perfil especial</label>
+                        <div class="col-md-4">
+                          <label class="form-label">Perfil</label>
                           <select id="pricing-profile-editor-select" class="form-control">
-                            <option value="">Selecciona un perfil especial</option>
+                            <option value="">+ Crear nuevo perfil especial</option>
                           </select>
                         </div>
-                        <div class="col-md-6">
+                        <div class="col-md-4">
                           <label class="form-label">Nombre</label>
-                          <input id="pricing-profile-name" class="form-control">
+                          <input id="pricing-profile-name" class="form-control" placeholder="Ej: Mayorista Q4">
                         </div>
-                        <div class="col-12">
+                        <div class="col-md-4">
                           <label class="form-label">Descripción</label>
                           <input id="pricing-profile-description" class="form-control" placeholder="Describe cuándo aplica este pricing">
                         </div>
@@ -2768,9 +2751,10 @@
                           <tbody id="pricing-rules-body"></tbody>
                         </table>
                       </div>
-                      <div class="d-flex gap-2 mt-3">
+                      <div class="d-flex flex-wrap gap-2 mt-3">
                         <button id="add-pricing-rule-row" class="btn btn-outline-secondary">Agregar tramo</button>
-                        <button id="save-pricing-profile" class="btn btn-primary">Guardar reglas</button>
+                        <button id="save-pricing-profile" class="btn btn-primary">Crear perfil especial</button>
+                        <button id="toggle-pricing-profile-status" class="btn btn-outline-warning ms-auto" style="display:none;">Suspender</button>
                       </div>
                     </div>
                   </div>
