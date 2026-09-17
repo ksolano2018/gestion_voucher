@@ -1253,6 +1253,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const statusRow = el('pricing-profile-modal-status-row');
     const statusBadge = el('pricing-profile-modal-status-badge');
     const toggleBtn = el('toggle-pricing-profile-status');
+    const deleteBtn = el('delete-pricing-profile');
 
     if(!profileId){
       if(titleEl) titleEl.textContent = 'Crear perfil especial';
@@ -1263,6 +1264,7 @@ document.addEventListener('DOMContentLoaded', () => {
       // .d-flex de Bootstrap es !important y pisa un style="display:none" inline,
       // así que la visibilidad se maneja intercambiando d-none/d-flex, no con .style.
       if(statusRow) statusRow.classList.replace('d-flex', 'd-none');
+      if(deleteBtn) deleteBtn.classList.add('d-none');
     } else {
       const profile = pricingState.profiles.find(item => String(item.id) === String(profileId));
       if(!profile) return;
@@ -1282,6 +1284,7 @@ document.addEventListener('DOMContentLoaded', () => {
         toggleBtn.textContent = isActive ? 'Suspender' : 'Reactivar';
         toggleBtn.className = `btn btn-sm ${isActive ? 'btn-outline-warning' : 'btn-outline-success'}`;
       }
+      if(deleteBtn) deleteBtn.classList.remove('d-none');
     }
 
     bootstrap.Modal.getOrCreateInstance(document.getElementById('pricingProfileModal')).show();
@@ -1493,7 +1496,11 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await safeJson(resp);
         if(!resp.ok) throw new Error(data.error || 'No se pudo crear el perfil especial');
 
-        if(rules.length){
+        // El editor siempre trae al menos una fila placeholder (min=1, precio
+        // vacío) — solo se guardan reglas si el admin realmente cargó un
+        // precio; si no, el perfil queda creado sin tramos, editable después.
+        const filledRules = rules.filter(r => Number.isFinite(r.unit_price) && r.unit_price > 0);
+        if(filledRules.length){
           await savePricingProfile(data.id, { overrideActive: true });
         }
 
@@ -1554,6 +1561,34 @@ document.addEventListener('DOMContentLoaded', () => {
           showToast(willActivate ? 'Perfil reactivado correctamente' : 'Perfil suspendido correctamente', 'success');
           // El popup se queda abierto con el estado ya actualizado (mismo
           // patrón que el popup de Jerarquía de Certificaciones).
+          await loadAdminPricingData();
+        } catch (e) { showInlineAlert('pricing-profile-modal-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
+      }
+    });
+  });
+
+  on('delete-pricing-profile', 'click', () => {
+    const profileId = _pricingModalProfileId;
+    const profile = pricingState.profiles.find(item => String(item.id) === String(profileId));
+    if(!profile) return;
+
+    showConfirmAction({
+      title: 'Eliminar Perfil Especial', icon: '🗑️',
+      rows: [
+        { label: 'Perfil:', value: profile.name },
+        { label: 'Efecto:', value: 'Se elimina permanentemente junto con sus tramos de precio. No se puede deshacer.' }
+      ],
+      confirmLabel: '🗑️ Eliminar', confirmClass: 'btn-danger',
+      onConfirm: async () => {
+        try {
+          const resp = await safeFetch(apiUrl + `/admin/pricing/profiles/${profileId}`, {
+            method: 'DELETE', headers: authHeaders()
+          });
+          const data = await safeJson(resp);
+          if(!resp.ok) throw new Error(data.error || 'No se pudo eliminar el perfil');
+          showToast('Perfil especial eliminado correctamente', 'success');
+          bootstrap.Modal.getInstance(document.getElementById('pricingProfileModal'))?.hide();
+          _pricingModalProfileId = null;
           await loadAdminPricingData();
         } catch (e) { showInlineAlert('pricing-profile-modal-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
       }

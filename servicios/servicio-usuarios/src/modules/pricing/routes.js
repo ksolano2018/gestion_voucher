@@ -127,6 +127,60 @@ router.put('/admin/pricing/profiles/:id', authenticate, requireRole('admin'), ap
   }
 });
 
+router.delete('/admin/pricing/profiles/:id', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+  const profileId = parseInt(req.params.id, 10);
+  if (!Number.isInteger(profileId) || profileId < 1) {
+    return res.status(400).json({ error: 'Perfil inválido' });
+  }
+
+  try {
+    const existing = await pool.query(
+      'SELECT id, name, profile_type FROM pricing_profiles WHERE id=$1',
+      [profileId]
+    );
+    if (existing.rowCount === 0) {
+      return res.status(404).json({ error: 'Perfil no encontrado' });
+    }
+    const profile = existing.rows[0];
+    if (profile.profile_type !== 'SPECIAL') {
+      return res.status(400).json({ error: 'Solo se pueden eliminar perfiles especiales' });
+    }
+
+    const assigned = await pool.query(
+      'SELECT COUNT(*)::int AS count FROM partners WHERE special_pricing_profile_id=$1',
+      [profileId]
+    );
+    const assignedCount = assigned.rows[0].count;
+    if (assignedCount > 0) {
+      return res.status(400).json({
+        error: `No se puede eliminar: ${assignedCount} partner(s) todavía tienen este perfil asignado. Reasígnalos o suspende el perfil en vez de eliminarlo.`
+      });
+    }
+
+    const client = await pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('DELETE FROM pricing_rules WHERE profile_id=$1', [profileId]);
+      await client.query('DELETE FROM pricing_profiles WHERE id=$1', [profileId]);
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    await logSystemEvent('PRICING_PROFILE_DELETED', 'PRICING', req.user.sub, null, null, {
+      profile_id: profileId, name: profile.name
+    }, 'SUCCESS', null, req);
+
+    res.json({ ok: true });
+  } catch (e) {
+    await logSystemEvent('PRICING_PROFILE_DELETE_ERROR', 'PRICING', req.user.sub, null, null, { profile_id: profileId }, 'FAILED', e.message, req);
+    res.status(400).json({ error: e.message || 'Error al eliminar perfil de pricing' });
+  }
+});
+
 router.get('/admin/partners/:id/pricing', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
   const partnerId = parseInt(req.params.id, 10);
   if (!Number.isInteger(partnerId) || partnerId < 1) {
