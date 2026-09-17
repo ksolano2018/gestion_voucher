@@ -1169,18 +1169,23 @@ document.addEventListener('DOMContentLoaded', () => {
     const profiles = Array.isArray(pricingState.profiles) ? pricingState.profiles : [];
     const specials = profiles.filter(profile => profile.profile_type === 'SPECIAL');
 
+    // Solo perfiles activos son asignables a un partner (uno suspendido sigue
+    // vigente para quien ya lo tenía, pero no debe ofrecerse para asignaciones nuevas).
     const specialSelect = el('partner-special-profile-select');
     if(specialSelect){
-      specialSelect.innerHTML = '<option value="">Sin perfil especial</option>' +
-        specials.map(profile => `<option value="${profile.id}">${escapeHTML(profile.name)}</option>`).join('');
+      const assignableOpts = specials.filter(p => p.active !== false)
+        .map(profile => `<option value="${profile.id}">${escapeHTML(profile.name)}</option>`).join('');
+      specialSelect.innerHTML = '<option value="">Sin perfil especial</option>' + assignableOpts;
     }
 
+    // El editor de gestión sí lista todos (activos e inactivos) para poder
+    // reactivar un perfil suspendido.
     const editorSelect = el('pricing-profile-editor-select');
     if(editorSelect){
-      const specialOpts = specials.map(p => `<option value="${p.id}">${escapeHTML(p.name)}</option>`).join('');
-      editorSelect.innerHTML = specials.length
-        ? '<option value="">Selecciona un perfil especial</option>' + specialOpts
-        : '<option value="">Sin perfiles especiales</option>';
+      const editorOpts = specials.map(p =>
+        `<option value="${p.id}">${escapeHTML(p.name)}${p.active === false ? ' (suspendido)' : ''}</option>`
+      ).join('');
+      editorSelect.innerHTML = '<option value="">+ Crear nuevo perfil especial</option>' + editorOpts;
     }
   }
 
@@ -1213,12 +1218,43 @@ document.addEventListener('DOMContentLoaded', () => {
     }));
   }
 
+  // Sin profileId → modo "crear": formulario vacío, sin badge ni botón de suspender.
+  // Con profileId → modo "editar": precarga nombre/descripción/reglas + estado.
   function loadPricingProfileIntoEditor(profileId){
+    const nameEl = el('pricing-profile-name');
+    const descEl = el('pricing-profile-description');
+    const saveBtn = el('save-pricing-profile');
+    const statusBadge = el('pricing-profile-status-badge');
+    const toggleBtn = el('toggle-pricing-profile-status');
+
+    if(!profileId){
+      if(nameEl) nameEl.value = '';
+      if(descEl) descEl.value = '';
+      renderPricingRulesEditor([]);
+      if(saveBtn) saveBtn.textContent = 'Crear perfil especial';
+      if(statusBadge) statusBadge.style.display = 'none';
+      if(toggleBtn) toggleBtn.style.display = 'none';
+      return;
+    }
+
     const profile = pricingState.profiles.find(item => String(item.id) === String(profileId));
     if(!profile) return;
-    if(el('pricing-profile-name'))        el('pricing-profile-name').value        = profile.name        || '';
-    if(el('pricing-profile-description')) el('pricing-profile-description').value = profile.description || '';
+    if(nameEl) nameEl.value = profile.name        || '';
+    if(descEl) descEl.value = profile.description || '';
     renderPricingRulesEditor(profile.rules || []);
+
+    if(saveBtn) saveBtn.textContent = 'Guardar cambios';
+    const isActive = profile.active !== false;
+    if(statusBadge){
+      statusBadge.textContent = isActive ? 'Activo' : 'Suspendido';
+      statusBadge.className = `badge ${isActive ? 'bg-success' : 'bg-secondary'}`;
+      statusBadge.style.display = '';
+    }
+    if(toggleBtn){
+      toggleBtn.textContent = isActive ? 'Suspender' : 'Reactivar';
+      toggleBtn.className = `btn ms-auto ${isActive ? 'btn-outline-warning' : 'btn-outline-success'}`;
+      toggleBtn.style.display = '';
+    }
   }
 
   function renderBasePricingRulesEditor(rules){
@@ -1304,7 +1340,6 @@ document.addEventListener('DOMContentLoaded', () => {
       populatePricingProfileSelectors();
       populatePricingPartnerSelect();
 
-      const specials    = pricingState.profiles.filter(p => p.profile_type === 'SPECIAL');
       const categories  = pricingState.profiles.filter(p => p.profile_type === 'CATEGORY');
 
       // Auto-cargar la única categoría base
@@ -1312,14 +1347,10 @@ document.addEventListener('DOMContentLoaded', () => {
         loadBasePricingProfileIntoEditor(categories[0].id);
       }
 
-      // Auto-seleccionar primer perfil especial
+      // Re-selecciona el perfil que ya estaba abierto (ej. tras guardar); si no
+      // había ninguno, el formulario queda en modo "crear" por defecto.
       const selectedProfile = (el('pricing-profile-editor-select') || {}).value;
-      if(selectedProfile){
-        loadPricingProfileIntoEditor(selectedProfile);
-      } else if(specials.length > 0 && el('pricing-profile-editor-select')){
-        el('pricing-profile-editor-select').value = specials[0].id;
-        loadPricingProfileIntoEditor(specials[0].id);
-      }
+      loadPricingProfileIntoEditor(selectedProfile || null);
     } catch (e) {
       showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger');
     }
@@ -1391,41 +1422,66 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  on('create-special-profile', 'click', async () => {
-    const name        = (el('special-profile-name')        || {}).value || '';
-    const description = (el('special-profile-description') || {}).value || '';
+  // Guarda cambios de un perfil existente. `overrideActive` permite al botón
+  // de suspender/reactivar reusar esta misma función sin tocar nombre/reglas.
+  async function savePricingProfile(profileId, { overrideActive } = {}){
+    const profileName = (el('pricing-profile-name') || {}).value || '';
+    const description  = (el('pricing-profile-description') || {}).value || '';
+    const rules        = getPricingRulesFromEditor();
+    const current = pricingState.profiles.find(item => String(item.id) === String(profileId));
+    const active = overrideActive !== undefined ? overrideActive : (current ? current.active !== false : true);
 
-    try {
-      const resp = await safeFetch(apiUrl + '/admin/pricing/profiles', {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ name, description, profile_type: 'SPECIAL' })
-      });
-      const data = await resp.json();
-      if(!resp.ok) throw new Error(data.error || 'No se pudo crear el perfil especial');
+    const resp = await safeFetch(apiUrl + `/admin/pricing/profiles/${profileId}`, {
+      method: 'PUT', headers: authHeaders(),
+      body: JSON.stringify({ name: profileName, description, rules, active })
+    });
+    const data = await safeJson(resp);
+    if(!resp.ok) throw new Error(data.error || 'No se pudo guardar el perfil');
+    return data;
+  }
 
-      showToast('Perfil especial creado correctamente', 'success');
-      showInlineAlert('special-profile-message', 'Perfil especial creado correctamente.', 'success');
-      if(el('special-profile-name'))        el('special-profile-name').value = '';
-      if(el('special-profile-description')) el('special-profile-description').value = '';
-      await loadAdminPricingData();
-      if(el('pricing-profile-editor-select')) {
-        el('pricing-profile-editor-select').value = data.id;
-        loadPricingProfileIntoEditor(data.id);
-      }
-    } catch (e) {
-      showInlineAlert('special-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger');
-    }
-  });
-
+  // Un mismo botón sirve para crear (sin perfil seleccionado) o guardar
+  // cambios (perfil existente) — el modo lo decide `loadPricingProfileIntoEditor`.
   on('save-pricing-profile', 'click', async () => {
     const profileId   = (el('pricing-profile-editor-select') || {}).value;
     const profileName = (el('pricing-profile-name') || {}).value || '';
-    const rules       = getPricingRulesFromEditor();
-    if(!profileId){
-      showInlineAlert('pricing-profile-message', 'Selecciona un perfil para editar.', 'danger');
+    const rules        = getPricingRulesFromEditor();
+
+    if(!profileName.trim()){
+      showInlineAlert('pricing-profile-message', 'El nombre del perfil es obligatorio.', 'danger');
       return;
     }
+
+    if(!profileId){
+      // Modo crear: POST (nombre+descripción) y, si ya cargaron tramos, PUT
+      // inmediato con las reglas — un solo click deja el perfil listo para usar.
+      try {
+        const resp = await safeFetch(apiUrl + '/admin/pricing/profiles', {
+          method: 'POST',
+          headers: authHeaders(),
+          body: JSON.stringify({ name: profileName, description: (el('pricing-profile-description') || {}).value || '', profile_type: 'SPECIAL' })
+        });
+        const data = await safeJson(resp);
+        if(!resp.ok) throw new Error(data.error || 'No se pudo crear el perfil especial');
+
+        if(rules.length){
+          await savePricingProfile(data.id, { overrideActive: true });
+        }
+
+        showToast('Perfil especial creado correctamente', 'success');
+        showInlineAlert('pricing-profile-message', 'Perfil especial creado correctamente.', 'success');
+        await loadAdminPricingData();
+        if(el('pricing-profile-editor-select')) {
+          el('pricing-profile-editor-select').value = data.id;
+          loadPricingProfileIntoEditor(data.id);
+        }
+      } catch (e) {
+        showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger');
+      }
+      return;
+    }
+
+    // Modo editar: confirmación con resumen antes de guardar.
     showConfirmAction({
       title: 'Guardar Perfil de Precios', icon: '🏷️',
       rows: [
@@ -1436,18 +1492,40 @@ document.addEventListener('DOMContentLoaded', () => {
       confirmLabel: '💾 Guardar Perfil', confirmClass: 'btn-primary',
       onConfirm: async () => {
         try {
-          const resp = await safeFetch(apiUrl + `/admin/pricing/profiles/${profileId}`, {
-            method: 'PUT', headers: authHeaders(),
-            body: JSON.stringify({
-              name: profileName,
-              description: (el('pricing-profile-description') || {}).value || '',
-              rules
-            })
-          });
-          const data = await resp.json();
-          if(!resp.ok) throw new Error(data.error || 'No se pudo guardar el perfil');
+          await savePricingProfile(profileId);
           showToast('Reglas de pricing guardadas correctamente', 'success');
           showInlineAlert('pricing-profile-message', 'Reglas guardadas correctamente.', 'success');
+          await loadAdminPricingData();
+          if(el('pricing-profile-editor-select')) { el('pricing-profile-editor-select').value = profileId; loadPricingProfileIntoEditor(profileId); }
+        } catch (e) { showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
+      }
+    });
+  });
+
+  on('toggle-pricing-profile-status', 'click', () => {
+    const profileId = (el('pricing-profile-editor-select') || {}).value;
+    const profile = pricingState.profiles.find(item => String(item.id) === String(profileId));
+    if(!profile) return;
+    const willActivate = profile.active === false;
+
+    showConfirmAction({
+      title: willActivate ? 'Reactivar Perfil Especial' : 'Suspender Perfil Especial',
+      icon: willActivate ? '✅' : '⏸️',
+      rows: [
+        { label: 'Perfil:', value: profile.name },
+        {
+          label: 'Efecto:',
+          value: willActivate
+            ? 'Vuelve a estar disponible para asignarlo a partners.'
+            : 'Deja de ofrecerse para asignar a nuevos partners. Los partners que ya lo tienen asignado lo conservan.'
+        }
+      ],
+      confirmLabel: willActivate ? '✅ Reactivar' : '⏸️ Suspender',
+      confirmClass: willActivate ? 'btn-success' : 'btn-warning',
+      onConfirm: async () => {
+        try {
+          await savePricingProfile(profileId, { overrideActive: willActivate });
+          showToast(willActivate ? 'Perfil reactivado correctamente' : 'Perfil suspendido correctamente', 'success');
           await loadAdminPricingData();
           if(el('pricing-profile-editor-select')) { el('pricing-profile-editor-select').value = profileId; loadPricingProfileIntoEditor(profileId); }
         } catch (e) { showInlineAlert('pricing-profile-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
