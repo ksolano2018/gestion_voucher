@@ -850,6 +850,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if(target === 'admin-courses'){
         loadAdminCourses();
       }
+      if(target === 'admin-course-hierarchy'){
+        loadCourseHierarchy();
+      }
       if(target === 'admin-users'){
         loadAdminRoles(true).then(() => { const lb = el('list-users'); if(lb) lb.click(); }).catch(()=>{});
       }
@@ -1713,6 +1716,318 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
   // ────────────────────────────────────────────────────────────────────────────
+
+  // ---- Jerarquía de Certificaciones (padre/hijo Content-Simulator) ----
+  let _courseHierarchyCourses = [];
+  let _chAllSuggestions = [];
+  let _chModalParentId = null;
+  const MAX_CH_SUGGESTIONS = 30;
+  const byCourseName = (a, b) => (a.name || '').localeCompare(b.name || '', 'es', { sensitivity: 'base' });
+
+  function setCourseHierarchyMessage(msg, type){
+    const node = el('ch-message');
+    if(!node) return;
+    if(!msg){ node.innerHTML = ''; return; }
+    const cls = type === 'success' ? 'alert-success' : (type === 'danger' ? 'alert-danger' : 'alert-info');
+    node.innerHTML = `<div class="alert ${cls} mb-3">${sanitizeHTML(msg)}</div>`;
+  }
+
+  // Tabla clicable: filtra por el término del buscador de arriba, y un clic en
+  // cualquier fila abre el popup para gestionar los hijos de esa certificación.
+  function renderCourseHierarchyTable(term){
+    const tbody = el('ch-tbody');
+    if(!tbody) return;
+    const q = (term || '').trim().toLowerCase();
+    let parents = _courseHierarchyCourses.filter(c => !c.parent_course_id).sort(byCourseName);
+    if(q) parents = parents.filter(c => c.name.toLowerCase().includes(q) || String(c.id).includes(q));
+    if(!parents.length){
+      tbody.innerHTML = `<tr><td colspan="4" class="text-center text-muted p-3">${q ? 'Sin resultados para tu búsqueda' : 'No hay certificaciones registradas'}</td></tr>`;
+      return;
+    }
+    const rows = parents.map(course => {
+      const children = _courseHierarchyCourses.filter(c => c.parent_course_id === course.id).sort(byCourseName);
+      const type = children.length ? '<span class="badge bg-info text-dark">Padre</span>' : '<span class="badge bg-light text-dark border">Standalone</span>';
+      const isActive = course.active !== false;
+      const status = isActive ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Suspendido</span>';
+      const childrenSummary = children.length
+        ? children.map(c => `<div>${escapeHTML(c.name || '')} <span class="text-muted">#${escapeHTML(String(c.id))}</span></div>`).join('')
+        : '-';
+      return `<tr data-id="${escapeHTML(String(course.id))}" style="cursor:pointer;">
+        <td>${escapeHTML(course.name || '')} <span class="text-muted">#${escapeHTML(String(course.id))}</span></td>
+        <td>${type}</td>
+        <td>${status}</td>
+        <td>${childrenSummary}</td>
+      </tr>`;
+    });
+    tbody.innerHTML = rows.join('');
+  }
+
+  document.getElementById('ch-tbody')?.addEventListener('click', (e) => {
+    const row = e.target.closest('tr[data-id]');
+    if(row) openChAssociateModal(parseInt(row.dataset.id, 10));
+  });
+
+  // Recarga cursos + sugerencias (la suma de ambas fuentes de verdad de la pantalla)
+  // y re-pinta la tabla y, si el popup de asociar hijos está abierto, su contenido.
+  async function refreshHierarchyData(){
+    const resp = await safeFetch(apiUrl + '/admin/courses', { headers: authHeaders() });
+    const data = await safeJson(resp);
+    if(!resp.ok) throw new Error(data.error || 'No se pudo cargar la jerarquía de certificaciones');
+    _courseHierarchyCourses = Array.isArray(data) ? data : [];
+
+    try {
+      const sResp = await safeFetch(apiUrl + '/admin/courses/hierarchy-suggestions', { headers: authHeaders() });
+      const sData = await safeJson(sResp);
+      _chAllSuggestions = (sResp.ok && Array.isArray(sData.suggestions)) ? sData.suggestions : [];
+    } catch (e) {
+      _chAllSuggestions = [];
+    }
+
+    renderCourseHierarchyTable(el('ch-parent-search') ? el('ch-parent-search').value : '');
+    if(_chModalParentId) renderChModalContent();
+  }
+
+  async function loadCourseHierarchy(){
+    const btn = el('ch-refresh-btn');
+    try {
+      if(btn) setButtonLoading(btn, true);
+      const parentSearch = el('ch-parent-search');
+      if(parentSearch) parentSearch.value = '';
+      await refreshHierarchyData();
+      setCourseHierarchyMessage('', 'info');
+    } catch (e) {
+      setCourseHierarchyMessage('Error al cargar jerarquía: ' + escapeHTML(e.message), 'danger');
+    } finally {
+      if(btn) setButtonLoading(btn, false);
+    }
+  }
+
+  // El buscador filtra la tabla en vivo; el clic en una fila (registrado en
+  // renderCourseHierarchyTable) es lo que abre el popup de edición.
+  on('ch-parent-search', 'input', (e) => renderCourseHierarchyTable(e.target.value));
+  on('ch-parent-search-clear', 'click', () => {
+    const search = el('ch-parent-search');
+    if(search) search.value = '';
+    renderCourseHierarchyTable('');
+    if(search) search.focus();
+  });
+
+  // ── Popup de asociar hijos: hijos actuales + sugerencias + búsqueda manual ──
+  function openChAssociateModal(parentId){
+    _chModalParentId = parentId;
+    const childSearch = el('ch-modal-child-search');
+    if(childSearch) childSearch.value = '';
+    const childDropdown = el('ch-modal-child-dropdown');
+    if(childDropdown) childDropdown.style.display = 'none';
+    renderChModalContent();
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('chAssociateChildrenModal')).show();
+  }
+
+  function renderChModalContent(){
+    const parent = _courseHierarchyCourses.find(c => c.id === _chModalParentId);
+    const nameEl = el('ch-modal-parent-name');
+    if(nameEl) nameEl.textContent = parent ? `${parent.name} #${parent.id}` : '';
+
+    const isActive = parent ? parent.active !== false : true;
+    const statusBadge = el('ch-modal-status-badge');
+    if(statusBadge){
+      statusBadge.textContent = isActive ? 'Activo' : 'Suspendido';
+      statusBadge.className = `badge ${isActive ? 'bg-success' : 'bg-secondary'}`;
+    }
+    const toggleBtn = el('ch-modal-toggle-status-btn');
+    if(toggleBtn && parent){
+      toggleBtn.textContent = isActive ? 'Suspender' : 'Reactivar';
+      toggleBtn.className = `btn btn-sm ${isActive ? 'btn-outline-warning' : 'btn-outline-success'}`;
+      toggleBtn.onclick = () => confirmToggleCourseStatus(parent.id, !isActive);
+    }
+
+    const currentChildren = _courseHierarchyCourses.filter(c => c.parent_course_id === _chModalParentId).sort(byCourseName);
+    const currentEl = el('ch-modal-current-children');
+    if(currentEl){
+      currentEl.innerHTML = currentChildren.length
+        ? currentChildren.map(c => `
+          <div class="d-flex align-items-center justify-content-between border rounded px-2 py-1 mb-1 small">
+            <span>${escapeHTML(c.name || '')} <span class="text-muted">#${escapeHTML(String(c.id))}</span></span>
+            <button type="button" class="btn btn-outline-danger btn-sm ch-modal-unlink-btn" data-id="${escapeHTML(String(c.id))}">Desvincular</button>
+          </div>`).join('')
+        : '<div class="text-muted small">Todavía no hay cursos hijo vinculados.</div>';
+      currentEl.querySelectorAll('.ch-modal-unlink-btn').forEach(btn => {
+        btn.addEventListener('click', () => confirmUnlinkCourseChild(parseInt(btn.dataset.id, 10)));
+      });
+    }
+
+    const suggestions = _chAllSuggestions.filter(s => s.parent_candidate.id === _chModalParentId);
+    const suggEl = el('ch-modal-suggestions');
+    if(suggEl){
+      suggEl.innerHTML = suggestions.length
+        ? suggestions.map(s => {
+            const warn = s.child_has_own_quiz === true;
+            const btnClass = warn ? 'btn-outline-danger' : 'btn-outline-success';
+            const label = warn
+              ? `⚠️ ${escapeHTML(s.child_candidate.name)} <span class="text-muted">#${escapeHTML(String(s.child_candidate.id))}</span> — ya tiene examen propio en Moodle`
+              : `+ ${escapeHTML(s.child_candidate.name)} <span class="text-muted">#${escapeHTML(String(s.child_candidate.id))}</span>`;
+            return `<button type="button" class="btn ${btnClass} btn-sm ch-modal-suggestion-btn" data-child-id="${escapeHTML(String(s.child_candidate.id))}" data-warn="${warn ? '1' : '0'}">${label}</button>`;
+          }).join('')
+        : '<div class="text-muted small">No se encontraron sugerencias automáticas por patrón de nombre para este padre.</div>';
+      suggEl.querySelectorAll('.ch-modal-suggestion-btn').forEach(btn => {
+        btn.addEventListener('click', () => confirmLinkCourseAsChild(parseInt(btn.dataset.childId, 10), _chModalParentId));
+      });
+    }
+  }
+
+  function renderChModalChildDropdown(term){
+    const dropdown = el('ch-modal-child-dropdown');
+    if(!dropdown || !_chModalParentId) return;
+    const q = (term || '').trim().toLowerCase();
+    const options = _courseHierarchyCourses.filter(c =>
+      !c.parent_course_id && !(c.children_count > 0) && c.id !== _chModalParentId
+    ).sort(byCourseName);
+    const matches = (q ? options.filter(c => c.name.toLowerCase().includes(q)) : options).slice(0, MAX_CH_SUGGESTIONS);
+    if(!matches.length){
+      dropdown.innerHTML = '<div class="list-group-item text-muted small">Sin resultados</div>';
+      dropdown.style.display = '';
+      return;
+    }
+    dropdown.innerHTML = matches.map(c =>
+      `<button type="button" class="list-group-item list-group-item-action py-1 px-2 small" data-id="${escapeHTML(String(c.id))}">${escapeHTML(c.name || '')} <span class="text-muted">#${escapeHTML(String(c.id))}</span></button>`
+    ).join('') + (options.length > matches.length
+      ? `<div class="list-group-item text-muted small">Sigue escribiendo para acotar (${options.length} en total)…</div>`
+      : '');
+    dropdown.style.display = '';
+  }
+
+  on('ch-modal-child-search', 'input', (e) => renderChModalChildDropdown(e.target.value));
+  on('ch-modal-child-search', 'focus', (e) => renderChModalChildDropdown(e.target.value));
+  document.addEventListener('click', (e) => {
+    if(!e.target.closest('#ch-modal-child-search') && !e.target.closest('#ch-modal-child-dropdown')){
+      const dropdown = el('ch-modal-child-dropdown');
+      if(dropdown) dropdown.style.display = 'none';
+    }
+  });
+  document.addEventListener('click', (e) => {
+    const item = e.target.closest('#ch-modal-child-dropdown [data-id]');
+    if(item && _chModalParentId){
+      confirmLinkCourseAsChild(parseInt(item.dataset.id, 10), _chModalParentId);
+      const search = el('ch-modal-child-search');
+      if(search) search.value = '';
+      const dropdown = el('ch-modal-child-dropdown');
+      if(dropdown) dropdown.style.display = 'none';
+    }
+  });
+
+  document.getElementById('chAssociateChildrenModal')?.addEventListener('hidden.bs.modal', () => {
+    _chModalParentId = null;
+  });
+
+  // Confirmación con resumen del cambio antes de escribir en BD — reusa el modal
+  // genérico de confirmación (showConfirmAction) ya usado en otras pantallas admin.
+  function confirmLinkCourseAsChild(childId, parentId){
+    const child = _courseHierarchyCourses.find(c => c.id === childId);
+    const parent = _courseHierarchyCourses.find(c => c.id === parentId);
+    const suggestionMatch = _chAllSuggestions.find(s => s.child_candidate.id === childId && s.parent_candidate.id === parentId);
+    const hasOwnQuiz = suggestionMatch ? suggestionMatch.child_has_own_quiz : null;
+
+    const rows = [
+      { label: 'Curso hijo:', value: child ? `${child.name} #${child.id}` : childId },
+      { label: 'Curso padre:', value: parent ? `${parent.name} #${parent.id}` : parentId },
+      { label: 'Efecto:', value: 'El partner deja de verlo por separado; al activar el padre, también se matriculará en este curso.' }
+    ];
+    if (hasOwnQuiz === true) {
+      rows.push({ label: '⚠️ Advertencia:', value: 'Este curso ya tiene su propio examen en Moodle — probablemente NO sea un satélite real, sino una certificación completa e independiente.' });
+    }
+
+    showConfirmAction({
+      title: 'Vincular certificación', icon: hasOwnQuiz === true ? '⚠️' : '🔗',
+      rows,
+      confirmLabel: hasOwnQuiz === true ? '🔗 Vincular de todos modos' : '🔗 Vincular',
+      confirmClass: hasOwnQuiz === true ? 'btn-warning' : 'btn-primary',
+      onConfirm: () => linkCourseAsChild(childId, parentId)
+    });
+  }
+
+  function confirmUnlinkCourseChild(childId){
+    const child = _courseHierarchyCourses.find(c => c.id === childId);
+    const parent = child ? _courseHierarchyCourses.find(c => c.id === child.parent_course_id) : null;
+    showConfirmAction({
+      title: 'Desvincular certificación', icon: '⚠️',
+      rows: [
+        { label: 'Curso hijo:', value: child ? `${child.name} #${child.id}` : childId },
+        { label: 'Curso padre actual:', value: parent ? `${parent.name} #${parent.id}` : '—' },
+        { label: 'Efecto:', value: 'Vuelve a aparecer como certificación independiente para el partner.' }
+      ],
+      confirmLabel: 'Desvincular', confirmClass: 'btn-danger',
+      onConfirm: () => unlinkCourseChild(childId)
+    });
+  }
+
+  // Suspender/reactivar aplica solo a certificaciones raíz (padre o standalone) —
+  // un hijo ya está oculto al partner por tener parent_course_id, no necesita esto.
+  function confirmToggleCourseStatus(courseId, nextActive){
+    const course = _courseHierarchyCourses.find(c => c.id === courseId);
+    showConfirmAction({
+      title: nextActive ? 'Reactivar certificación' : 'Suspender certificación',
+      icon: nextActive ? '✅' : '⏸️',
+      rows: [
+        { label: 'Certificación:', value: course ? `${course.name} #${course.id}` : courseId },
+        { label: 'Efecto:', value: nextActive
+            ? 'Vuelve a aparecer en el listado de "Activar Voucher" del partner (si no tiene padre).'
+            : 'Deja de aparecer de inmediato en el listado de "Activar Voucher" del partner.' }
+      ],
+      confirmLabel: nextActive ? '✅ Reactivar' : '⏸️ Suspender',
+      confirmClass: nextActive ? 'btn-success' : 'btn-warning',
+      onConfirm: () => toggleCourseStatus(courseId, nextActive)
+    });
+  }
+
+  async function toggleCourseStatus(courseId, nextActive){
+    try {
+      const resp = await safeFetch(apiUrl + `/admin/courses/${courseId}/status`, {
+        method: 'PATCH',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: nextActive })
+      });
+      const data = await safeJson(resp);
+      if(!resp.ok) throw new Error(data.error || 'Error al actualizar el estado');
+      showToast(nextActive ? '✅ Certificación reactivada' : '⏸️ Certificación suspendida', 'success');
+      await refreshHierarchyData();
+    } catch (e) {
+      showToast(`❌ ${e.message}`, 'danger');
+    }
+  }
+
+  async function linkCourseAsChild(childId, parentId){
+    try {
+      const resp = await safeFetch(apiUrl + `/admin/courses/${childId}/parent`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_course_id: parentId })
+      });
+      const data = await safeJson(resp);
+      if(!resp.ok) throw new Error(data.error || 'Error al vincular');
+      showToast('✅ Curso vinculado correctamente', 'success');
+      await refreshHierarchyData();
+    } catch (e) {
+      showToast(`❌ ${e.message}`, 'danger');
+    }
+  }
+
+  async function unlinkCourseChild(childId){
+    try {
+      const resp = await safeFetch(apiUrl + `/admin/courses/${childId}/parent`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ parent_course_id: null })
+      });
+      const data = await safeJson(resp);
+      if(!resp.ok) throw new Error(data.error || 'Error al desvincular');
+      showToast('✅ Curso desvinculado', 'success');
+      await refreshHierarchyData();
+    } catch (e) {
+      showToast(`❌ ${e.message}`, 'danger');
+    }
+  }
+
+  on('ch-refresh-btn', 'click', () => loadCourseHierarchy());
 
   on('admin-course-cancel', 'click', () => {
     resetAdminCourseForm();
@@ -4026,17 +4341,38 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  on('admin-user-role', 'change', () => {
+  // Un partner es una empresa, no una persona — sin campo "Apellido". El campo
+  // "Nombre" se convierte en el nombre completo de la empresa (payload sigue
+  // mandando solo `first_name`; el backend ya arma partners.name a partir de
+  // [first_name, last_name].join(' '), que colapsa a solo first_name si no hay
+  // last_name — cero cambios de backend necesarios).
+  function syncNewUserRoleFields(){
+    const isPartner = (el('admin-user-role') || {}).value === 'partner';
     const note = el('new-user-partner-pricing-note');
-    if (note) note.style.display = (el('admin-user-role') || {}).value === 'partner' ? '' : 'none';
-  });
+    if (note) note.style.display = isPartner ? '' : 'none';
+
+    const firstNameCol = el('admin-user-first-name-col');
+    const lastNameCol  = el('admin-user-last-name-col');
+    const firstNameLabel = el('admin-user-first-name-label');
+    const firstNameInput = el('admin-user-first-name');
+
+    if (lastNameCol) lastNameCol.style.display = isPartner ? 'none' : '';
+    if (firstNameCol) firstNameCol.className = isPartner ? 'col-12' : 'col-6';
+    if (firstNameLabel) firstNameLabel.textContent = isPartner ? 'Nombre de la empresa (Partner)' : 'Nombre';
+    if (firstNameInput) firstNameInput.placeholder = isPartner ? 'Ej: Empresa S.A.S.' : 'Nombre';
+    if (isPartner && el('admin-user-last-name')) el('admin-user-last-name').value = '';
+  }
+
+  on('admin-user-role', 'change', syncNewUserRoleFields);
 
   on('create-user', 'click', async () => {
     const firstName = ((el('admin-user-first-name') || {}).value || '').trim();
-    const lastName  = ((el('admin-user-last-name')  || {}).value || '').trim();
+    const role      = (el('admin-user-role')     || {}).value || 'user';
+    // Partner = empresa, sin apellido — se ignora aunque el campo tenga un valor
+    // residual de una selección de rol anterior.
+    const lastName  = role === 'partner' ? '' : ((el('admin-user-last-name') || {}).value || '').trim();
     const email     = (el('admin-user-email')    || {}).value || '';
     const password  = (el('admin-user-password') || {}).value || '';
-    const role      = (el('admin-user-role')     || {}).value || 'user';
     clearAdminUserMessage();
     if(!email || !password){ showLoginMessage('Completa email y contraseña', 'danger', 3000); return; }
     const expirySelect = (el('new-user-expiry-days') || {}).value || '0';
@@ -4049,7 +4385,7 @@ document.addEventListener('DOMContentLoaded', () => {
     showConfirmAction({
       title: 'Crear Nuevo Usuario', icon: '👤',
       rows: [
-        { label: 'Nombre completo:', value: [firstName, lastName].filter(Boolean).join(' ') || '—' },
+        { label: role === 'partner' ? 'Empresa (partner):' : 'Nombre completo:', value: [firstName, lastName].filter(Boolean).join(' ') || '—' },
         { label: 'Email:', value: email },
         { label: 'Rol:', value: role },
         { label: 'Caducidad contraseña:', value: expiryLabel },
@@ -4303,10 +4639,11 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   on('btn-open-new-user', 'click', () => {
-    loadAdminRoles(true).catch(()=>{});
+    loadAdminRoles(true).then(syncNewUserRoleFields).catch(()=>{});
     // Resetear validador al abrir
     const pwdInput = el('admin-user-password');
     if(pwdInput) { pwdInput.value = ''; pwdInput.dispatchEvent(new Event('input')); }
+    syncNewUserRoleFields();
     bootstrap.Modal.getOrCreateInstance(document.getElementById('newUserModal')).show();
   });
 

@@ -2328,6 +2328,9 @@
               <div class="admin-side-item admin-menu-item" data-target="admin-courses">
                 <span class="side-icon">📚</span> Certificaciones
               </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-course-hierarchy">
+                <span class="side-icon">🔗</span> Jerarquía de Certificaciones
+              </div>
               <div class="admin-side-item admin-menu-item" data-target="admin-pricing">
                 <span class="side-icon">🏷️</span> Pricing
               </div>
@@ -2825,6 +2828,54 @@
                           </thead>
                           <tbody id="admin-courses-tbody">
                             <tr><td colspan="5" class="text-center text-muted p-3">Haz clic en Actualizar para cargar certificaciones</td></tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div id="admin-course-hierarchy" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
+                    <div class="d-flex align-items-center gap-2">
+                      <span style="font-size:2rem;">🔗</span>
+                      <div>
+                        <h4 class="mb-0">Jerarquía de Certificaciones</h4>
+                      </div>
+                    </div>
+                    <div class="d-flex gap-2">
+                      <button id="ch-refresh-btn" class="btn btn-outline-primary btn-sm">🔄 Actualizar</button>
+                    </div>
+                  </div>
+
+                  <div id="ch-message"></div>
+
+                  <!-- Filtra la tabla de abajo; clic en una fila abre el popup para
+                       asociar sus hijos (sugerencias automáticas + búsqueda manual + hijos actuales). -->
+                  <div class="card border-0 shadow-sm mb-4">
+                    <div class="card-body py-3">
+                      <h6 class="fw-bold mb-3">Buscar certificación padre</h6>
+                      <div class="input-group input-group-sm">
+                        <input type="text" id="ch-parent-search" class="form-control" placeholder="Busca el curso padre para asociarle hijos..." autocomplete="off">
+                        <button type="button" id="ch-parent-search-clear" class="btn btn-outline-secondary" title="Borrar búsqueda">✕</button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card shadow-sm">
+                    <div class="card-body p-0">
+                      <div class="table-responsive">
+                        <table class="table table-hover mb-0 align-middle">
+                          <thead>
+                            <tr>
+                              <th>Certificación</th>
+                              <th>Tipo</th>
+                              <th>Estado</th>
+                              <th>Hijos vinculados</th>
+                            </tr>
+                          </thead>
+                          <tbody id="ch-tbody">
+                            <tr><td colspan="4" class="text-center text-muted p-3">Haz clic en Actualizar para cargar la jerarquía</td></tr>
                           </tbody>
                         </table>
                       </div>
@@ -4080,6 +4131,44 @@
       </div>
     </div>
 
+    <!-- Modal: asociar hijos (Content/Simulator) a un curso padre -->
+    <div class="modal fade" id="chAssociateChildrenModal" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">🔗 Vincular hijos — <span id="ch-modal-parent-name"></span></h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="ch-modal-message"></div>
+
+            <div class="d-flex align-items-center justify-content-between border rounded px-3 py-2 mb-4">
+              <div>
+                <span class="small text-muted me-2">Estado de esta certificación:</span>
+                <span id="ch-modal-status-badge" class="badge bg-success">Activo</span>
+              </div>
+              <button type="button" id="ch-modal-toggle-status-btn" class="btn btn-outline-warning btn-sm">Suspender</button>
+            </div>
+
+            <h6 class="fw-bold small text-uppercase text-muted mb-2">Hijos vinculados actualmente</h6>
+            <div id="ch-modal-current-children" class="mb-4"></div>
+
+            <h6 class="fw-bold small text-uppercase text-muted mb-2">🔎 Sugerencias por patrón de nombre</h6>
+            <div id="ch-modal-suggestions" class="d-flex flex-wrap gap-2 mb-4"></div>
+
+            <h6 class="fw-bold small text-uppercase text-muted mb-2">Buscar otro curso para vincular</h6>
+            <div class="position-relative">
+              <input type="text" id="ch-modal-child-search" class="form-control form-control-sm" placeholder="Busca el curso hijo..." autocomplete="off">
+              <div id="ch-modal-child-dropdown" class="list-group position-absolute w-100 shadow-sm" style="z-index:1050;max-height:220px;overflow-y:auto;display:none;"></div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cerrar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal Nuevo Usuario -->
     <div class="modal fade" id="newUserModal" tabindex="-1" aria-hidden="true">
       <div class="modal-dialog modal-lg">
@@ -4091,11 +4180,11 @@
           <div class="modal-body">
             <div id="admin-user-message"></div>
             <div class="row g-3">
-              <div class="col-6">
-                <label class="form-label">Nombre</label>
+              <div id="admin-user-first-name-col" class="col-6">
+                <label id="admin-user-first-name-label" class="form-label">Nombre</label>
                 <input id="admin-user-first-name" class="form-control" placeholder="Nombre">
               </div>
-              <div class="col-6">
+              <div id="admin-user-last-name-col" class="col-6">
                 <label class="form-label">Apellido</label>
                 <input id="admin-user-last-name" class="form-control" placeholder="Apellido">
               </div>

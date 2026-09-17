@@ -278,6 +278,15 @@ async function initDb(){
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS moodle_course_id INTEGER;
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    -- Idioma real del curso en Moodle ('es'/'en'/...). Varias certificaciones
+    -- existen duplicadas por idioma (mismo nombre, lang distinto) — el partner
+    -- solo debe ver las de español; NULL (cursos sembrados/sin sync) cuenta como
+    -- español por defecto, nunca se oculta nada por falta de este dato.
+    ALTER TABLE courses ADD COLUMN IF NOT EXISTS lang VARCHAR(10);
+    -- Jerarquía padre-hijo (certificaciones legacy divididas en Content/Simulator):
+    -- un hijo apunta a su padre; jerarquía de un solo nivel, validada en el endpoint.
+    ALTER TABLE courses ADD COLUMN IF NOT EXISTS parent_course_id INTEGER;
+    CREATE INDEX IF NOT EXISTS idx_courses_parent_course_id ON courses(parent_course_id);
     ALTER TABLE vouchers ADD COLUMN IF NOT EXISTS course_id INTEGER;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS course_id INTEGER;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS final_client VARCHAR(200);
@@ -360,6 +369,19 @@ async function initDb(){
     EXCEPTION WHEN undefined_table THEN
       NULL;
     END $$;
+
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM information_schema.table_constraints
+        WHERE constraint_name = 'fk_courses_parent_course_id'
+      ) THEN
+        ALTER TABLE courses ADD CONSTRAINT fk_courses_parent_course_id
+          FOREIGN KEY (parent_course_id) REFERENCES courses(id);
+      END IF;
+    EXCEPTION WHEN undefined_table THEN
+      NULL;
+    END $$;
   `);
 
   // Tabla de configuración global del sistema
@@ -397,6 +419,32 @@ async function initDb(){
     );
     CREATE INDEX IF NOT EXISTS idx_email_templates_key ON email_templates(template_key);
     CREATE UNIQUE INDEX IF NOT EXISTS uniq_email_templates_active ON email_templates(template_key) WHERE is_active;
+  `);
+
+  // Matrícula de cursos hijo (Content/Simulator) por activación. `activations` es 1:1
+  // con un solo curso (el padre); esta tabla registra el detalle N:1 del fan-out de
+  // matrícula Moodle hacia cada hijo vinculado a ese padre en el momento de activar.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS activation_child_enrollments (
+      id SERIAL PRIMARY KEY,
+      activation_id INTEGER NOT NULL REFERENCES activations(id) ON DELETE CASCADE,
+      course_id INTEGER NOT NULL REFERENCES courses(id),
+      moodle_status VARCHAR(50) NOT NULL DEFAULT 'PENDING',
+      moodle_user_id INTEGER,
+      moodle_username VARCHAR(100),
+      moodle_temp_password VARCHAR(100),
+      moodle_error TEXT,
+      moodle_enrolled_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE (activation_id, course_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_ace_activation ON activation_child_enrollments(activation_id);
+    -- Completado del hijo (mismo criterio que activations.moodle_completed_at):
+    -- algunos "hijos" (Content/Simulator) en la práctica traen su propio examen
+    -- real, así que se sincronizan con la misma lógica quiz→page que el padre.
+    ALTER TABLE activation_child_enrollments ADD COLUMN IF NOT EXISTS moodle_completed_at TIMESTAMP;
+    ALTER TABLE activation_child_enrollments ADD COLUMN IF NOT EXISTS moodle_completion_synced_at TIMESTAMP;
   `);
 
   const roleSeeds = [

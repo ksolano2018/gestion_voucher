@@ -140,6 +140,16 @@ router.post('/partner/:id/activate',
         return res.status(404).json({ error: 'Certificación no encontrada' });
       }
 
+      // Cursos hijo (Content/Simulator) vinculados a este padre — certificaciones "legacy"
+      // en transición. Si no tiene hijos (certificación nueva/standalone), esto queda vacío
+      // y el comportamiento es idéntico al de hoy.
+      const childCourses = (await pool.query(
+        `SELECT id, name, moodle_course_id FROM courses
+         WHERE parent_course_id = $1 AND COALESCE(active, TRUE) = TRUE
+         ORDER BY id ASC`,
+        [course_id]
+      )).rows;
+
       const voucherQuery = await pool.query(
         `SELECT v.id, v.code, v.purchase_id
          FROM vouchers v
@@ -272,6 +282,83 @@ router.post('/partner/:id/activate',
         moodleError || null,
         req
       );
+
+      // Fan-out de matrícula a cursos hijo (Content/Simulator). Se intentan siempre,
+      // incluso si el padre falló: enrollStudent hace find-or-create por email, así que
+      // si el usuario ya quedó creado en Moodle durante el intento del padre, los hijos
+      // lo encuentran igual. No afecta el correo de bienvenida (sigue basado solo en el padre).
+      for (const child of childCourses) {
+        const childMoodleCourseId = child.moodle_course_id || null;
+
+        const childRowResult = await pool.query(
+          `INSERT INTO activation_child_enrollments (activation_id, course_id, moodle_status)
+           VALUES ($1, $2, $3)
+           ON CONFLICT (activation_id, course_id) DO NOTHING
+           RETURNING id`,
+          [activationId, child.id, childMoodleCourseId ? 'PENDING' : 'SKIPPED']
+        );
+        if (childRowResult.rowCount === 0) continue;
+        const childRowId = childRowResult.rows[0].id;
+
+        const childResult = await moodleService.enrollStudent({
+          email: user_email,
+          firstName,
+          lastName,
+          moodleCourseId: childMoodleCourseId,
+          expiresAt
+        });
+
+        let childStatus, childUserId = null, childError = null, childEnrolledAt = null;
+        let childUsername = null, childTempPassword = null;
+
+        if (childResult.skipped) {
+          childStatus = 'SKIPPED';
+        } else if (childResult.mocked) {
+          childStatus = 'MOCKED';
+          childUserId = childResult.moodleUserId;
+          childEnrolledAt = new Date();
+          childUsername = childResult.moodleUsername || null;
+          childTempPassword = childResult.moodleTempPassword || null;
+        } else if (childResult.enrolled) {
+          childStatus = 'ENROLLED';
+          childUserId = childResult.moodleUserId;
+          childEnrolledAt = new Date();
+          childUsername = childResult.moodleUsername || null;
+          childTempPassword = childResult.moodleTempPassword || null;
+        } else {
+          childStatus = 'FAILED';
+          childError = childResult.error;
+          childUserId = childResult.moodleUserId || null;
+          console.error(`❌ Moodle child enrollment failed for activation ${activationId}, child course ${child.id}:`, childResult.error);
+        }
+
+        await pool.query(
+          `UPDATE activation_child_enrollments
+           SET moodle_status=$1, moodle_user_id=$2, moodle_error=$3, moodle_enrolled_at=$4,
+               moodle_username=$5, moodle_temp_password=$6, updated_at=NOW()
+           WHERE id=$7`,
+          [childStatus, childUserId, childError, childEnrolledAt, childUsername, childTempPassword, childRowId]
+        );
+
+        await logSystemEvent(
+          childStatus === 'ENROLLED' ? 'MOODLE_CHILD_ENROLLED' : `MOODLE_CHILD_ENROLL_${childStatus}`,
+          'MOODLE',
+          req.user.sub,
+          null,
+          voucher.purchase_id,
+          {
+            activation_id: activationId,
+            parent_course_id: course_id,
+            child_course_id: child.id,
+            moodle_course_id: childMoodleCourseId,
+            user_email,
+            mock_mode: moodleService.isMockMode()
+          },
+          childStatus === 'FAILED' ? 'FAILED' : 'SUCCESS',
+          childError || null,
+          req
+        );
+      }
 
       // Correo al estudiante (no bloqueante):
       //  - cuenta nueva en Moodle        → bienvenida con credenciales (usuario + contraseña temporal)
