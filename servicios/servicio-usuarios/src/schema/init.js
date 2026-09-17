@@ -300,6 +300,11 @@ async function initDb(){
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS moodle_temp_password VARCHAR(100);
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS moodle_completed_at TIMESTAMP;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS moodle_completion_synced_at TIMESTAMP;
+    -- Grupo de Moodle = nombre del partner (paridad con el CSV bulk-upload manual
+    -- que usaban antes de la app), asignado tras matricular. Ver [[grupo-moodle-partner]].
+    ALTER TABLE activations ADD COLUMN IF NOT EXISTS moodle_group_status VARCHAR(50);
+    ALTER TABLE activations ADD COLUMN IF NOT EXISTS moodle_group_id INTEGER;
+    ALTER TABLE activations ADD COLUMN IF NOT EXISTS moodle_group_error TEXT;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_status VARCHAR(30);
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_error TEXT;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS email_to VARCHAR(200);
@@ -445,6 +450,9 @@ async function initDb(){
     -- real, así que se sincronizan con la misma lógica quiz→page que el padre.
     ALTER TABLE activation_child_enrollments ADD COLUMN IF NOT EXISTS moodle_completed_at TIMESTAMP;
     ALTER TABLE activation_child_enrollments ADD COLUMN IF NOT EXISTS moodle_completion_synced_at TIMESTAMP;
+    ALTER TABLE activation_child_enrollments ADD COLUMN IF NOT EXISTS moodle_group_status VARCHAR(50);
+    ALTER TABLE activation_child_enrollments ADD COLUMN IF NOT EXISTS moodle_group_id INTEGER;
+    ALTER TABLE activation_child_enrollments ADD COLUMN IF NOT EXISTS moodle_group_error TEXT;
   `);
 
   const roleSeeds = [

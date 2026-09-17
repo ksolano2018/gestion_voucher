@@ -191,15 +191,87 @@ async function enrollUserInCourse(moodleUserId, moodleCourseId, timeend) {
 }
 
 /**
- * High-level: find-or-create user then enroll in course.
+ * Find a course group by name (case-insensitive) or create it.
+ * Returns { groupId } or { error }.
+ */
+async function findOrCreateGroup(courseId, groupName) {
+  try {
+    const existing = await moodleRequest('core_group_get_course_groups', { courseid: courseId });
+    if (!Array.isArray(existing)) return { error: 'Respuesta inesperada de Moodle (get_course_groups)' };
+    const needle = groupName.trim().toLowerCase();
+    const match = existing.find(g => (g.name || '').trim().toLowerCase() === needle);
+    if (match) return { groupId: match.id };
+
+    const created = await moodleRequest('core_group_create_groups', {
+      'groups[0][courseid]':          courseId,
+      'groups[0][name]':              groupName,
+      // description/descriptionformat son VALUE_REQUIRED en esta versión de
+      // Moodle aunque conceptualmente sean opcionales — sin ellos tira
+      // invalid_parameter_exception (confirmado en local).
+      'groups[0][description]':       '',
+      'groups[0][descriptionformat]': 1
+    });
+    if (!Array.isArray(created) || created.length === 0) {
+      return { error: 'Moodle create_groups retornó resultado vacío' };
+    }
+    return { groupId: created[0].id };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+/**
+ * Add a user to a group. Idempotent from our side (Moodle ignores duplicates).
+ * Returns { ok: true } or { error }.
+ */
+async function addUserToGroup(groupId, moodleUserId) {
+  try {
+    await moodleRequest('core_group_add_group_members', {
+      'members[0][groupid]': groupId,
+      'members[0][userid]':  moodleUserId
+    });
+    return { ok: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+/**
+ * find-or-create + add member, wrapped so a failure here never blocks a
+ * successful course enrollment. Sin `groupName` → SKIPPED.
+ */
+async function assignToGroup(moodleCourseId, moodleUserId, groupName) {
+  if (!groupName) return { groupStatus: 'SKIPPED' };
+  if (MOODLE_MOCK) return { groupStatus: 'MOCKED' };
+
+  const groupResult = await findOrCreateGroup(moodleCourseId, groupName);
+  if (groupResult.error) {
+    return { groupStatus: 'FAILED', groupError: `find_or_create_group: ${groupResult.error}` };
+  }
+
+  const memberResult = await addUserToGroup(groupResult.groupId, moodleUserId);
+  if (memberResult.error) {
+    return { groupStatus: 'FAILED', groupError: `add_group_member: ${memberResult.error}`, moodleGroupId: groupResult.groupId };
+  }
+
+  return { groupStatus: 'OK', moodleGroupId: groupResult.groupId };
+}
+
+/**
+ * High-level: find-or-create user then enroll in course, then (optionally)
+ * assign to a Moodle group by name — replica el grupo=partner del CSV
+ * bulk-upload manual que usaban antes de la app. Ver [[grupo-moodle-partner]].
  *
  * Returns one of:
- *   { enrolled: true, moodleUserId }          — éxito real
- *   { mocked: true, moodleUserId }             — modo mock
- *   { skipped: true, reason }                  — sin moodle_course_id
- *   { error, moodleUserId? }                   — fallo parcial o total
+ *   { enrolled: true, moodleUserId, groupStatus, moodleGroupId?, groupError? }  — éxito real
+ *   { mocked: true, moodleUserId, groupStatus }                                 — modo mock
+ *   { skipped: true, reason }                                                   — sin moodle_course_id
+ *   { error, moodleUserId? }                                                    — fallo parcial o total
+ *
+ * El grupo NUNCA bloquea el resultado: si falla, `groupStatus: 'FAILED'` pero
+ * `enrolled`/`mocked` siguen en true (la matrícula al curso ya es lo importante).
  */
-async function enrollStudent({ email, firstName, lastName, moodleCourseId, expiresAt }) {
+async function enrollStudent({ email, firstName, lastName, moodleCourseId, expiresAt, groupName }) {
   if (!moodleCourseId) {
     return { skipped: true, reason: 'no_moodle_course_id' };
   }
@@ -208,7 +280,9 @@ async function enrollStudent({ email, firstName, lastName, moodleCourseId, expir
   const timeend = expiresAt ? Math.floor(new Date(expiresAt).getTime() / 1000) : 0;
 
   if (MOODLE_MOCK) {
-    return mockEnrollStudent(email, moodleCourseId, timeend);
+    const mocked = mockEnrollStudent(email, moodleCourseId, timeend);
+    const groupResult = await assignToGroup(moodleCourseId, mocked.moodleUserId, groupName);
+    return { ...mocked, ...groupResult };
   }
 
   // Step 1: find existing user
@@ -246,7 +320,10 @@ async function enrollStudent({ email, firstName, lastName, moodleCourseId, expir
     return { error: `enroll: ${enrollResult.error}`, moodleUserId };
   }
 
-  return { enrolled: true, moodleUserId, moodleUsername, moodleTempPassword, createdNewUser };
+  // Step 4: grupo=partner (no bloqueante, ver assignToGroup)
+  const groupResult = await assignToGroup(moodleCourseId, moodleUserId, groupName);
+
+  return { enrolled: true, moodleUserId, moodleUsername, moodleTempPassword, createdNewUser, ...groupResult };
 }
 
 /**
