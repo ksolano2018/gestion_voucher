@@ -277,6 +277,17 @@ async function initDb(){
     ALTER TABLE purchases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS moodle_course_id INTEGER;
+    -- Suspensión hecha por un admin desde la UI. El sync de Moodle NO debe reactivar
+    -- estos cursos (a diferencia de los desactivados automáticamente por desaparecer
+    -- de Moodle). Al crear la columna, los ya inactivos se consideran suspendidos.
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM information_schema.columns
+                     WHERE table_name = 'courses' AND column_name = 'manually_suspended') THEN
+        ALTER TABLE courses ADD COLUMN manually_suspended BOOLEAN NOT NULL DEFAULT FALSE;
+        UPDATE courses SET manually_suspended = TRUE WHERE active = FALSE;
+      END IF;
+    END $$;
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
     -- Idioma real del curso en Moodle ('es'/'en'/...). Varias certificaciones
     -- existen duplicadas por idioma (mismo nombre, lang distinto) — el partner
