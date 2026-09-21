@@ -130,16 +130,20 @@ async function syncMoodleCourses() {
 
     const lang = mc.lang || null;
     const existing = await pool.query(
-      'SELECT id, name, active, lang FROM courses WHERE moodle_course_id = $1', [mc.id]
+      'SELECT id, name, active, lang, manually_suspended FROM courses WHERE moodle_course_id = $1', [mc.id]
     );
 
     if (existing.rowCount > 0) {
       const row = existing.rows[0];
       const nameChanged   = row.name !== name;
       const langChanged   = row.lang !== lang;
-      const needsActivate = !row.active;
+      // Un curso suspendido manualmente por un admin no se reactiva con el sync.
+      const needsActivate = !row.active && !row.manually_suspended;
       if (nameChanged || langChanged || needsActivate) {
-        await pool.query('UPDATE courses SET name=$1, lang=$2, active=TRUE, updated_at=NOW() WHERE moodle_course_id=$3', [name, lang, mc.id]);
+        await pool.query(
+          'UPDATE courses SET name=$1, lang=$2, active=NOT COALESCE(manually_suspended, FALSE), updated_at=NOW() WHERE moodle_course_id=$3',
+          [name, lang, mc.id]
+        );
         updated.push({ moodle_id: mc.id, name, reactivated: needsActivate });
       } else {
         skipped.push({ moodle_id: mc.id, reason: 'unchanged' });
@@ -155,7 +159,7 @@ async function syncMoodleCourses() {
       );
       if (orphan.rowCount > 0) {
         await pool.query(
-          'UPDATE courses SET moodle_course_id=$1, lang=$2, active=TRUE, updated_at=NOW() WHERE id=$3',
+          'UPDATE courses SET moodle_course_id=$1, lang=$2, active=NOT COALESCE(manually_suspended, FALSE), updated_at=NOW() WHERE id=$3',
           [mc.id, lang, orphan.rows[0].id]
         );
         updated.push({ id: orphan.rows[0].id, moodle_id: mc.id, name, linked: true });

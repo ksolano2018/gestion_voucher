@@ -106,7 +106,7 @@ router.patch('/admin/courses/:id/status',
     const active = req.body.active === true || req.body.active === 'true';
     try {
       const updated = await pool.query(
-        'UPDATE courses SET active=$1, updated_at=NOW() WHERE id=$2 RETURNING id, name, COALESCE(active, TRUE) AS active, created_at, updated_at',
+        'UPDATE courses SET active=$1, manually_suspended=NOT $1::boolean, updated_at=NOW() WHERE id=$2 RETURNING id, name, COALESCE(active, TRUE) AS active, created_at, updated_at',
         [active, courseId]
       );
 
