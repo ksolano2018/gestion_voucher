@@ -1077,12 +1077,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Reporte de cierre (simulación, admin): contadores y Excel a partir del historial ya cargado.
   // Completado: el sync de Moodle lo marca como COMPLETED o COURSE_COMPLETED.
   // Sin matricular: la activación no llegó a Moodle (FAILED, PENDING o SKIPPED).
-  // Vencido: no completado y con fecha de vencimiento pasada. Activo: el resto.
+  // Vencido: no completado y con fecha de vencimiento pasada. Cursando: el resto.
   function closingStatus(r, now){
     if(['COMPLETED','COURSE_COMPLETED'].includes(r.moodle_status) || r.moodle_completed_at) return 'Completado';
     if(['FAILED','PENDING','SKIPPED'].includes(r.moodle_status)) return 'Sin matricular';
     if(r.expires_at && new Date(r.expires_at) < now) return 'Vencido';
-    return 'Activo';
+    return 'Cursando';
   }
 
   function closingRows(){
@@ -1108,6 +1108,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const count = s => rows.filter(r => r.estado_cierre === s).length;
     const kpis = [
       ['Activaciones', rows.length, 'primary'],
+      ['Cursando', count('Cursando'), 'info'],
       ['Completados', count('Completado'), 'success'],
       ['Vencidos', count('Vencido'), 'secondary'],
       ['Sin matricular', count('Sin matricular'), 'danger'],
@@ -1143,6 +1144,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const count = s => rows.filter(r => r.estado_cierre === s).length;
     const resumen = [
       { 'Indicador': 'Activaciones', 'Total': rows.length },
+      { 'Indicador': 'Cursando', 'Total': count('Cursando') },
       { 'Indicador': 'Completados', 'Total': count('Completado') },
       { 'Indicador': 'Vencidos', 'Total': count('Vencido') },
       { 'Indicador': 'Sin matricular', 'Total': count('Sin matricular') },
