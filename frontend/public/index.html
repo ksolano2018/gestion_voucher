@@ -2310,6 +2310,9 @@
               <div class="admin-side-item admin-menu-item" data-target="admin-activaciones">
                 <span class="side-icon">🎓</span> Activaciones
               </div>
+              <div class="admin-side-item admin-menu-item" data-target="admin-partner-history">
+                <span class="side-icon">📚</span> Historial partner
+              </div>
 
               <!-- ── ANÁLISIS Y AUDITORÍA ── -->
               <div class="admin-side-group">Análisis y auditoría</div>
@@ -3170,6 +3173,42 @@
                 </div>
 
                 <!-- ACTIVACIONES SECTION -->
+                <div id="admin-partner-history" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center gap-2 mb-3">
+                    <span style="font-size:2rem;">📚</span>
+                    <div><h4 class="mb-0">Historial por partner</h4><small class="text-muted">Cursos del grupo en Moodle, sus estudiantes y las matrículas hechas desde la app.</small></div>
+                  </div>
+                  <div class="row g-2 mb-3">
+                    <div class="col-md-6">
+                      <label class="form-label">Partner</label>
+                      <div class="position-relative">
+                        <input type="hidden" id="admin-hist-partner">
+                        <input id="admin-hist-search" class="form-control" placeholder="Buscar por grupo, nombre o correo…" autocomplete="off">
+                        <div id="admin-hist-results" class="list-group position-absolute w-100 shadow" style="z-index:1050;max-height:340px;overflow:auto;display:none;"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="card p-3 mb-3" style="border:1px dashed #cbd5e1;">
+                    <div class="fw-semibold mb-2">📊 Reporte de cierre <span class="badge bg-warning text-dark">simulación</span></div>
+                    <div class="row g-2 align-items-end mb-2">
+                      <div class="col-md-3"><label class="form-label small mb-1">Desde (activación)</label><input type="date" id="admin-hist-from" class="form-control form-control-sm"></div>
+                      <div class="col-md-3"><label class="form-label small mb-1">Hasta (activación)</label><input type="date" id="admin-hist-to" class="form-control form-control-sm"></div>
+                      <div class="col-md-6 text-end"><button type="button" id="admin-hist-closing-excel" class="btn btn-sm btn-success">📥 Excel de cierre</button></div>
+                    </div>
+                    <div id="admin-hist-kpis" class="row g-2"></div>
+                    <div class="small text-muted mt-2">Certificados: pendiente definir la fuente (plugin customcert o similar).</div>
+                  </div>
+                  <div class="d-flex flex-wrap gap-2 mb-3">
+                    <button id="admin-hist-refresh" class="btn btn-sm btn-outline-primary">↻ Actualizar desde Moodle</button>
+                    <button id="admin-hist-excel" class="btn btn-sm btn-success">📥 Excel</button>
+                    <span id="admin-hist-status" class="small text-muted align-self-center"></span>
+                  </div>
+                  <h6 class="mt-2">Cursos y estudiantes en Moodle</h6>
+                  <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th>Curso</th><th>Visible</th><th>Fin</th><th>Estudiantes (Moodle)</th></tr></thead><tbody id="admin-hist-moodle"></tbody></table></div>
+                  <h6>Matrículas hechas desde la app</h6>
+                  <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Curso</th><th>Alumno</th><th>Correo</th><th>Cliente final</th><th>Activada</th><th>Vence</th><th>Moodle</th><th>Curso</th></tr></thead><tbody id="admin-hist-app"></tbody></table></div>
+                </div>
                 <div id="admin-activaciones" class="content-section glass-panel p-4">
                   <div class="d-flex align-items-center justify-content-between flex-wrap gap-2 mb-4">
                     <div class="d-flex align-items-center gap-2">
@@ -3396,6 +3435,9 @@
               </div>
               <div class="admin-side-item partner-menu-item" data-target="partner-clients">
                 <span class="side-icon">👥</span> Clientes
+              </div>
+              <div class="admin-side-item partner-menu-item" data-target="partner-history">
+                <span class="side-icon">📚</span> Historial
               </div>
             </div>
 
@@ -3723,6 +3765,22 @@
                   </div>
                 </div>
 
+                <div id="partner-history" class="content-section glass-panel p-4">
+                  <div class="d-flex align-items-center gap-2 mb-3">
+                    <span style="font-size:2rem;">📚</span>
+                    <div><h4 class="mb-0">Historial de cursos y estudiantes</h4><small class="text-muted">Cursos del grupo en Moodle, sus estudiantes y las matrículas hechas desde la app.</small></div>
+                  </div>
+
+                  <div class="d-flex flex-wrap gap-2 mb-3">
+                    <button id="partner-hist-refresh" class="btn btn-sm btn-outline-primary">↻ Actualizar desde Moodle</button>
+                    <button id="partner-hist-excel" class="btn btn-sm btn-success">📥 Excel</button>
+                    <span id="partner-hist-status" class="small text-muted align-self-center"></span>
+                  </div>
+                  <h6 class="mt-2">Cursos y estudiantes en Moodle</h6>
+                  <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th>Curso</th><th>Visible</th><th>Fin</th><th>Estudiantes (Moodle)</th></tr></thead><tbody id="partner-hist-moodle"></tbody></table></div>
+                  <h6>Matrículas hechas desde la app</h6>
+                  <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Curso</th><th>Alumno</th><th>Correo</th><th>Cliente final</th><th>Activada</th><th>Vence</th><th>Moodle</th><th>Curso</th></tr></thead><tbody id="partner-hist-app"></tbody></table></div>
+                </div>
                 <div id="partner-activate" class="content-section glass-panel p-4">
                   <div class="d-flex align-items-center gap-2 mb-4">
                     <span style="font-size:2rem;">✅</span>
@@ -4138,6 +4196,30 @@
           <div class="modal-body">
             <div id="admin-user-message"></div>
             <div class="row g-3">
+              <div class="col-12">
+                <label class="form-label">Rol</label>
+                <select id="admin-user-role" class="form-control">
+                  <option value="user">Usuario</option>
+                </select>
+                <div id="new-user-partner-pricing-note" class="alert alert-info py-2 small mt-2 mb-0" style="display:none;">
+                  Se asignará automáticamente la categoría base <strong>Estándar</strong>.
+                  Para configurar precio especial, usa el módulo <strong>Pricing</strong>.
+                </div>
+              </div>
+
+              <!-- Partner: vincular a un partner existente (ej. los grupos de Moodle) o crear uno nuevo -->
+              <div id="new-user-partner-link-col" class="col-12" style="display:none;">
+                <label class="form-label">Partner</label>
+                <select id="new-user-partner-select" class="form-control">
+                  <option value="">+ Crear partner nuevo</option>
+                </select>
+                <div class="form-text">Elige un partner existente para vincular esta cuenta. Si no tiene correo, se le asignará el de esta cuenta.</div>
+              </div>
+              <div id="new-user-group-col" class="col-12" style="display:none;">
+                <label class="form-label">Nombre de grupo en Moodle</label>
+                <input id="new-user-group-name" class="form-control" placeholder="Por defecto, el nombre de la empresa">
+                <div class="form-text">Debe ser igual al grupo de Moodle del partner. No puede repetirse.</div>
+              </div>
               <div id="admin-user-first-name-col" class="col-6">
                 <label id="admin-user-first-name-label" class="form-label">Nombre</label>
                 <input id="admin-user-first-name" class="form-control" placeholder="Nombre">
@@ -4177,17 +4259,6 @@
                   </ul>
                 </div>
               </div>
-              <div class="col-12">
-                <label class="form-label">Rol</label>
-                <select id="admin-user-role" class="form-control">
-                  <option value="user">Usuario</option>
-                </select>
-                <div id="new-user-partner-pricing-note" class="alert alert-info py-2 small mt-2 mb-0" style="display:none;">
-                  Se asignará automáticamente la categoría base <strong>Estándar</strong>.
-                  Para configurar precio especial, usa el módulo <strong>Pricing</strong>.
-                </div>
-              </div>
-
               <!-- Separador seguridad -->
               <div class="col-12">
                 <hr class="my-1">

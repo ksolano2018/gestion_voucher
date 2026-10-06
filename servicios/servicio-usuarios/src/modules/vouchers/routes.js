@@ -142,7 +142,7 @@ router.post('/partner/:id/activate',
 
       // Grupo de Moodle = nombre del partner (paridad con el CSV bulk-upload
       // manual de antes de la app). Ver [[grupo-moodle-partner]].
-      const partnerRow = await pool.query('SELECT name FROM partners WHERE id=$1', [pid]);
+      const partnerRow = await pool.query('SELECT COALESCE(group_name, name) AS name FROM partners WHERE id=$1', [pid]);
       const partnerName = partnerRow.rows[0] ? partnerRow.rows[0].name : null;
 
       // Cursos hijo (Content/Simulator) vinculados a este padre — certificaciones "legacy"
@@ -726,5 +726,94 @@ router.get('/admin/activations',
     }
   }
 );
+
+// Historial de matrículas hechas desde la app por partner (incluye cursos cerrados o suspendidos).
+// Lo usan el partner (solo el suyo) y el admin (cualquiera). Ver Excel en el frontend.
+async function getPartnerCourseHistory(partnerId) {
+  const r = await pool.query(
+    `SELECT a.id                       AS activation_id,
+            COALESCE(p.group_name, p.name) AS grupo_moodle,
+            c.name                     AS curso,
+            c.moodle_course_id,
+            a.user_name,
+            a.user_email,
+            a.final_client,
+            a.activated_at,
+            a.moodle_enrolled_at,
+            a.moodle_completed_at,
+            a.expires_at,
+            a.moodle_status,
+            a.activation_status,
+            c.active                   AS curso_activo,
+            c.manually_suspended       AS curso_suspendido_manual
+       FROM activations a
+       JOIN vouchers v   ON v.id = a.voucher_id
+       JOIN partners p   ON p.id = v.partner_id
+       LEFT JOIN courses c ON c.id = a.course_id
+      WHERE p.id = $1
+      ORDER BY a.activated_at DESC`,
+    [partnerId]
+  );
+  return r.rows;
+}
+
+router.get('/partner/:id/course-history', authenticate, async (req, res) => {
+  const pid = req.params.id;
+  if (req.user && req.user.role !== 'admin') {
+    if (!req.user.partner_id || String(req.user.partner_id) !== String(pid)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+  }
+  try {
+    res.json(await getPartnerCourseHistory(pid));
+  } catch (e) {
+    res.status(500).json({ error: 'Error al obtener historial' });
+  }
+});
+
+router.get('/admin/partners/:id/course-history', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+  try {
+    res.json(await getPartnerCourseHistory(req.params.id));
+  } catch (e) {
+    res.status(500).json({ error: 'Error al obtener historial' });
+  }
+});
+
+// Cursos donde existe el grupo del partner en Moodle, con sus estudiantes (lectura en vivo, con caché 5 min).
+async function getPartnerMoodleReport(partnerId, { refresh = false } = {}) {
+  const p = await pool.query('SELECT COALESCE(group_name, name) AS grupo FROM partners WHERE id=$1', [partnerId]);
+  if (p.rowCount === 0) return null;
+  const grupo = p.rows[0].grupo;
+  const c = await pool.query('SELECT DISTINCT moodle_course_id FROM courses WHERE moodle_course_id IS NOT NULL');
+  const courseIds = c.rows.map(r => r.moodle_course_id);
+  const report = await moodleService.getGroupReport(grupo, courseIds, { refresh });
+  return { grupo_moodle: grupo, ...report };
+}
+
+router.get('/partner/:id/moodle-report', authenticate, async (req, res) => {
+  const pid = req.params.id;
+  if (req.user && req.user.role !== 'admin') {
+    if (!req.user.partner_id || String(req.user.partner_id) !== String(pid)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+  }
+  try {
+    const data = await getPartnerMoodleReport(pid, { refresh: req.query.refresh === '1' });
+    if (!data) return res.status(404).json({ error: 'Partner no encontrado' });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Error al obtener reporte de Moodle' });
+  }
+});
+
+router.get('/admin/partners/:id/moodle-report', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+  try {
+    const data = await getPartnerMoodleReport(req.params.id, { refresh: req.query.refresh === '1' });
+    if (!data) return res.status(404).json({ error: 'Partner no encontrado' });
+    res.json(data);
+  } catch (e) {
+    res.status(500).json({ error: 'Error al obtener reporte de Moodle' });
+  }
+});
 
 module.exports = router;

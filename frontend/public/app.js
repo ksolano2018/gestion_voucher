@@ -847,6 +847,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if(target === 'admin-pricing'){
         loadAdminPricingData();
       }
+      if(target === 'admin-partner-history'){
+        loadAdminPartnerHistoryOptions();
+      }
       if(target === 'admin-course-hierarchy'){
         loadCourseHierarchy();
       }
@@ -893,8 +896,278 @@ document.addEventListener('DOMContentLoaded', () => {
       if(target === 'partner-clients'){
         loadPartnerFinalClients();
       }
+      if(target === 'partner-history'){
+        loadPartnerHistory(false);
+      }
     }
   });
+
+  // Historial de un partner: cursos del grupo en Moodle + matrículas de la app.
+  // P = prefijo de ids ('partner-hist' o 'admin-hist'). Lee del backend y pinta las dos tablas.
+  let partnerHistoryCache = { partnerId: null, data: null };
+
+  function fmtDate(v){
+    if(!v) return '—';
+    const d = new Date(v);
+    return isNaN(d) ? '—' : d.toLocaleDateString('es-CO');
+  }
+
+  function fmtEndDate(ts){
+    if(!ts) return 'Sin fecha de fin';
+    return fmtDate(new Date(ts * 1000));
+  }
+
+  async function fetchPartnerHistory(P, partnerId, refresh){
+    const qs = refresh ? '?refresh=1' : '';
+    const base = apiUrl;
+    const isAdmin = P === 'admin-hist';
+    const urlMoodle = isAdmin
+      ? `${base}/admin/partners/${partnerId}/moodle-report${qs}`
+      : `${base}/partner/${partnerId}/moodle-report${qs}`;
+    const urlApp = isAdmin
+      ? `${base}/admin/partners/${partnerId}/course-history`
+      : `${base}/partner/${partnerId}/course-history`;
+    const [rM, rA] = await Promise.all([
+      safeFetch(urlMoodle, { headers: authHeaders() }),
+      safeFetch(urlApp,    { headers: authHeaders() }),
+    ]);
+    const moodle = await safeJson(rM);
+    const app = await safeJson(rA);
+    return { moodle, app: Array.isArray(app) ? app : [] };
+  }
+
+  function renderPartnerHistory(P, data){
+    const tbM = el(P + '-moodle');
+    const tbA = el(P + '-app');
+    const status = el(P + '-status');
+    if(data.moodle && data.moodle.error){
+      if(status) status.textContent = 'No se pudo leer Moodle: ' + data.moodle.error;
+    } else if(data.moodle){
+      const n = (data.moodle.courses || []).length;
+      if(status) status.textContent = `Grupo "${data.moodle.grupo_moodle || ''}" · ${n} curso(s) en Moodle`;
+    }
+    if(tbM){
+      const rows = (data.moodle && data.moodle.courses) || [];
+      tbM.innerHTML = rows.length
+        ? rows.map(c => {
+            const est = (c.members || []).map(m => `${escapeHTML(m.fullname || m.username || '')}${m.email ? ' <small class="text-muted">' + escapeHTML(m.email) + '</small>' : ''}`).join('<br>') || '<span class="text-muted">Sin estudiantes</span>';
+            return `<tr><td>${escapeHTML(c.course_name || ('Curso ' + c.moodle_course_id))}</td><td>${c.visible ? 'Sí' : 'No'}</td><td>${fmtEndDate(c.enddate)}</td><td>${est}</td></tr>`;
+          }).join('')
+        : '<tr><td colspan="4" class="text-muted">Sin cursos con este grupo en Moodle</td></tr>';
+    }
+    if(tbA){
+      tbA.innerHTML = data.app.length
+        ? data.app.map(r => `<tr>
+            <td>${escapeHTML(r.curso || '—')}</td>
+            <td>${escapeHTML(r.user_name || '—')}</td>
+            <td>${escapeHTML(r.user_email || '—')}</td>
+            <td>${escapeHTML(r.final_client || '—')}</td>
+            <td>${fmtDate(r.activated_at)}</td>
+            <td>${fmtDate(r.expires_at)}</td>
+            <td>${escapeHTML(r.moodle_status || '—')}</td>
+            <td>${r.curso_suspendido_manual ? 'Suspendido' : (r.curso_activo === false ? 'Inactivo' : 'Activo')}</td>
+          </tr>`).join('')
+        : '<tr><td colspan="8" class="text-muted">Sin matrículas hechas desde la app</td></tr>';
+    }
+  }
+
+  async function loadHistoryFor(P, partnerId, refresh){
+    if(!partnerId) return;
+    const status = el(P + '-status');
+    if(status) status.textContent = refresh ? 'Consultando Moodle…' : 'Cargando…';
+    try {
+      const data = await fetchPartnerHistory(P, partnerId, refresh);
+      partnerHistoryCache = { partnerId, data };
+      renderPartnerHistory(P, data);
+      if(P === 'admin-hist') renderClosing();
+    } catch(e) {
+      if(status) status.textContent = 'Error al cargar el historial';
+    }
+  }
+
+  function exportPartnerHistoryExcel(){
+    const d = partnerHistoryCache.data;
+    if(!d){ showToast('Primero carga el historial', 'warning'); return; }
+    const wb = XLSX.utils.book_new();
+    const moodleRows = [];
+    for(const c of (d.moodle && d.moodle.courses) || []){
+      if(!c.members || !c.members.length){
+        moodleRows.push({ 'Curso': c.course_name || '', 'Moodle ID': c.moodle_course_id, 'Visible': c.visible ? 'Sí' : 'No', 'Fin': fmtEndDate(c.enddate), 'Estudiante': '', 'Usuario Moodle': '', 'Correo': '' });
+      }
+      for(const m of c.members || []){
+        moodleRows.push({ 'Curso': c.course_name || '', 'Moodle ID': c.moodle_course_id, 'Visible': c.visible ? 'Sí' : 'No', 'Fin': fmtEndDate(c.enddate), 'Estudiante': m.fullname || '', 'Usuario Moodle': m.username || '', 'Correo': m.email || '' });
+      }
+    }
+    const appRows = d.app.map(r => ({
+      'Curso': r.curso || '', 'Alumno': r.user_name || '', 'Correo alumno': r.user_email || '',
+      'Cliente final': r.final_client || '', 'Activada': fmtDate(r.activated_at), 'Vence': fmtDate(r.expires_at),
+      'Estado Moodle': r.moodle_status || '', 'Estado curso': r.curso_suspendido_manual ? 'Suspendido' : (r.curso_activo === false ? 'Inactivo' : 'Activo'),
+    }));
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(moodleRows.length ? moodleRows : [{ 'Sin datos': '' }]), 'Moodle');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(appRows.length ? appRows : [{ 'Sin datos': '' }]), 'Matriculas app');
+    const grupo = ((d.moodle && d.moodle.grupo_moodle) || 'partner').replace(/[^\w-]+/g, '_');
+    XLSX.writeFile(wb, `historial_${grupo}_${new Date().toISOString().slice(0,10)}.xlsx`);
+  }
+
+  // Partner: su propio historial
+  function loadPartnerHistory(refresh){
+    const pid = getPartnerIdFromJwt();
+    loadHistoryFor('partner-hist', pid, refresh);
+  }
+
+  // Admin: buscador de partners con distintivos (correo, cuenta, grupo distinto del nombre)
+  let adminPartnerList = [];
+  const normTxt = s => (s || '').toString().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  async function loadAdminPartnerHistoryOptions(){
+    try {
+      const resp = await safeFetch(apiUrl + '/admin/partners?page=1&limit=1000', { headers: authHeaders() });
+      const data = await safeJson(resp);
+      adminPartnerList = Array.isArray(data) ? data : (data.data || data.partners || data.items || []);
+      renderAdminPartnerResults((el('admin-hist-search') || {}).value || '');
+    } catch(e) {
+      showToast('No se pudo cargar la lista de partners', 'danger');
+    }
+  }
+
+  function partnerBadges(p){
+    const b = [];
+    b.push(p.email ? '<span class="badge bg-success">Correo</span>' : '<span class="badge bg-warning text-dark">Sin correo</span>');
+    b.push(p.has_account ? '<span class="badge bg-primary">Con cuenta</span>' : '<span class="badge bg-secondary">Sin cuenta</span>');
+    if (p.group_name && p.group_name !== p.name) b.push('<span class="badge bg-info text-dark">Grupo: ' + escapeHTML(p.group_name) + '</span>');
+    return b.join(' ');
+  }
+
+  function renderAdminPartnerResults(query){
+    const box = el('admin-hist-results');
+    if(!box) return;
+    const q = normTxt(query).trim();
+    const list = adminPartnerList
+      .filter(p => !q || [p.name, p.group_name, p.email].some(v => normTxt(v).includes(q)))
+      .sort((a, b) => (a.group_name || a.name || '').localeCompare(b.group_name || b.name || '', 'es'))
+      .slice(0, 50);
+    box.innerHTML = list.length
+      ? list.map(p => `<button type="button" class="list-group-item list-group-item-action admin-hist-item" data-id="${p.id}" data-label="${escapeHTML(p.group_name || p.name)}">
+           <div class="fw-semibold">${escapeHTML(p.group_name || p.name)}</div>
+           <div class="small text-muted">${escapeHTML(p.name)}${p.email ? ' · ' + escapeHTML(p.email) : ''}</div>
+           <div class="mt-1">${partnerBadges(p)}</div>
+         </button>`).join('')
+      : '<div class="list-group-item text-muted">Sin resultados</div>';
+    box.style.display = '';
+  }
+
+  on('admin-hist-search', 'input', () => renderAdminPartnerResults((el('admin-hist-search') || {}).value || ''));
+  on('admin-hist-search', 'focus', () => renderAdminPartnerResults((el('admin-hist-search') || {}).value || ''));
+  // Clic en un resultado: fija el partner y carga su historial (sin depender del evento change)
+  document.addEventListener('click', (e) => {
+    const item = e.target.closest && e.target.closest('.admin-hist-item');
+    if(item){
+      el('admin-hist-partner').value = item.dataset.id;
+      el('admin-hist-search').value = item.dataset.label;
+      el('admin-hist-results').style.display = 'none';
+      loadHistoryFor('admin-hist', item.dataset.id, false);
+      return;
+    }
+    if(!e.target.closest || !e.target.closest('#admin-hist-search, #admin-hist-results')){
+      const box = el('admin-hist-results');
+      if(box) box.style.display = 'none';
+    }
+  });
+
+  // Reporte de cierre (simulación, admin): contadores y Excel a partir del historial ya cargado.
+  // Completado: el sync de Moodle lo marca como COMPLETED o COURSE_COMPLETED.
+  // Sin matricular: la activación no llegó a Moodle (FAILED, PENDING o SKIPPED).
+  // Vencido: no completado y con fecha de vencimiento pasada. Activo: el resto.
+  function closingStatus(r, now){
+    if(['COMPLETED','COURSE_COMPLETED'].includes(r.moodle_status) || r.moodle_completed_at) return 'Completado';
+    if(['FAILED','PENDING','SKIPPED'].includes(r.moodle_status)) return 'Sin matricular';
+    if(r.expires_at && new Date(r.expires_at) < now) return 'Vencido';
+    return 'Activo';
+  }
+
+  function closingRows(){
+    const d = partnerHistoryCache.data;
+    if(!d) return [];
+    const from = (el('admin-hist-from') || {}).value;
+    const to = (el('admin-hist-to') || {}).value;
+    const fromTs = from ? new Date(from + 'T00:00:00').getTime() : null;
+    const toTs = to ? new Date(to + 'T23:59:59').getTime() : null;
+    const now = new Date();
+    return d.app
+      .filter(r => {
+        const t = new Date(r.activated_at).getTime();
+        return (!fromTs || t >= fromTs) && (!toTs || t <= toTs);
+      })
+      .map(r => ({ ...r, estado_cierre: closingStatus(r, now) }));
+  }
+
+  function renderClosing(){
+    const box = el('admin-hist-kpis');
+    if(!box) return;
+    const rows = closingRows();
+    const count = s => rows.filter(r => r.estado_cierre === s).length;
+    const kpis = [
+      ['Activaciones', rows.length, 'primary'],
+      ['Completados', count('Completado'), 'success'],
+      ['Vencidos', count('Vencido'), 'secondary'],
+      ['Sin matricular', count('Sin matricular'), 'danger'],
+    ];
+    box.innerHTML = kpis.map(([label, n, color]) =>
+      `<div class="col-6 col-md"><div class="border rounded p-2 text-center"><div class="fs-4 fw-bold text-${color}">${n}</div><div class="small text-muted">${label}</div></div></div>`
+    ).join('');
+  }
+
+  function exportClosingExcel(){
+    const d = partnerHistoryCache.data;
+    if(!d){ showToast('Primero carga el historial', 'warning'); return; }
+    const rows = closingRows();
+    const detail = rows.map(r => {
+      const partes = (r.user_name || '').trim().split(/\s+/);
+      const nombre = partes.slice(0, 1).join(' ');
+      const apellido = partes.slice(1).join(' ');
+      return {
+        'Codigo_Curso': r.moodle_course_id || '',
+        'Nombre_Curso': r.curso || '',
+        'Grupo': r.grupo_moodle || '',
+        'Nombre': nombre,
+        'Apellido': apellido,
+        'Correo_Electronico': r.user_email || '',
+        'Fecha_Activacion': fmtDate(r.activated_at),
+        'Fecha_Completado': r.moodle_completed_at ? fmtDate(r.moodle_completed_at) : 'N/A',
+        'Vence': fmtDate(r.expires_at),
+        'Estado': r.estado_cierre,
+        'Cliente_final': r.final_client || '',
+        'Obtuvo_Certificado': 'Pendiente',
+      };
+    });
+    const count = s => rows.filter(r => r.estado_cierre === s).length;
+    const resumen = [
+      { 'Indicador': 'Activaciones', 'Total': rows.length },
+      { 'Indicador': 'Completados', 'Total': count('Completado') },
+      { 'Indicador': 'Vencidos', 'Total': count('Vencido') },
+      { 'Indicador': 'Sin matricular', 'Total': count('Sin matricular') },
+    ];
+    const from = (el('admin-hist-from') || {}).value || 'inicio';
+    const to = (el('admin-hist-to') || {}).value || 'hoy';
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), 'Resumen');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detail.length ? detail : [{ 'Sin datos': '' }]), 'Detalle');
+    const grupo = ((d.moodle && d.moodle.grupo_moodle) || 'partner').replace(/[^\w-]+/g, '_');
+    XLSX.writeFile(wb, `cierre_${grupo}_${from}_a_${to}.xlsx`);
+  }
+
+  on('admin-hist-from', 'change', renderClosing);
+  on('admin-hist-to', 'change', renderClosing);
+  on('admin-hist-closing-excel', 'click', exportClosingExcel);
+
+  on('partner-hist-refresh', 'click', () => loadPartnerHistory(true));
+  on('admin-hist-refresh', 'click', () => {
+    const pid = (el('admin-hist-partner') || {}).value;
+    if(pid) loadHistoryFor('admin-hist', pid, true);
+    else showToast('Selecciona un partner', 'warning');
+  });
+  on('partner-hist-excel', 'click', exportPartnerHistoryExcel);
+  on('admin-hist-excel', 'click', exportPartnerHistoryExcel);
 
   // Cart
   function loadCart(){
@@ -4306,6 +4579,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const firstNameLabel = el('admin-user-first-name-label');
     const firstNameInput = el('admin-user-first-name');
 
+    const linkCol  = el('new-user-partner-link-col');
+    const groupCol = el('new-user-group-col');
+    const linked   = !!((el('new-user-partner-select') || {}).value);
+    if (linkCol)  linkCol.style.display  = isPartner ? '' : 'none';
+    // El grupo solo aplica si se crea un partner nuevo
+    if (groupCol) groupCol.style.display = isPartner && !linked ? '' : 'none';
+    // El nombre solo es de solo lectura cuando hay un partner existente elegido
+    if (firstNameInput) firstNameInput.readOnly = isPartner && linked;
+
     if (lastNameCol) lastNameCol.style.display = isPartner ? 'none' : '';
     if (firstNameCol) firstNameCol.className = isPartner ? 'col-12' : 'col-6';
     if (firstNameLabel) firstNameLabel.textContent = isPartner ? 'Nombre de la empresa (Partner)' : 'Nombre';
@@ -4318,6 +4600,7 @@ document.addEventListener('DOMContentLoaded', () => {
   on('create-user', 'click', async () => {
     const firstName = ((el('admin-user-first-name') || {}).value || '').trim();
     const role      = (el('admin-user-role')     || {}).value || 'user';
+    const linkedPartner = role === 'partner' && !!((el('new-user-partner-select') || {}).value);
     // Partner = empresa, sin apellido — se ignora aunque el campo tenga un valor
     // residual de una selección de rol anterior.
     const lastName  = role === 'partner' ? '' : ((el('admin-user-last-name') || {}).value || '').trim();
@@ -4325,6 +4608,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const password  = (el('admin-user-password') || {}).value || '';
     clearAdminUserMessage();
     if(!email || !password){ showLoginMessage('Completa email y contraseña', 'danger', 3000); return; }
+    if(role === 'partner' && !linkedPartner && !firstName){ showLoginMessage('Escribe el nombre de la empresa o elige un partner existente', 'danger', 4000); return; }
     const expirySelect = (el('new-user-expiry-days') || {}).value || '0';
     let passwordExpiresDays = 0;
     if(expirySelect === 'none')        passwordExpiresDays = -1;
@@ -4350,6 +4634,14 @@ document.addEventListener('DOMContentLoaded', () => {
       const payload = { email, password, role, must_change_password: true };
       if(firstName) payload.first_name = firstName;
       if(lastName)  payload.last_name  = lastName;
+      if(role === 'partner') {
+        const linkedPartnerId = ((el('new-user-partner-select') || {}).value || '');
+        if(linkedPartnerId) payload.partner_id = Number(linkedPartnerId);
+        else {
+          const groupName = ((el('new-user-group-name') || {}).value || '').trim();
+          if(groupName) payload.group_name = groupName;
+        }
+      }
       if(passwordExpiresDays !== 0) payload.password_expires_days = passwordExpiresDays < 0 ? 0 : passwordExpiresDays;
       const resp = await safeFetch(apiUrl + '/admin/users', { method:'POST', headers: authHeaders(), body: JSON.stringify(payload) });
 
@@ -4588,8 +4880,47 @@ document.addEventListener('DOMContentLoaded', () => {
     if(wrap) wrap.style.display = sel.value === 'custom' ? '' : 'none';
   });
 
+  // Llena el selector de partner existente. Muestra el grupo (o el nombre) y avisa si no tiene correo.
+  async function loadNewUserPartnerOptions(){
+    const sel = el('new-user-partner-select');
+    if(!sel) return;
+    const keep = ''; // al abrir el modal no se recuerda el partner de la vez anterior
+    try {
+      const resp = await safeFetch(apiUrl + '/admin/partners?page=1&limit=1000', { headers: authHeaders() });
+      const data = await safeJson(resp);
+      const list = Array.isArray(data) ? data : (data.data || data.partners || data.items || []);
+      const opts = list
+        .slice()
+        .sort((a, b) => (a.group_name || a.name || '').localeCompare(b.group_name || b.name || '', 'es'))
+        .map(p => {
+          const label = p.group_name || p.name;
+          const sinCorreo = p.email ? '' : ' (sin correo)';
+          return `<option value="${p.id}" data-name="${escapeHTML(p.name)}">${escapeHTML(label)}${sinCorreo}</option>`;
+        });
+      sel.innerHTML = '<option value="">+ Crear partner nuevo</option>' + opts.join('');
+      if(keep) sel.value = keep;
+    } catch(e) {
+      // Sin lista, el formulario sigue funcionando para crear partner nuevo
+    }
+  }
+
+  // Al escoger un partner existente, el nombre de la empresa es el de ese partner (no editable).
+  function onNewUserPartnerChange(){
+    const sel = el('new-user-partner-select');
+    const nameInput = el('admin-user-first-name');
+    const opt = sel && sel.selectedOptions ? sel.selectedOptions[0] : null;
+    const linkedName = opt && opt.value ? (opt.dataset.name || '') : '';
+    if(nameInput){
+      nameInput.value = linkedName;
+      nameInput.readOnly = !!linkedName;
+    }
+    syncNewUserRoleFields();
+  }
+  on('new-user-partner-select', 'change', onNewUserPartnerChange);
+
   on('btn-open-new-user', 'click', () => {
     loadAdminRoles(true).then(syncNewUserRoleFields).catch(()=>{});
+    loadNewUserPartnerOptions().then(syncNewUserRoleFields);
     // Resetear validador al abrir
     const pwdInput = el('admin-user-password');
     if(pwdInput) { pwdInput.value = ''; pwdInput.dispatchEvent(new Event('input')); }

@@ -12,6 +12,7 @@ const { handleValidationErrors } = require('../../lib/validation');
 const { logSystemEvent, logSecurityEvent } = require('../../lib/audit');
 const { normalizeRoleName } = require('../../lib/rbac');
 const { getDefaultPricingProfileId } = require('../pricing/service');
+const { isGroupNameTaken } = require('../../lib/partnerGroup');
 const { syncUserWithStripe } = require('../../integrations/stripe');
 
 router.post('/admin/users',
@@ -27,6 +28,7 @@ router.post('/admin/users',
     .matches(/[!@#$%^&*]/).withMessage('Contraseña debe contener al menos un caracter especial (!@#$%^&*)'),
   body('role').trim().isLength({ min: 2, max: 50 }).withMessage('Rol inválido'),
   body('partner_id').optional().isInt().withMessage('Partner ID debe ser un número'),
+  body('group_name').optional({ checkFalsy: true }).trim().isLength({ min: 2, max: 200 }).withMessage('Nombre de grupo debe tener entre 2 y 200 caracteres'),
   body('first_name').optional().trim().isLength({ max: 100 }).withMessage('Nombre debe tener máximo 100 caracteres'),
   body('last_name').optional().trim().isLength({ max: 100 }).withMessage('Apellido debe tener máximo 100 caracteres'),
   handleValidationErrors,
@@ -65,11 +67,28 @@ router.post('/admin/users',
       } else {
         const defaultPricingProfileId = await getDefaultPricingProfileId();
         const partnerName = [first_name, last_name].filter(Boolean).join(' ').trim() || email.split('@')[0];
+        // Nombre de grupo: el que indique el admin, o el nombre del partner. Debe ser único.
+        const groupName = (req.body.group_name || partnerName).trim();
+        if (await isGroupNameTaken(pool, groupName)) {
+          return res.status(400).json({ error: `Ya existe un partner con el nombre de grupo "${groupName}". Seleccione ese partner existente.` });
+        }
         const createdPartner = await pool.query(
-          'INSERT INTO partners (name,email,pricing_profile_id) VALUES ($1,$2,$3) RETURNING id',
-          [partnerName, email, defaultPricingProfileId]
+          'INSERT INTO partners (name,email,group_name,pricing_profile_id) VALUES ($1,$2,$3,$4) RETURNING id',
+          [partnerName, email, groupName, defaultPricingProfileId]
         );
         resolvedPartnerId = createdPartner.rows[0].id;
+      }
+    }
+
+    // Vincular a un partner existente: su correo debe quedar libre (partners.email es único).
+    // Se valida antes de insertar el usuario para no dejar una cuenta a medias.
+    if (role === 'partner' && resolvedPartnerId) {
+      const emailOnOtherPartner = await pool.query(
+        'SELECT id FROM partners WHERE LOWER(email)=LOWER($1) AND id<>$2 LIMIT 1',
+        [email, resolvedPartnerId]
+      );
+      if (emailOnOtherPartner.rowCount > 0) {
+        return res.status(400).json({ error: 'Ese correo ya está registrado en otro partner' });
       }
     }
 
@@ -91,6 +110,11 @@ router.post('/admin/users',
       [email, hash, role, resolvedPartnerId || null, first_name||null, last_name||null, mustChangePassword, expiryDays]
     );
     const userId = r.rows[0].id;
+
+    // El partner vinculado ahora tiene cuenta: si no tenía correo, se lo damos.
+    if (role === 'partner' && resolvedPartnerId) {
+      await pool.query('UPDATE partners SET email=$1 WHERE id=$2 AND email IS NULL', [email, resolvedPartnerId]);
+    }
 
     if (role === 'partner') {
       // Solo usuarios partner se sincronizan con Stripe.
@@ -201,10 +225,13 @@ router.put('/admin/users/:id', authenticate, requireRole('admin'), async (req,re
         nextPartnerId = existingByEmail.rows[0].id;
       } else {
         const partnerName = [first_name || currentUser.first_name, last_name || currentUser.last_name].filter(Boolean).join(' ').trim() || userEmail.split('@')[0];
+        if (await isGroupNameTaken(pool, partnerName)) {
+          return res.status(400).json({ error: `Ya existe un partner con el nombre de grupo "${partnerName}". Asigne el partner existente.` });
+        }
         const defaultPricingProfileId = await getDefaultPricingProfileId();
         const newPartner = await pool.query(
-          'INSERT INTO partners (name, email, pricing_profile_id) VALUES ($1, $2, $3) RETURNING id',
-          [partnerName, userEmail, defaultPricingProfileId]
+          'INSERT INTO partners (name, email, group_name, pricing_profile_id) VALUES ($1, $2, $3, $4) RETURNING id',
+          [partnerName, userEmail, partnerName, defaultPricingProfileId]
         );
         nextPartnerId = newPartner.rows[0].id;
       }

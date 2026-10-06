@@ -267,6 +267,13 @@ async function initDb(){
     ALTER TABLE partners ADD COLUMN IF NOT EXISTS stripe_customer_id VARCHAR(200) UNIQUE;
     ALTER TABLE partners ADD COLUMN IF NOT EXISTS pricing_profile_id INTEGER;
     ALTER TABLE partners ADD COLUMN IF NOT EXISTS special_pricing_profile_id INTEGER;
+    -- Nombre exacto del grupo de Moodle (case-insensitive, único). Separado del nombre visible.
+    -- Opcional al crear: si no viene, se usa el nombre del partner (ver COALESCE en activación).
+    ALTER TABLE partners ADD COLUMN IF NOT EXISTS group_name VARCHAR(200);
+    UPDATE partners SET group_name = name WHERE group_name IS NULL;
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_partners_group_name_ci ON partners (LOWER(group_name)) WHERE group_name IS NOT NULL;
+    -- El correo se puede agregar después (alta por lista de nombres); la cuenta de acceso lo exige.
+    ALTER TABLE partners ALTER COLUMN email DROP NOT NULL;
     ALTER TABLE stripe_customers ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
 
     ALTER TABLE purchases ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'PENDING';

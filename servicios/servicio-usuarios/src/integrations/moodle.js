@@ -60,7 +60,13 @@ async function getActivitiesCompletion(moodleUserId, moodleCourseId) {
   return request(`/internal/activities-completion?${qs.toString()}`);
 }
 
+async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = {}) {
+  const qs = new URLSearchParams({ groupName, courseIds: (moodleCourseIds || []).join(','), refresh: refresh ? '1' : '0' });
+  return request('/internal/group-report?' + qs.toString());
+}
+
 module.exports = {
+  getGroupReport,
   isMockMode,
   enrollStudent,
   testConnection,

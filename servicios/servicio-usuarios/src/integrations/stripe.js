@@ -144,9 +144,13 @@ async function upsertPartnerAndUserFromStripeCustomer(customer, source = 'STRIPE
 
     if (!partnerId) {
       const defaultPricingProfileId = await getDefaultPricingProfileId();
+      // group_name = nombre si está libre; si ya lo usa otro partner, queda NULL
+      // (COALESCE usa el nombre) y no se rompe la compra.
+      const groupTaken = await client.query('SELECT 1 FROM partners WHERE LOWER(group_name)=LOWER($1) LIMIT 1', [name]);
+      const groupName = groupTaken.rowCount > 0 ? null : name;
       const createdPartnerResult = await client.query(
-        'INSERT INTO partners (name, email, role, stripe_customer_id, pricing_profile_id) VALUES ($1, $2, $3, $4, $5) RETURNING id',
-        [name, email, 'partner', stripeCustomerId, defaultPricingProfileId]
+        'INSERT INTO partners (name, email, role, stripe_customer_id, pricing_profile_id, group_name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
+        [name, email, 'partner', stripeCustomerId, defaultPricingProfileId, groupName]
       );
       partnerId = createdPartnerResult.rows[0].id;
       createdPartner = true;

@@ -125,7 +125,7 @@ router.post('/admin/moodle/enrollments/:activationId/retry',
       const actResult = await pool.query(
         `SELECT a.id, a.user_name, a.user_email, a.moodle_status, a.expires_at,
                 a.moodle_retry_count, c.moodle_course_id, c.name AS course_name,
-                p.name AS partner_name
+                COALESCE(p.group_name, p.name) AS partner_name
          FROM activations a
          LEFT JOIN courses c ON c.id = a.course_id
          LEFT JOIN vouchers v ON v.id = a.voucher_id
@@ -259,7 +259,7 @@ router.post('/admin/moodle/enrollments/retry-all-failed',
       for (const row of failed.rows) {
         const actResult = await pool.query(
           `SELECT a.user_name, a.user_email, a.expires_at, c.moodle_course_id, c.name AS course_name,
-                  p.name AS partner_name
+                  COALESCE(p.group_name, p.name) AS partner_name
            FROM activations a
            LEFT JOIN courses c ON c.id = a.course_id
            LEFT JOIN vouchers v ON v.id = a.voucher_id
