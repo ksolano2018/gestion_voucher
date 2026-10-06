@@ -816,4 +816,52 @@ router.get('/admin/partners/:id/moodle-report', authenticate, requireRole('admin
   }
 });
 
+// Resumen de estados por partner (mismas reglas que el reporte de cierre del frontend):
+// Completado = COMPLETED/COURSE_COMPLETED o con fecha de completado.
+// Sin matricular = FAILED/PENDING/SKIPPED (no llegó a Moodle).
+// Vencido = no completado y con vencimiento pasado.
+// Cursando = matriculado, no completado y sin vencer.
+function classifyActivation(r, now) {
+  if (['COMPLETED', 'COURSE_COMPLETED'].includes(r.moodle_status) || r.moodle_completed_at) return 'completado';
+  if (['FAILED', 'PENDING', 'SKIPPED'].includes(r.moodle_status)) return 'sin_matricular';
+  if (r.expires_at && new Date(r.expires_at) < now) return 'vencido';
+  return 'cursando';
+}
+
+async function getPartnerSummary(partnerId) {
+  const rows = await getPartnerCourseHistory(partnerId);
+  const now = new Date();
+  const totals = { activaciones: rows.length, cursando: 0, completados: 0, vencidos: 0, sin_matricular: 0 };
+  const porCurso = new Map();
+  for (const r of rows) {
+    const estado = classifyActivation(r, now);
+    if (estado === 'cursando') totals.cursando++;
+    else if (estado === 'completado') totals.completados++;
+    else if (estado === 'vencido') totals.vencidos++;
+    else totals.sin_matricular++;
+    const key = r.moodle_course_id || r.curso || 'sin curso';
+    if (!porCurso.has(key)) porCurso.set(key, { curso: r.curso || '', moodle_course_id: r.moodle_course_id || null, activaciones: 0, cursando: 0, completados: 0, vencidos: 0, sin_matricular: 0 });
+    const c = porCurso.get(key);
+    c.activaciones++;
+    c[estado === 'completado' ? 'completados' : estado === 'vencido' ? 'vencidos' : estado === 'sin_matricular' ? 'sin_matricular' : 'cursando']++;
+  }
+  return { partner_id: Number(partnerId), ...totals, por_curso: [...porCurso.values()] };
+}
+
+router.get('/partner/:id/status-summary', authenticate, async (req, res) => {
+  const pid = req.params.id;
+  if (req.user && req.user.role !== 'admin') {
+    if (!req.user.partner_id || String(req.user.partner_id) !== String(pid)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+  }
+  try { res.json(await getPartnerSummary(pid)); }
+  catch (e) { res.status(500).json({ error: 'Error al obtener resumen' }); }
+});
+
+router.get('/admin/partners/:id/status-summary', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+  try { res.json(await getPartnerSummary(req.params.id)); }
+  catch (e) { res.status(500).json({ error: 'Error al obtener resumen' }); }
+});
+
 module.exports = router;
