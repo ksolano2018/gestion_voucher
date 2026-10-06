@@ -509,6 +509,85 @@ function isMockMode() {
   return MOODLE_MOCK;
 }
 
+// Reporte de un grupo de Moodle (= partner): en qué cursos existe y quién está en él.
+// Solo lecturas del WS. Caché en memoria 5 min por grupo + cursos.
+const groupReportCache = new Map();
+const GROUP_REPORT_TTL_MS = 5 * 60 * 1000;
+
+async function mapWithLimit(items, limit, fn) {
+  const out = new Array(items.length);
+  let next = 0;
+  const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) {
+      const idx = next++;
+      out[idx] = await fn(items[idx]);
+    }
+  });
+  await Promise.all(workers);
+  return out;
+}
+
+async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = {}) {
+  const needle = String(groupName || '').trim().toLowerCase();
+  const ids = [...new Set((moodleCourseIds || []).map(Number))].filter(Boolean).sort((a, b) => a - b);
+  if (!needle) return { error: 'groupName requerido' };
+  const key = needle + '|' + ids.join(',');
+  const hit = groupReportCache.get(key);
+  if (!refresh && hit && Date.now() - hit.at < GROUP_REPORT_TTL_MS) return hit.data;
+
+  try {
+    const allCourses = await moodleRequest('core_course_get_courses', {});
+    const byId = new Map((Array.isArray(allCourses) ? allCourses : []).map(c => [c.id, c]));
+
+    const found = await mapWithLimit(ids, 8, async (cid) => {
+      const groups = await moodleRequest('core_group_get_course_groups', { courseid: String(cid) });
+      if (!Array.isArray(groups)) return null;
+      const g = groups.find(x => (x.name || '').trim().toLowerCase() === needle);
+      if (!g) return null;
+      const mem = await moodleRequest('core_group_get_group_members', { 'groupids[0]': String(g.id) });
+      const userIds = Array.isArray(mem) && mem[0] && Array.isArray(mem[0].userids) ? mem[0].userids : [];
+      const c = byId.get(cid) || {};
+      return {
+        moodle_course_id: cid,
+        course_name: c.fullname || null,
+        visible: c.visible === undefined ? null : c.visible === 1,
+        enddate: c.enddate || 0,
+        moodle_group_id: g.id,
+        user_ids: userIds,
+      };
+    });
+    const rows = found.filter(Boolean);
+
+    // Datos de los estudiantes, en lotes de 50
+    const allUserIds = [...new Set(rows.flatMap(r => r.user_ids))];
+    const userMap = new Map();
+    for (let i = 0; i < allUserIds.length; i += 50) {
+      const params = { field: 'id' };
+      allUserIds.slice(i, i + 50).forEach((id, j) => { params['values[' + j + ']'] = String(id); });
+      const users = await moodleRequest('core_user_get_users_by_field', params);
+      if (Array.isArray(users)) {
+        users.forEach(u => userMap.set(u.id, { id: u.id, username: u.username, fullname: u.fullname, email: u.email || null }));
+      }
+    }
+
+    const data = {
+      group_name: groupName,
+      courses: rows.map(r => ({
+        moodle_course_id: r.moodle_course_id,
+        course_name: r.course_name,
+        visible: r.visible,
+        enddate: r.enddate,
+        moodle_group_id: r.moodle_group_id,
+        members: r.user_ids.map(id => userMap.get(id)).filter(Boolean),
+      })),
+    };
+    groupReportCache.set(key, { at: Date.now(), data });
+    return data;
+  } catch (e) {
+    return { error: e.message };
+  }
+}
+
 module.exports = {
   enrollStudent,
   findUserByEmail,
@@ -520,5 +599,6 @@ module.exports = {
   getActivitiesCompletion,
   getCourses,
   testConnection,
+  getGroupReport,
   isMockMode
 };

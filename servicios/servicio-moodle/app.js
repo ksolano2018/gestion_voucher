@@ -58,6 +58,17 @@ app.get('/internal/courses', requireInternalToken, async (req, res) => {
   }
 });
 
+// Reporte de un grupo de Moodle (partner): cursos donde existe y sus estudiantes.
+// GET /internal/group-report?groupName=ORKUS&courseIds=19,20,...
+app.get('/internal/group-report', requireInternalToken, async (req, res) => {
+  try {
+    const ids = String(req.query.courseIds || '').split(',').filter(Boolean);
+    res.json(await moodle.getGroupReport(req.query.groupName, ids, { refresh: req.query.refresh === '1' }));
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 // Quizzes de un curso.
 app.get('/internal/course-quizzes/:moodleCourseId', requireInternalToken, async (req, res) => {
   try {

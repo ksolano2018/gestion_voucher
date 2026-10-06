@@ -9,6 +9,7 @@ const { apiLimiter } = require('../../lib/rateLimit');
 const { handleValidationErrors } = require('../../lib/validation');
 const { logSystemEvent, logSecurityEvent } = require('../../lib/audit');
 const { getDefaultPricingProfileId } = require('../pricing/service');
+const { isGroupNameTaken } = require('../../lib/partnerGroup');
 
 // Admin: create partner with validation
 router.post('/admin/partners',
@@ -16,21 +17,29 @@ router.post('/admin/partners',
   requireRole('admin'),
   apiLimiter,
   body('name').trim().isLength({ min: 2, max: 100 }).withMessage('Nombre debe tener entre 2 y 100 caracteres'),
-  body('email').isEmail().normalizeEmail().withMessage('Email inválido'),
+  body('email').optional({ checkFalsy: true }).isEmail().normalizeEmail().withMessage('Email inválido'),
+  body('group_name').optional({ checkFalsy: true }).trim().isLength({ min: 2, max: 200 }).withMessage('Nombre de grupo debe tener entre 2 y 200 caracteres'),
   handleValidationErrors,
   async (req,res)=>{
   const { name, email } = req.body;
   try{
-    // Check if email already exists
-    const existing = await pool.query('SELECT id FROM partners WHERE email=$1',[email]);
-    if(existing.rowCount > 0) {
-      await logSystemEvent('PARTNER_CREATE_ERROR', 'PARTNER_MANAGEMENT', req.user.sub, null, null, { email, reason: 'email_exists' }, 'FAILED', 'Email ya registrado', req);
-      return res.status(400).json({error:'Email ya registrado'});
+    // Check if email already exists (el correo es opcional al dar de alta)
+    if (email) {
+      const existing = await pool.query('SELECT id FROM partners WHERE email=$1',[email]);
+      if(existing.rowCount > 0) {
+        await logSystemEvent('PARTNER_CREATE_ERROR', 'PARTNER_MANAGEMENT', req.user.sub, null, null, { email, reason: 'email_exists' }, 'FAILED', 'Email ya registrado', req);
+        return res.status(400).json({error:'Email ya registrado'});
+      }
+    }
+    // Nombre de grupo: si no viene, es el nombre del partner. Debe ser único.
+    const groupName = (req.body.group_name || name).trim();
+    if (await isGroupNameTaken(pool, groupName)) {
+      return res.status(400).json({error:`Ya existe un partner con el nombre de grupo "${groupName}"`});
     }
     const defaultProfileId = await getDefaultPricingProfileId();
     const r = await pool.query(
-      'INSERT INTO partners (name,email,pricing_profile_id) VALUES ($1,$2,$3) RETURNING *',
-      [name, email, defaultProfileId]
+      'INSERT INTO partners (name,email,group_name,pricing_profile_id) VALUES ($1,$2,$3,$4) RETURNING *',
+      [name, email || null, groupName, defaultProfileId]
     );
     await logSystemEvent('PARTNER_CREATED', 'PARTNER_MANAGEMENT', req.user.sub, null, null, {
       partner_id: r.rows[0].id,
@@ -58,7 +67,8 @@ router.get('/admin/partners', authenticate, requireRole('admin'), apiLimiter, as
     const totalCount = parseInt(countResult.rows[0].count);
 
     const r = await pool.query(
-      `SELECT p.id, p.name, p.email, p.created_at,
+      `SELECT p.id, p.name, p.email, p.group_name, p.created_at,
+              EXISTS (SELECT 1 FROM users u WHERE u.partner_id = p.id) AS has_account,
               p.pricing_profile_id, p.special_pricing_profile_id,
               base.name AS pricing_profile_name, base.code AS pricing_profile_code,
               special.name AS special_pricing_profile_name, special.code AS special_pricing_profile_code
