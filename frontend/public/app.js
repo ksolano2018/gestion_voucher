@@ -1116,15 +1116,22 @@ document.addEventListener('DOMContentLoaded', () => {
       .map(r => ({ ...r, estado_cierre: closingStatus(r, now) }));
   }
 
+  // Fallaron: estimado, no es un dato directo de Moodle (no tenemos acceso a la nota del
+  // examen). Se aproxima como "completó el curso pero no tiene certificado emitido".
+  function countCertificados(rows){ return rows.filter(r => r.obtuvo_certificado).length; }
+  function countFallaronEstimado(rows){ return rows.filter(r => r.estado_cierre === 'Completado' && !r.obtuvo_certificado).length; }
+
   function renderClosing(){
     const box = el('admin-hist-kpis');
     if(!box) return;
     const rows = closingRows();
     const count = s => rows.filter(r => r.estado_cierre === s).length;
     const kpis = [
-      ['Activaciones', rows.length, 'primary'],
+      ['Matriculados', rows.length, 'primary'],
       ['Cursando', count('Cursando'), 'info'],
       ['Completados', count('Completado'), 'success'],
+      ['Certificados', countCertificados(rows), 'success'],
+      ['Fallaron (estimado)', countFallaronEstimado(rows), 'warning'],
       ['Vencidos', count('Vencido'), 'secondary'],
       ['Sin matricular', count('Sin matricular'), 'danger'],
     ];
@@ -1160,9 +1167,11 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     const count = s => rows.filter(r => r.estado_cierre === s).length;
     const resumen = [
-      { 'Indicador': 'Activaciones', 'Total': rows.length },
+      { 'Indicador': 'Matriculados', 'Total': rows.length },
       { 'Indicador': 'Cursando', 'Total': count('Cursando') },
       { 'Indicador': 'Completados', 'Total': count('Completado') },
+      { 'Indicador': 'Certificados', 'Total': countCertificados(rows) },
+      { 'Indicador': 'Fallaron (estimado)', 'Total': countFallaronEstimado(rows) },
       { 'Indicador': 'Vencidos', 'Total': count('Vencido') },
       { 'Indicador': 'Sin matricular', 'Total': count('Sin matricular') },
     ];
