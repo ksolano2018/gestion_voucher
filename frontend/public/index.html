@@ -3197,7 +3197,12 @@
                       <div class="col-md-6 text-end"><button type="button" id="admin-hist-closing-excel" class="btn btn-sm btn-success">📥 Excel de cierre</button></div>
                     </div>
                     <div id="admin-hist-kpis" class="row g-2"></div>
-                    <div class="small text-muted mt-2">Certificados: desde el plugin <code>local_certjoin</code> instalado en Moodle.</div>
+                    <div class="small text-muted mt-2">
+                      Completado: finalizó el curso en Moodle (no implica que haya aprobado el examen).
+                      Certificados: emitidos de verdad, desde el plugin <code>local_certjoin</code>.
+                      Fallaron (estimado): completó el curso pero no tiene certificado — no es un dato directo de Moodle (no hay acceso a la nota del examen), es una aproximación.
+                      Vencidos: venció el voucher antes de completar (no la fecha límite del examen en Moodle, que no leemos hoy).
+                    </div>
                   </div>
                   <div class="d-flex flex-wrap gap-2 mb-3">
                     <button id="admin-hist-refresh" class="btn btn-sm btn-outline-primary">↻ Actualizar desde Moodle</button>
