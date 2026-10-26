@@ -1089,6 +1089,24 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  // Limpia el criterio de búsqueda y el historial ya cargado, para volver al estado inicial.
+  on('admin-hist-search-clear', 'click', () => {
+    el('admin-hist-partner').value = '';
+    el('admin-hist-search').value = '';
+    const results = el('admin-hist-results');
+    if(results){ results.style.display = 'none'; results.innerHTML = ''; }
+    partnerHistoryCache = { partnerId: null, data: null };
+    const status = el('admin-hist-status');
+    if(status) status.textContent = '';
+    const tbM = el('admin-hist-moodle');
+    if(tbM) tbM.innerHTML = '';
+    const tbA = el('admin-hist-app');
+    if(tbA) tbA.innerHTML = '';
+    const kpis = el('admin-hist-kpis');
+    if(kpis) kpis.innerHTML = '';
+    el('admin-hist-search').focus();
+  });
+
   // Reporte de cierre (simulación, admin): contadores y Excel a partir del historial ya cargado.
   // Completado: el sync de Moodle lo marca como COMPLETED o COURSE_COMPLETED.
   // Sin matricular: la activación no llegó a Moodle (FAILED, PENDING o SKIPPED).
@@ -1180,9 +1198,6 @@ document.addEventListener('DOMContentLoaded', () => {
       ['Cursando', k.cursando, 'info'],
       ['Completados', k.completados, 'success'],
       ['Certificados', k.certificados, 'success'],
-      ['Fallaron (estimado)', k.fallaron, 'warning'],
-      ['Vencidos', k.vencidos, 'secondary'],
-      ['Sin matricular', k.sinMatricular, 'danger'],
       ['Histórico sin estado', k.historicoSinEstado, 'muted'],
     ];
     box.innerHTML = kpis.map(([label, n, color]) =>
