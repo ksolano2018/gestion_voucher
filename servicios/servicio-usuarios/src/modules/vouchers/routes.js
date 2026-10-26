@@ -735,6 +735,7 @@ async function getPartnerCourseHistory(partnerId) {
             COALESCE(p.group_name, p.name) AS grupo_moodle,
             c.name                     AS curso,
             c.moodle_course_id,
+            a.moodle_user_id,
             a.user_name,
             a.user_email,
             a.final_client,
@@ -862,6 +863,65 @@ router.get('/partner/:id/status-summary', authenticate, async (req, res) => {
 router.get('/admin/partners/:id/status-summary', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
   try { res.json(await getPartnerSummary(req.params.id)); }
   catch (e) { res.status(500).json({ error: 'Error al obtener resumen' }); }
+});
+
+// Certificados (customcert, vía plugin local_certjoin) de las activaciones de un partner.
+// Mismo criterio de exclusión que la consulta SQL que usaba el cliente antes de la app
+// (certificados 'W'/'GTI' no cuentan). Si el plugin no está instalado o falla, devuelve []
+// y el reporte sigue funcionando sin esa columna (degradación controlada).
+const EXCLUDED_CERT_NAME_PATTERNS = [/certificado w/i, /certificado gti/i, /certificate gti/i];
+function isExcludedCertName(name) {
+  return EXCLUDED_CERT_NAME_PATTERNS.some((p) => p.test(name || ''));
+}
+
+async function getPartnerCertificates(partnerId, { refresh = false } = {}) {
+  const rows = await getPartnerCourseHistory(partnerId);
+  const courseIds = [...new Set(rows.map((r) => r.moodle_course_id).filter(Boolean))];
+  const relevantUserIds = new Set(rows.map((r) => r.moodle_user_id).filter(Boolean));
+  if (!courseIds.length || !relevantUserIds.size) return [];
+
+  const issues = await moodleService.getCertificateIssues(courseIds, { refresh });
+  if (!Array.isArray(issues)) return [];
+
+  // Por curso+usuario, nos quedamos con la emisión más reciente que no esté excluida.
+  const byKey = new Map();
+  for (const i of issues) {
+    if (isExcludedCertName(i.customcertname)) continue;
+    if (!relevantUserIds.has(i.userid)) continue;
+    const key = i.courseid + ':' + i.userid;
+    const prev = byKey.get(key);
+    if (!prev || i.timecreated > prev.timecreated) byKey.set(key, i);
+  }
+
+  return [...byKey.values()].map((i) => ({
+    moodle_course_id: i.courseid,
+    moodle_user_id: i.userid,
+    customcertname: i.customcertname,
+    codigo_certificado: i.code,
+    fecha_emision: i.timecreated ? new Date(i.timecreated * 1000).toISOString() : null,
+  }));
+}
+
+router.get('/partner/:id/certificates', authenticate, async (req, res) => {
+  const pid = req.params.id;
+  if (req.user && req.user.role !== 'admin') {
+    if (!req.user.partner_id || String(req.user.partner_id) !== String(pid)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+  }
+  try {
+    res.json(await getPartnerCertificates(pid, { refresh: req.query.refresh === '1' }));
+  } catch (e) {
+    res.status(500).json({ error: 'Error al obtener certificados' });
+  }
+});
+
+router.get('/admin/partners/:id/certificates', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
+  try {
+    res.json(await getPartnerCertificates(req.params.id, { refresh: req.query.refresh === '1' }));
+  } catch (e) {
+    res.status(500).json({ error: 'Error al obtener certificados' });
+  }
 });
 
 module.exports = router;

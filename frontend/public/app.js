@@ -927,13 +927,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const urlApp = isAdmin
       ? `${base}/admin/partners/${partnerId}/course-history`
       : `${base}/partner/${partnerId}/course-history`;
-    const [rM, rA] = await Promise.all([
+    const urlCert = isAdmin
+      ? `${base}/admin/partners/${partnerId}/certificates${qs}`
+      : `${base}/partner/${partnerId}/certificates${qs}`;
+    const [rM, rA, rC] = await Promise.all([
       safeFetch(urlMoodle, { headers: authHeaders() }),
       safeFetch(urlApp,    { headers: authHeaders() }),
+      safeFetch(urlCert,   { headers: authHeaders() }),
     ]);
     const moodle = await safeJson(rM);
     const app = await safeJson(rA);
-    return { moodle, app: Array.isArray(app) ? app : [] };
+    const cert = await safeJson(rC).catch(() => []);
+    const certByKey = new Map();
+    (Array.isArray(cert) ? cert : []).forEach(c => certByKey.set(c.moodle_course_id + ':' + c.moodle_user_id, c));
+    const appRows = (Array.isArray(app) ? app : []).map(r => {
+      const c = certByKey.get(r.moodle_course_id + ':' + r.moodle_user_id);
+      return { ...r, obtuvo_certificado: !!c, codigo_certificado: c ? c.codigo_certificado : null, fecha_emision_certificado: c ? c.fecha_emision : null };
+    });
+    return { moodle, app: appRows };
   }
 
   function renderPartnerHistory(P, data){
@@ -966,8 +977,9 @@ document.addEventListener('DOMContentLoaded', () => {
             <td>${fmtDate(r.expires_at)}</td>
             <td>${escapeHTML(r.moodle_status || '—')}</td>
             <td>${r.curso_suspendido_manual ? 'Suspendido' : (r.curso_activo === false ? 'Inactivo' : 'Activo')}</td>
+            <td>${r.obtuvo_certificado ? '✅ ' + escapeHTML(r.codigo_certificado || '') : '—'}</td>
           </tr>`).join('')
-        : '<tr><td colspan="8" class="text-muted">Sin matrículas hechas desde la app</td></tr>';
+        : '<tr><td colspan="9" class="text-muted">Sin matrículas hechas desde la app</td></tr>';
     }
   }
 
@@ -1002,6 +1014,9 @@ document.addEventListener('DOMContentLoaded', () => {
       'Curso': r.curso || '', 'Alumno': r.user_name || '', 'Correo alumno': r.user_email || '',
       'Cliente final': r.final_client || '', 'Activada': fmtDate(r.activated_at), 'Vence': fmtDate(r.expires_at),
       'Estado Moodle': r.moodle_status || '', 'Estado curso': r.curso_suspendido_manual ? 'Suspendido' : (r.curso_activo === false ? 'Inactivo' : 'Activo'),
+      'Obtuvo_Certificado': r.obtuvo_certificado ? 'Sí' : 'No',
+      'Codigo_Certificado': r.codigo_certificado || 'N/A',
+      'Fecha_Emision': r.fecha_emision_certificado ? fmtDate(r.fecha_emision_certificado) : 'N/A',
     }));
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(moodleRows.length ? moodleRows : [{ 'Sin datos': '' }]), 'Moodle');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(appRows.length ? appRows : [{ 'Sin datos': '' }]), 'Matriculas app');
@@ -1138,7 +1153,9 @@ document.addEventListener('DOMContentLoaded', () => {
         'Vence': fmtDate(r.expires_at),
         'Estado': r.estado_cierre,
         'Cliente_final': r.final_client || '',
-        'Obtuvo_Certificado': 'Pendiente',
+        'Obtuvo_Certificado': r.obtuvo_certificado ? 'Sí' : 'No',
+        'Fecha_Emision_Certificado': r.fecha_emision_certificado ? fmtDate(r.fecha_emision_certificado) : 'N/A',
+        'Codigo_Certificado': r.codigo_certificado || 'N/A',
       };
     });
     const count = s => rows.filter(r => r.estado_cierre === s).length;

@@ -65,7 +65,13 @@ async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = 
   return request('/internal/group-report?' + qs.toString());
 }
 
+async function getCertificateIssues(moodleCourseIds, { refresh = false } = {}) {
+  const qs = new URLSearchParams({ courseIds: (moodleCourseIds || []).join(','), refresh: refresh ? '1' : '0' });
+  return request('/internal/certificate-issues?' + qs.toString());
+}
+
 module.exports = {
+  getCertificateIssues,
   getGroupReport,
   isMockMode,
   enrollStudent,

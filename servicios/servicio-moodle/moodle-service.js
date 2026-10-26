@@ -588,6 +588,31 @@ async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = 
   }
 }
 
+// Certificados (customcert) emitidos en los cursos indicados, vía el plugin
+// local_certjoin instalado en Moodle (local_certjoin_get_certificate_issues).
+// Devuelve [] si el plugin no está instalado o si falla, nunca lanza.
+const certIssuesCache = new Map();
+const CERT_ISSUES_TTL_MS = 5 * 60 * 1000;
+
+async function getCertificateIssues(moodleCourseIds, { refresh = false } = {}) {
+  const ids = [...new Set((moodleCourseIds || []).map(Number))].filter(Boolean).sort((a, b) => a - b);
+  if (!ids.length) return [];
+  const key = ids.join(',');
+  const hit = certIssuesCache.get(key);
+  if (!refresh && hit && Date.now() - hit.at < CERT_ISSUES_TTL_MS) return hit.data;
+
+  try {
+    const params = {};
+    ids.forEach((id, i) => { params['courseids[' + i + ']'] = String(id); });
+    const r = await moodleRequest('local_certjoin_get_certificate_issues', params);
+    const data = Array.isArray(r) ? r : [];
+    certIssuesCache.set(key, { at: Date.now(), data });
+    return data;
+  } catch (e) {
+    return [];
+  }
+}
+
 module.exports = {
   enrollStudent,
   findUserByEmail,
@@ -600,5 +625,6 @@ module.exports = {
   getCourses,
   testConnection,
   getGroupReport,
+  getCertificateIssues,
   isMockMode
 };
