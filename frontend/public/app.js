@@ -944,7 +944,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const c = certByKey.get(r.moodle_course_id + ':' + r.moodle_user_id);
       return { ...r, obtuvo_certificado: !!c, codigo_certificado: c ? c.codigo_certificado : null, fecha_emision_certificado: c ? c.fecha_emision : null };
     });
-    return { moodle, app: appRows };
+    return { moodle, app: appRows, cert: Array.isArray(cert) ? cert : [] };
   }
 
   function renderPartnerHistory(P, data){
@@ -1121,19 +1121,59 @@ document.addEventListener('DOMContentLoaded', () => {
   function countCertificados(rows){ return rows.filter(r => r.obtuvo_certificado).length; }
   function countFallaronEstimado(rows){ return rows.filter(r => r.estado_cierre === 'Completado' && !r.obtuvo_certificado).length; }
 
+  // Miembros del grupo en Moodle (curso+usuario), sin fecha de matrícula disponible.
+  function moodlePopulationKeys(d){
+    const keys = new Set();
+    const courses = (d.moodle && Array.isArray(d.moodle.courses)) ? d.moodle.courses : [];
+    courses.forEach(c => (c.members || []).forEach(m => { if(m && m.id) keys.add(c.moodle_course_id + ':' + m.id); }));
+    return keys;
+  }
+  function certKeySet(d){
+    return new Set((d.cert || []).map(c => c.moodle_course_id + ':' + c.moodle_user_id));
+  }
+
+  // Matriculados/Certificados: si no hay filtro de fecha, se suma también el histórico de
+  // Moodle (alumnos sin voucher en la app, sin fecha de matrícula conocida). Con filtro de
+  // fecha activo, el histórico no se puede ubicar en el rango, así que solo cuenta lo que
+  // vino por voucher (igual que Cursando/Completados/Vencidos/Fallaron, siempre activación-only).
+  function closingKpis(d, rows, hasDateFilter){
+    const count = s => rows.filter(r => r.estado_cierre === s).length;
+    let matriculados = rows.length;
+    let certificados = countCertificados(rows);
+    if(!hasDateFilter){
+      const activationKeys = new Set(rows.filter(r => r.moodle_course_id && r.moodle_user_id).map(r => r.moodle_course_id + ':' + r.moodle_user_id));
+      const union = new Set([...activationKeys, ...moodlePopulationKeys(d)]);
+      const certKeys = certKeySet(d);
+      matriculados = union.size;
+      certificados = [...union].filter(k => certKeys.has(k)).length;
+    }
+    return {
+      matriculados,
+      cursando: count('Cursando'),
+      completados: count('Completado'),
+      certificados,
+      fallaron: countFallaronEstimado(rows),
+      vencidos: count('Vencido'),
+      sinMatricular: count('Sin matricular'),
+    };
+  }
+
   function renderClosing(){
     const box = el('admin-hist-kpis');
     if(!box) return;
+    const d = partnerHistoryCache.data;
+    if(!d) return;
     const rows = closingRows();
-    const count = s => rows.filter(r => r.estado_cierre === s).length;
+    const hasDateFilter = !!((el('admin-hist-from') || {}).value || (el('admin-hist-to') || {}).value);
+    const k = closingKpis(d, rows, hasDateFilter);
     const kpis = [
-      ['Matriculados', rows.length, 'primary'],
-      ['Cursando', count('Cursando'), 'info'],
-      ['Completados', count('Completado'), 'success'],
-      ['Certificados', countCertificados(rows), 'success'],
-      ['Fallaron (estimado)', countFallaronEstimado(rows), 'warning'],
-      ['Vencidos', count('Vencido'), 'secondary'],
-      ['Sin matricular', count('Sin matricular'), 'danger'],
+      ['Matriculados', k.matriculados, 'primary'],
+      ['Cursando', k.cursando, 'info'],
+      ['Completados', k.completados, 'success'],
+      ['Certificados', k.certificados, 'success'],
+      ['Fallaron (estimado)', k.fallaron, 'warning'],
+      ['Vencidos', k.vencidos, 'secondary'],
+      ['Sin matricular', k.sinMatricular, 'danger'],
     ];
     box.innerHTML = kpis.map(([label, n, color]) =>
       `<div class="col-6 col-md"><div class="border rounded p-2 text-center"><div class="fs-4 fw-bold text-${color}">${n}</div><div class="small text-muted">${label}</div></div></div>`
@@ -1165,15 +1205,16 @@ document.addEventListener('DOMContentLoaded', () => {
         'Codigo_Certificado': r.codigo_certificado || 'N/A',
       };
     });
-    const count = s => rows.filter(r => r.estado_cierre === s).length;
+    const hasDateFilter = !!((el('admin-hist-from') || {}).value || (el('admin-hist-to') || {}).value);
+    const k = closingKpis(d, rows, hasDateFilter);
     const resumen = [
-      { 'Indicador': 'Matriculados', 'Total': rows.length },
-      { 'Indicador': 'Cursando', 'Total': count('Cursando') },
-      { 'Indicador': 'Completados', 'Total': count('Completado') },
-      { 'Indicador': 'Certificados', 'Total': countCertificados(rows) },
-      { 'Indicador': 'Fallaron (estimado)', 'Total': countFallaronEstimado(rows) },
-      { 'Indicador': 'Vencidos', 'Total': count('Vencido') },
-      { 'Indicador': 'Sin matricular', 'Total': count('Sin matricular') },
+      { 'Indicador': 'Matriculados', 'Total': k.matriculados },
+      { 'Indicador': 'Cursando', 'Total': k.cursando },
+      { 'Indicador': 'Completados', 'Total': k.completados },
+      { 'Indicador': 'Certificados', 'Total': k.certificados },
+      { 'Indicador': 'Fallaron (estimado)', 'Total': k.fallaron },
+      { 'Indicador': 'Vencidos', 'Total': k.vencidos },
+      { 'Indicador': 'Sin matricular', 'Total': k.sinMatricular },
     ];
     const from = (el('admin-hist-from') || {}).value || 'inicio';
     const to = (el('admin-hist-to') || {}).value || 'hoy';

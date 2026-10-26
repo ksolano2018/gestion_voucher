@@ -876,19 +876,36 @@ function isExcludedCertName(name) {
 
 async function getPartnerCertificates(partnerId, { refresh = false } = {}) {
   const rows = await getPartnerCourseHistory(partnerId);
-  const courseIds = [...new Set(rows.map((r) => r.moodle_course_id).filter(Boolean))];
-  const relevantUserIds = new Set(rows.map((r) => r.moodle_user_id).filter(Boolean));
-  if (!courseIds.length || !relevantUserIds.size) return [];
+  // Población de activaciones (vouchers de la app): curso+usuario.
+  const validKeys = new Set(
+    rows.filter((r) => r.moodle_course_id && r.moodle_user_id).map((r) => r.moodle_course_id + ':' + r.moodle_user_id)
+  );
+  const courseIds = new Set(rows.map((r) => r.moodle_course_id).filter(Boolean));
 
-  const issues = await moodleService.getCertificateIssues(courseIds, { refresh });
+  // Población histórica de Moodle (miembros del grupo del partner, sin voucher en la app).
+  // No tiene fecha de matrícula, pero sí identifica curso+usuario real en Moodle.
+  const moodleReport = await getPartnerMoodleReport(partnerId, { refresh });
+  if (moodleReport && Array.isArray(moodleReport.courses)) {
+    for (const c of moodleReport.courses) {
+      if (!c.moodle_course_id) continue;
+      courseIds.add(c.moodle_course_id);
+      for (const m of c.members || []) {
+        if (m && m.id) validKeys.add(c.moodle_course_id + ':' + m.id);
+      }
+    }
+  }
+
+  if (!courseIds.size || !validKeys.size) return [];
+
+  const issues = await moodleService.getCertificateIssues([...courseIds], { refresh });
   if (!Array.isArray(issues)) return [];
 
   // Por curso+usuario, nos quedamos con la emisión más reciente que no esté excluida.
   const byKey = new Map();
   for (const i of issues) {
     if (isExcludedCertName(i.customcertname)) continue;
-    if (!relevantUserIds.has(i.userid)) continue;
     const key = i.courseid + ':' + i.userid;
+    if (!validKeys.has(key)) continue;
     const prev = byKey.get(key);
     if (!prev || i.timecreated > prev.timecreated) byKey.set(key, i);
   }
