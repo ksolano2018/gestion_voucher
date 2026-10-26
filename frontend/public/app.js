@@ -1147,14 +1147,23 @@ document.addEventListener('DOMContentLoaded', () => {
       matriculados = union.size;
       certificados = [...union].filter(k => certKeys.has(k)).length;
     }
+    const cursando = count('Cursando');
+    const completados = count('Completado');
+    const vencidos = count('Vencido');
+    const sinMatricular = count('Sin matricular');
+    // Alumnos del histórico de Moodle que no vinieron por voucher: no tienen Cursando/
+    // Completado/Vencido/Sin matricular (no sabemos su estado), así que no "son cursando".
+    // Matriculados - (las 4 categorías de activación) = cuántos quedan sin clasificar.
+    const historicoSinEstado = Math.max(0, matriculados - (cursando + completados + vencidos + sinMatricular));
     return {
       matriculados,
-      cursando: count('Cursando'),
-      completados: count('Completado'),
+      cursando,
+      completados,
       certificados,
       fallaron: countFallaronEstimado(rows),
-      vencidos: count('Vencido'),
-      sinMatricular: count('Sin matricular'),
+      vencidos,
+      sinMatricular,
+      historicoSinEstado,
     };
   }
 
@@ -1174,6 +1183,7 @@ document.addEventListener('DOMContentLoaded', () => {
       ['Fallaron (estimado)', k.fallaron, 'warning'],
       ['Vencidos', k.vencidos, 'secondary'],
       ['Sin matricular', k.sinMatricular, 'danger'],
+      ['Histórico sin estado', k.historicoSinEstado, 'muted'],
     ];
     box.innerHTML = kpis.map(([label, n, color]) =>
       `<div class="col-6 col-md"><div class="border rounded p-2 text-center"><div class="fs-4 fw-bold text-${color}">${n}</div><div class="small text-muted">${label}</div></div></div>`
@@ -1215,6 +1225,7 @@ document.addEventListener('DOMContentLoaded', () => {
       { 'Indicador': 'Fallaron (estimado)', 'Total': k.fallaron },
       { 'Indicador': 'Vencidos', 'Total': k.vencidos },
       { 'Indicador': 'Sin matricular', 'Total': k.sinMatricular },
+      { 'Indicador': 'Histórico sin estado', 'Total': k.historicoSinEstado },
     ];
     const from = (el('admin-hist-from') || {}).value || 'inicio';
     const to = (el('admin-hist-to') || {}).value || 'hoy';
