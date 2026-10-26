@@ -3182,8 +3182,11 @@
                     <div class="col-md-6">
                       <label class="form-label">Partner</label>
                       <div class="position-relative">
-                        <input type="hidden" id="admin-hist-partner">
-                        <input id="admin-hist-search" class="form-control" placeholder="Buscar por grupo, nombre o correo…" autocomplete="off">
+                        <div class="input-group">
+                          <input type="hidden" id="admin-hist-partner">
+                          <input id="admin-hist-search" class="form-control" placeholder="Buscar por grupo, nombre o correo…" autocomplete="off">
+                          <button type="button" id="admin-hist-search-clear" class="btn btn-outline-secondary" title="Limpiar búsqueda">✕</button>
+                        </div>
                         <div id="admin-hist-results" class="list-group position-absolute w-100 shadow" style="z-index:1050;max-height:340px;overflow:auto;display:none;"></div>
                       </div>
                     </div>
@@ -3198,11 +3201,6 @@
                     </div>
                     <div id="admin-hist-kpis" class="row g-2"></div>
                     <div class="small text-muted mt-2">
-                      Sin fecha Desde/Hasta: Matriculados y Certificados incluyen también el histórico de Moodle (alumnos del grupo sin voucher en la app, sin fecha de matrícula conocida). Con un rango de fecha puesto, ambos quedan limitados a lo que vino por voucher, igual que el resto de indicadores.
-                      Completado: finalizó el curso en Moodle (no implica que haya aprobado el examen).
-                      Certificados: emitidos de verdad, desde el plugin <code>local_certjoin</code>.
-                      Fallaron (estimado): completó el curso pero no tiene certificado — no es un dato directo de Moodle (no hay acceso a la nota del examen), es una aproximación.
-                      Vencidos: venció el voucher antes de completar (no la fecha límite del examen en Moodle, que no leemos hoy). Cursando/Completados/Fallaron/Vencidos solo cuentan lo que vino por voucher en la app.
                       Histórico sin estado: alumnos de Moodle sin voucher en la app (algunos pueden estar certificados) — no son "Cursando", es que al no haber activación en la app no sabemos su avance real.
                     </div>
                   </div>
