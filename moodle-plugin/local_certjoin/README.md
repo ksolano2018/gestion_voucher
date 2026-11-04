@@ -69,6 +69,9 @@ aparece una fila para él.
      compartieron).
    - En **Funciones**, agregar `local_certjoin_get_certificate_issues` y
      `local_certjoin_get_enrolment_dates`.
+   - *(Probado en un ensayo local: si la instalación es nueva, Moodle agrega
+     las funciones solo al crear el servicio — este paso es, igual, un buen
+     chequeo para confirmar que quedaron.)*
 4. Confirmar que el rol del usuario de Web Services (el que genera el token)
    tenga el permiso nuevo **"Ver certificados emitidos"**
    (`local/certjoin:viewcertificates`). Si ese usuario tiene el rol
@@ -85,8 +88,12 @@ aparece una fila para él.
    script de actualización (`$plugin->version` subió, por eso detecta el
    cambio).
 3. Si se agregó una función nueva (como `local_certjoin_get_enrolment_dates`
-   en esta versión), **no queda agregada sola al servicio existente** — hay
-   que repetir el paso 3 de instalación arriba para esa función puntual.
+   en esta versión), Moodle normalmente la agrega solo al servicio existente
+   al correr la actualización (confirmado en un ensayo local). Igual conviene
+   verificarlo: **Administración del sitio → Servidor → Servicios web →
+   Servicios externos** → abrir el servicio de CertJoin → **Funciones** →
+   confirmar que `local_certjoin_get_enrolment_dates` esté en la lista. Si no
+   aparece, agregarla ahí manualmente (paso 3 de instalación arriba).
 
 ## Cómo probarlo
 
