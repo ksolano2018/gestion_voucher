@@ -4,7 +4,7 @@ const express = require('express');
 const { body } = require('express-validator');
 const router = express.Router();
 const pool = require('../../db/pool');
-const { authenticate, requireRole } = require('../../lib/auth');
+const { authenticate, requireRole, requireAnyPermission } = require('../../lib/auth');
 const { apiLimiter } = require('../../lib/rateLimit');
 const { handleValidationErrors } = require('../../lib/validation');
 const { logSystemEvent, logSecurityEvent } = require('../../lib/audit');
@@ -56,7 +56,10 @@ router.post('/admin/partners',
 });
 
 // Admin: list partners
-router.get('/admin/partners', authenticate, requireRole('admin'), apiLimiter, async (req,res)=>{
+// Lectura de la lista de partners: cualquier rol con acceso a compras/pricing/reportes
+// la necesita (combos de Compra Externa/Cortesía/Ajustar, pantalla de pricing, reportes),
+// no solo 'admin' literal — antes bloqueaba a 'soporte' aunque tuviera esos módulos en 'edit'.
+router.get('/admin/partners', authenticate, requireAnyPermission(['purchases', 'financial_ops', 'pricing', 'reports'], 'view'), apiLimiter, async (req,res)=>{
   try{
     console.log('📋 GET /admin/partners - Query params:', req.query);
     const page = parseInt(req.query.page) || 1;
