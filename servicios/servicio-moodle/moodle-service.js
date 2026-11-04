@@ -514,6 +514,20 @@ function isMockMode() {
 const groupReportCache = new Map();
 const GROUP_REPORT_TTL_MS = 5 * 60 * 1000;
 
+// Normaliza un nombre de grupo para comparar: quita acentos, baja a minúsculas,
+// colapsa espacios y cambia cualquier puntuación (guiones, puntos, etc.) por espacio.
+// Sigue siendo una igualdad exacta (no un LIKE difuso) — solo tolera que el nombre
+// guardado en `partners.group_name` y el real en Moodle difieran en formato
+// (ENTREAGILES / Entre Agiles / Entre-Ágiles), sin arriesgarse a cruzar dos partners
+// distintos cuyo nombre comparta solo una porción del texto.
+function normalizeGroupName(s) {
+  return String(s || '')
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
 async function mapWithLimit(items, limit, fn) {
   const out = new Array(items.length);
   let next = 0;
@@ -528,7 +542,7 @@ async function mapWithLimit(items, limit, fn) {
 }
 
 async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = {}) {
-  const needle = String(groupName || '').trim().toLowerCase();
+  const needle = normalizeGroupName(groupName);
   const ids = [...new Set((moodleCourseIds || []).map(Number))].filter(Boolean).sort((a, b) => a - b);
   if (!needle) return { error: 'groupName requerido' };
   const key = needle + '|' + ids.join(',');
@@ -542,11 +556,27 @@ async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = 
     const found = await mapWithLimit(ids, 8, async (cid) => {
       const groups = await moodleRequest('core_group_get_course_groups', { courseid: String(cid) });
       if (!Array.isArray(groups)) return null;
-      const g = groups.find(x => (x.name || '').trim().toLowerCase() === needle);
+      const g = groups.find(x => normalizeGroupName(x.name) === needle);
       if (!g) return null;
       const mem = await moodleRequest('core_group_get_group_members', { 'groupids[0]': String(g.id) });
       const userIds = Array.isArray(mem) && mem[0] && Array.isArray(mem[0].userids) ? mem[0].userids : [];
       const c = byId.get(cid) || {};
+
+      // Fecha de matriculación por usuario en este curso, vía el plugin local_certjoin.
+      // Si el plugin no tiene esta función (instalación vieja, no reinstalada aún) o falla,
+      // degrada con gracia: el reporte sigue funcionando sin esa columna.
+      let enrolledAt = new Map();
+      if (userIds.length) {
+        try {
+          const enrolParams = { courseid: String(cid) };
+          userIds.forEach((id, j) => { enrolParams['userids[' + j + ']'] = String(id); });
+          const enrolments = await moodleRequest('local_certjoin_get_enrolment_dates', enrolParams);
+          if (Array.isArray(enrolments)) {
+            enrolments.forEach(e => enrolledAt.set(e.userid, e.timecreated));
+          }
+        } catch (e) { /* plugin no instalado/actualizado: sin fecha de matrícula */ }
+      }
+
       return {
         moodle_course_id: cid,
         course_name: c.fullname || null,
@@ -554,6 +584,7 @@ async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = 
         enddate: c.enddate || 0,
         moodle_group_id: g.id,
         user_ids: userIds,
+        enrolled_at: enrolledAt,
       };
     });
     const rows = found.filter(Boolean);
@@ -578,7 +609,9 @@ async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = 
         visible: r.visible,
         enddate: r.enddate,
         moodle_group_id: r.moodle_group_id,
-        members: r.user_ids.map(id => userMap.get(id)).filter(Boolean),
+        members: r.user_ids.map(id => userMap.get(id))
+          .filter(Boolean)
+          .map(u => ({ ...u, enrolled_at: r.enrolled_at.has(u.id) ? r.enrolled_at.get(u.id) : null })),
       })),
     };
     groupReportCache.set(key, { at: Date.now(), data });

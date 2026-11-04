@@ -961,7 +961,11 @@ document.addEventListener('DOMContentLoaded', () => {
       const rows = (data.moodle && data.moodle.courses) || [];
       tbM.innerHTML = rows.length
         ? rows.map(c => {
-            const est = (c.members || []).map(m => `${escapeHTML(m.fullname || m.username || '')}${m.email ? ' <small class="text-muted">' + escapeHTML(m.email) + '</small>' : ''}`).join('<br>') || '<span class="text-muted">Sin estudiantes</span>';
+            const est = (c.members || []).map(m => {
+              const email = m.email ? ' <small class="text-muted">' + escapeHTML(m.email) + '</small>' : '';
+              const matriculado = m.enrolled_at ? ' <small class="text-muted">· Matriculado: ' + fmtEndDate(m.enrolled_at) + '</small>' : '';
+              return `${escapeHTML(m.fullname || m.username || '')}${email}${matriculado}`;
+            }).join('<br>') || '<span class="text-muted">Sin estudiantes</span>';
             return `<tr><td>${escapeHTML(c.course_name || ('Curso ' + c.moodle_course_id))}</td><td>${c.visible ? 'Sí' : 'No'}</td><td>${fmtEndDate(c.enddate)}</td><td>${est}</td></tr>`;
           }).join('')
         : '<tr><td colspan="4" class="text-muted">Sin cursos con este grupo en Moodle</td></tr>';
@@ -1004,10 +1008,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const moodleRows = [];
     for(const c of (d.moodle && d.moodle.courses) || []){
       if(!c.members || !c.members.length){
-        moodleRows.push({ 'Curso': c.course_name || '', 'Moodle ID': c.moodle_course_id, 'Visible': c.visible ? 'Sí' : 'No', 'Fin': fmtEndDate(c.enddate), 'Estudiante': '', 'Usuario Moodle': '', 'Correo': '' });
+        moodleRows.push({ 'Curso': c.course_name || '', 'Moodle ID': c.moodle_course_id, 'Visible': c.visible ? 'Sí' : 'No', 'Fin': fmtEndDate(c.enddate), 'Estudiante': '', 'Usuario Moodle': '', 'Correo': '', 'Matriculado': '' });
       }
       for(const m of c.members || []){
-        moodleRows.push({ 'Curso': c.course_name || '', 'Moodle ID': c.moodle_course_id, 'Visible': c.visible ? 'Sí' : 'No', 'Fin': fmtEndDate(c.enddate), 'Estudiante': m.fullname || '', 'Usuario Moodle': m.username || '', 'Correo': m.email || '' });
+        moodleRows.push({ 'Curso': c.course_name || '', 'Moodle ID': c.moodle_course_id, 'Visible': c.visible ? 'Sí' : 'No', 'Fin': fmtEndDate(c.enddate), 'Estudiante': m.fullname || '', 'Usuario Moodle': m.username || '', 'Correo': m.email || '', 'Matriculado': m.enrolled_at ? fmtEndDate(m.enrolled_at) : 'N/A' });
       }
     }
     const appRows = d.app.map(r => ({

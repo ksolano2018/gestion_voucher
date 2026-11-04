@@ -869,9 +869,18 @@ router.get('/admin/partners/:id/status-summary', authenticate, requireRole('admi
 // Mismo criterio de exclusión que la consulta SQL que usaba el cliente antes de la app
 // (certificados 'W'/'GTI' no cuentan). Si el plugin no está instalado o falla, devuelve []
 // y el reporte sigue funcionando sin esa columna (degradación controlada).
-const EXCLUDED_CERT_NAME_PATTERNS = [/certificado w/i, /certificado gti/i, /certificate gti/i];
+//
+// Los patrones viejos (/certificado w/i, /certificado gti/i) nunca matcheaban los nombres
+// reales en Moodle ("GTI" solo, "Certificado 2022 W") porque exigían que la palabra clave
+// viniera pegada a "certificado" — el nombre real tiene el año en medio. Se corrigió a
+// coincidencia de palabra completa sobre el nombre recortado. Plantillas "legacy" por año
+// (ej. "Certificado 2013" conviviendo con "Certificado 2022") NO se excluyen aquí a propósito:
+// distinguir cuál año es "el vigente" es una decisión de negocio, no un patrón de texto — hoy
+// se resuelve quedándonos con la emisión más reciente (ver dedupe más abajo).
+const EXCLUDED_CERT_NAME_PATTERNS = [/\bgti\b/i, /\bw$/i];
 function isExcludedCertName(name) {
-  return EXCLUDED_CERT_NAME_PATTERNS.some((p) => p.test(name || ''));
+  const trimmed = String(name || '').trim();
+  return EXCLUDED_CERT_NAME_PATTERNS.some((p) => p.test(trimmed));
 }
 
 async function getPartnerCertificates(partnerId, { refresh = false } = {}) {
