@@ -23,7 +23,11 @@ const MOODLE_ROLE_ID = parseInt(process.env.MOODLE_ROLE_ID || '5', 10);
 
 // ─── Internal HTTP helper ────────────────────────────────────────────────────
 
-function moodleRequest(wsfunction, params) {
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function moodleRequestOnce(wsfunction, params, timeoutMs) {
   return new Promise((resolve, reject) => {
     if (!MOODLE_URL) {
       return reject(new Error('MOODLE_URL no configurado'));
@@ -70,10 +74,30 @@ function moodleRequest(wsfunction, params) {
     });
 
     req.on('error', reject);
-    req.setTimeout(10000, () => req.destroy(new Error('Moodle request timeout (10s)')));
+    req.setTimeout(timeoutMs, () => req.destroy(new Error(`Moodle request timeout (${timeoutMs / 1000}s)`)));
     req.write(body);
     req.end();
   });
+}
+
+// Reintenta una vez, solo si el fallo fue por timeout (no tiene sentido reintentar
+// un error de validación o de permisos: va a fallar igual e instantáneo). El Moodle
+// del cliente ocasionalmente tarda más de lo esperado en responder (confirmado en
+// logs de PD: 3 activaciones fallidas por timeout en create_user/enroll en una
+// semana) — un segundo intento con más margen absorbe esa lentitud puntual en vez
+// de perder la activación del voucher.
+const MOODLE_TIMEOUT_MS = 15000;
+const MOODLE_RETRY_TIMEOUT_MS = 20000;
+const MOODLE_RETRY_DELAY_MS = 800;
+
+async function moodleRequest(wsfunction, params) {
+  try {
+    return await moodleRequestOnce(wsfunction, params, MOODLE_TIMEOUT_MS);
+  } catch (err) {
+    if (!/timeout/i.test(err.message)) throw err;
+    await sleep(MOODLE_RETRY_DELAY_MS);
+    return moodleRequestOnce(wsfunction, params, MOODLE_RETRY_TIMEOUT_MS);
+  }
 }
 
 // ─── Mock responses ──────────────────────────────────────────────────────────
