@@ -6798,23 +6798,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const wb = window.XLSX.utils.book_new();
 
-    // Sheet 1: plantilla de activaciones
+    // Sheet 1: plantilla de activaciones. course_name debe coincidir (tal cual)
+    // con un nombre de la hoja "Certificaciones disponibles" — copiar/pegar desde ahí.
+    const sampleNames = _availableCourses.length
+      ? _availableCourses.slice(0, 2).map(c => c.name)
+      : ['(copia un nombre de la hoja "Certificaciones disponibles")', ''];
     const templateData = [
-      ['course_id', 'user_name', 'user_email', 'final_client', 'activation_months'],
-      [1, 'Juan Perez', 'juan@ejemplo.com', 'Empresa ABC', _maxActivationMonths],
-      [2, 'Maria Lopez', 'maria@ejemplo.com', 'Empresa XYZ', _maxActivationMonths],
+      ['course_name', 'user_name', 'user_email', 'final_client', 'activation_months'],
+      [sampleNames[0] || '', 'Juan Perez', 'juan@ejemplo.com', 'Empresa ABC', _maxActivationMonths],
+      [sampleNames[1] || sampleNames[0] || '', 'Maria Lopez', 'maria@ejemplo.com', 'Empresa XYZ', _maxActivationMonths],
     ];
     const wsTemplate = window.XLSX.utils.aoa_to_sheet(templateData);
-    wsTemplate['!cols'] = [{ wch: 12 }, { wch: 25 }, { wch: 30 }, { wch: 25 }, { wch: 20 }];
+    wsTemplate['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 30 }, { wch: 25 }, { wch: 20 }];
     window.XLSX.utils.book_append_sheet(wb, wsTemplate, 'Activaciones');
 
-    // Sheet 2: catálogo de cursos disponibles
-    const catalogHeader = [['course_id', 'course_name']];
+    // Sheet 2: catálogo de cursos disponibles (referencia para copiar el nombre exacto)
+    const catalogHeader = [['course_name', 'course_id']];
     const catalogRows = _availableCourses.length
-      ? _availableCourses.map(c => [c.id, c.name])
-      : [[1, '(carga la sección primero para ver cursos reales)']];
+      ? _availableCourses.map(c => [c.name, c.id])
+      : [['(carga la sección primero para ver cursos reales)', '']];
     const wsCatalog = window.XLSX.utils.aoa_to_sheet(catalogHeader.concat(catalogRows));
-    wsCatalog['!cols'] = [{ wch: 12 }, { wch: 50 }];
+    wsCatalog['!cols'] = [{ wch: 50 }, { wch: 12 }];
     window.XLSX.utils.book_append_sheet(wb, wsCatalog, 'Certificaciones disponibles');
 
     window.XLSX.writeFile(wb, 'plantilla_activacion_vouchers.xlsx');
@@ -6862,12 +6866,23 @@ document.addEventListener('DOMContentLoaded', () => {
         if(btn) btn.disabled = false; return;
       }
 
-      const requiredCols = ['course_id', 'user_name', 'user_email', 'final_client'];
+      const hasCourseCol = ('course_name' in rows[0]) || ('course_id' in rows[0]);
+      const requiredCols = ['user_name', 'user_email', 'final_client'];
       const missing = requiredCols.filter(c => !(c in rows[0]));
+      if(!hasCourseCol) missing.unshift('course_name');
       if(missing.length){
         showLoginMessage(`Columnas faltantes: ${missing.join(', ')}`, 'danger', 6000);
         if(btn) btn.disabled = false; return;
       }
+
+      // Nombre de certificación -> id, usando el mismo catálogo que ve el partner
+      // en el buscador de "Activar Voucher" (/partner/:id/courses).
+      const courseByName = new Map();
+      _availableCourses.forEach(c => {
+        const key = c.name.trim().toLowerCase();
+        if(!courseByName.has(key)) courseByName.set(key, []);
+        courseByName.get(key).push(c.id);
+      });
 
       // Confirmación antes de procesar
       if(btn) btn.disabled = false;
@@ -6890,7 +6905,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const results = [];
       for(let i = 0; i < rows.length; i++){
         const row = rows[i];
-        const courseId   = parseInt(row.course_id, 10);
+        const courseName = String(row.course_name || '').trim();
         const userName   = String(row.user_name   || '').trim();
         const userEmail  = String(row.user_email  || '').trim();
         const finalClient = String(row.final_client || '').trim();
@@ -6899,6 +6914,24 @@ document.addEventListener('DOMContentLoaded', () => {
         const pct = Math.round((i / rows.length) * 100);
         if(progressBar){ progressBar.style.width = pct + '%'; progressBar.textContent = pct + '%'; }
         if(progressText) progressText.textContent = `Procesando fila ${i + 1} de ${rows.length}…`;
+
+        // Resolución de la certificación: por nombre (preferido) o, si la fila trae
+        // course_id numérico (plantillas antiguas), por id — sin romper lo ya generado.
+        let courseId = null;
+        if(courseName){
+          const matches = courseByName.get(courseName.toLowerCase());
+          if(!matches){
+            results.push({ row: i + 2, ok: false, error: `Certificación no encontrada: "${courseName}"`, userName, userEmail });
+            continue;
+          }
+          if(matches.length > 1){
+            results.push({ row: i + 2, ok: false, error: `Nombre de certificación ambiguo: "${courseName}" (usa course_id)`, userName, userEmail });
+            continue;
+          }
+          courseId = matches[0];
+        } else if(row.course_id){
+          courseId = parseInt(row.course_id, 10) || null;
+        }
 
         if(!courseId || !userName || !userEmail || !finalClient){
           results.push({ row: i + 2, ok: false, error: 'Fila incompleta o datos inválidos', userName, userEmail });
