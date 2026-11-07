@@ -961,14 +961,23 @@ document.addEventListener('DOMContentLoaded', () => {
       const rows = (data.moodle && data.moodle.courses) || [];
       tbM.innerHTML = rows.length
         ? rows.map(c => {
-            const est = (c.members || []).map(m => {
-              const email = m.email ? ' <small class="text-muted">' + escapeHTML(m.email) + '</small>' : '';
-              const matriculado = m.enrolled_at ? ' <small class="text-muted">· Matriculado: ' + fmtEndDate(m.enrolled_at) + '</small>' : '';
-              return `${escapeHTML(m.fullname || m.username || '')}${email}${matriculado}`;
-            }).join('<br>') || '<span class="text-muted">Sin estudiantes</span>';
-            return `<tr><td>${escapeHTML(c.course_name || ('Curso ' + c.moodle_course_id))}</td><td>${c.visible ? 'Sí' : 'No'}</td><td>${fmtEndDate(c.enddate)}</td><td>${est}</td></tr>`;
+            const courseName = escapeHTML(c.course_name || ('Curso ' + c.moodle_course_id));
+            const fin = fmtEndDate(c.enddate);
+            const members = c.members || [];
+            if(!members.length){
+              return `<tr class="table-group-divider"><td>${courseName}</td><td>${fin}</td><td colspan="3" class="text-muted">Sin estudiantes</td></tr>`;
+            }
+            return members.map((m, i) => {
+              const nombre = escapeHTML(m.fullname || m.username || '—');
+              const correo = m.email ? escapeHTML(m.email) : '—';
+              const matriculado = m.enrolled_at ? fmtEndDate(m.enrolled_at) : '—';
+              if(i === 0){
+                return `<tr class="table-group-divider"><td rowspan="${members.length}">${courseName}</td><td rowspan="${members.length}">${fin}</td><td>${nombre}</td><td>${correo}</td><td>${matriculado}</td></tr>`;
+              }
+              return `<tr><td>${nombre}</td><td>${correo}</td><td>${matriculado}</td></tr>`;
+            }).join('');
           }).join('')
-        : '<tr><td colspan="4" class="text-muted">Sin cursos con este grupo en Moodle</td></tr>';
+        : '<tr><td colspan="5" class="text-muted">Sin cursos con este grupo en Moodle</td></tr>';
     }
     if(tbA){
       tbA.innerHTML = data.app.length
