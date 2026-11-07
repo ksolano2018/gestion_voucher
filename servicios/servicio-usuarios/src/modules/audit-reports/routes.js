@@ -586,24 +586,51 @@ router.get('/admin/reports/summary', authenticate, requireAnyPermission(['dashbo
 router.get('/admin/reports/monthly', authenticate, requireAnyPermission(['dashboard', 'stats', 'reports'], 'view'), async (req, res) => {
   try {
     const { start_date, end_date, partner_id } = req.query;
-    const conditions = [];
     const params = [];
 
-    if (start_date) { params.push(start_date); conditions.push(`created_at >= $${params.length}`); }
-    if (end_date)   { params.push(end_date);   conditions.push(`created_at <= $${params.length}::date + INTERVAL '1 day'`); }
-    if (partner_id && /^\d+$/.test(partner_id)) { params.push(parseInt(partner_id,10)); conditions.push(`partner_id = $${params.length}`); }
+    const pConditions = [];
+    if (start_date) { params.push(start_date); pConditions.push(`created_at >= $${params.length}`); }
+    if (end_date)   { params.push(end_date);   pConditions.push(`created_at <= $${params.length}::date + INTERVAL '1 day'`); }
+    if (partner_id && /^\d+$/.test(partner_id)) { params.push(parseInt(partner_id,10)); pConditions.push(`partner_id = $${params.length}`); }
+    const pWhere = pConditions.length ? 'WHERE ' + pConditions.join(' AND ') : '';
 
-    const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
+    const aConditions = [];
+    if (start_date) { params.push(start_date); aConditions.push(`a.activated_at >= $${params.length}`); }
+    if (end_date)   { params.push(end_date);   aConditions.push(`a.activated_at <= $${params.length}::date + INTERVAL '1 day'`); }
+    if (partner_id && /^\d+$/.test(partner_id)) { params.push(parseInt(partner_id,10)); aConditions.push(`v.partner_id = $${params.length}`); }
+    const aWhere = aConditions.length ? 'WHERE ' + aConditions.join(' AND ') : '';
 
+    // Dos CTEs porque purchases.created_at y activations.activated_at son columnas/tablas
+    // distintas sin relación 1:1 por fila; se combinan por mes con FULL OUTER JOIN para no
+    // perder meses que solo tengan compras o solo activaciones.
     const result = await pool.query(`
+      WITH purchases_m AS (
+        SELECT
+          DATE_TRUNC('month', created_at) AS month_date,
+          COUNT(*)::int                   AS purchases,
+          COALESCE(SUM(total_price),0)::numeric AS revenue,
+          COALESCE(SUM(qty),0)::int       AS vouchers_sold
+        FROM purchases ${pWhere}
+        GROUP BY 1
+      ),
+      activations_m AS (
+        SELECT
+          DATE_TRUNC('month', a.activated_at) AS month_date,
+          COUNT(*)::int                       AS activations
+        FROM activations a
+        LEFT JOIN vouchers v ON v.id = a.voucher_id
+        ${aWhere}
+        GROUP BY 1
+      )
       SELECT
-        TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') AS month,
-        COUNT(*)::int                                         AS purchases,
-        COALESCE(SUM(total_price),0)::numeric                 AS revenue,
-        COALESCE(SUM(qty),0)::int                             AS vouchers_sold
-      FROM purchases ${where}
-      GROUP BY DATE_TRUNC('month', created_at)
-      ORDER BY DATE_TRUNC('month', created_at) DESC
+        TO_CHAR(COALESCE(pm.month_date, am.month_date), 'YYYY-MM') AS month,
+        COALESCE(pm.revenue, 0)::numeric      AS revenue,
+        COALESCE(pm.purchases, 0)::int        AS purchases,
+        COALESCE(pm.vouchers_sold, 0)::int    AS vouchers_sold,
+        COALESCE(am.activations, 0)::int      AS activations
+      FROM purchases_m pm
+      FULL OUTER JOIN activations_m am ON pm.month_date = am.month_date
+      ORDER BY COALESCE(pm.month_date, am.month_date) DESC
       LIMIT 24
     `, params);
 
