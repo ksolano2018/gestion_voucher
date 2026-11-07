@@ -1162,6 +1162,21 @@ document.addEventListener('DOMContentLoaded', () => {
   function certKeySet(d){
     return new Set((d.cert || []).map(c => c.moodle_course_id + ':' + c.moodle_user_id));
   }
+  // Fecha de fin (enddate, timestamp Unix en segundos; 0 = sin fecha) de cada curso de Moodle.
+  function moodleCourseEndMap(d){
+    const map = new Map();
+    const courses = (d.moodle && Array.isArray(d.moodle.courses)) ? d.moodle.courses : [];
+    courses.forEach(c => { if(c.moodle_course_id) map.set(String(c.moodle_course_id), c.enddate || 0); });
+    return map;
+  }
+  // Para un alumno histórico de Moodle (sin voucher/activación en la app) no hay dato de
+  // progreso real (no hay completion status confiable vía Web Service). Se infiere por la
+  // fecha de fin del curso: sin fecha o fecha futura -> curso sigue abierto -> probablemente
+  // sigue cursando. Curso ya cerrado -> no se puede saber si completó o abandonó.
+  function isHistoricCourseOpen(courseEndMap, key){
+    const end = courseEndMap.get(String(key).split(':')[0]) || 0;
+    return !end || (end * 1000) > Date.now();
+  }
 
   // Matriculados/Certificados: si no hay filtro de fecha, se suma también el histórico de
   // Moodle (alumnos sin voucher en la app, sin fecha de matrícula conocida). Con filtro de
@@ -1171,24 +1186,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const count = s => rows.filter(r => r.estado_cierre === s).length;
     let matriculados = rows.length;
     let certificados = countCertificados(rows);
-    if(!hasDateFilter){
-      const activationKeys = new Set(rows.filter(r => r.moodle_course_id && r.moodle_user_id).map(r => r.moodle_course_id + ':' + r.moodle_user_id));
-      const union = new Set([...activationKeys, ...moodlePopulationKeys(d)]);
-      const certKeys = certKeySet(d);
-      matriculados = union.size;
-      certificados = [...union].filter(k => certKeys.has(k)).length;
-    }
+    let cursandoEstimado = 0;
     const cursando = count('Cursando');
     const completados = count('Completado');
     const vencidos = count('Vencido');
     const sinMatricular = count('Sin matricular');
-    // Alumnos del histórico de Moodle que no vinieron por voucher: no tienen Cursando/
-    // Completado/Vencido/Sin matricular (no sabemos su estado), así que no "son cursando".
-    // Matriculados - (las 4 categorías de activación) = cuántos quedan sin clasificar.
-    const historicoSinEstado = Math.max(0, matriculados - (cursando + completados + vencidos + sinMatricular));
+    if(!hasDateFilter){
+      const activationKeys = new Set(rows.filter(r => r.moodle_course_id && r.moodle_user_id).map(r => r.moodle_course_id + ':' + r.moodle_user_id));
+      const populationKeys = moodlePopulationKeys(d);
+      const union = new Set([...activationKeys, ...populationKeys]);
+      const certKeys = certKeySet(d);
+      matriculados = union.size;
+      certificados = [...union].filter(k => certKeys.has(k)).length;
+      const courseEndMap = moodleCourseEndMap(d);
+      [...populationKeys].forEach(k => {
+        if(activationKeys.has(k)) return;
+        if(isHistoricCourseOpen(courseEndMap, k)) cursandoEstimado++;
+      });
+    }
+    // Alumnos del histórico de Moodle que no vinieron por voucher y cuyo curso ya cerró: no
+    // tienen Cursando/Completado/Vencido/Sin matricular ni "Cursando (estimado)" (no sabemos
+    // su estado real). Matriculados - (las categorías conocidas) = cuántos quedan sin clasificar.
+    const historicoSinEstado = Math.max(0, matriculados - (cursando + completados + vencidos + sinMatricular + cursandoEstimado));
     return {
       matriculados,
       cursando,
+      cursandoEstimado,
       completados,
       certificados,
       fallaron: countFallaronEstimado(rows),
@@ -1209,6 +1232,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const kpis = [
       ['Matriculados', k.matriculados, 'primary'],
       ['Cursando', k.cursando, 'info'],
+      ['Cursando (estimado)', k.cursandoEstimado, 'info'],
       ['Completados', k.completados, 'success'],
       ['Certificados', k.certificados, 'success'],
       ['Histórico sin estado', k.historicoSinEstado, 'muted'],
@@ -1255,6 +1279,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const activationKeys = new Set(rows.filter(r => r.moodle_course_id && r.moodle_user_id).map(r => r.moodle_course_id + ':' + r.moodle_user_id));
       const certByKey = new Map();
       (d.cert || []).forEach(c => certByKey.set(c.moodle_course_id + ':' + c.moodle_user_id, c));
+      const courseEndMap = moodleCourseEndMap(d);
       const courses = (d.moodle && Array.isArray(d.moodle.courses)) ? d.moodle.courses : [];
       courses.forEach(c => {
         (c.members || []).forEach(m => {
@@ -1273,7 +1298,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'Fecha_Activacion': 'N/A',
             'Fecha_Completado': 'N/A',
             'Vence': 'N/A',
-            'Estado': 'Histórico sin estado',
+            'Estado': isHistoricCourseOpen(courseEndMap, key) ? 'Cursando (estimado)' : 'Histórico sin estado',
             'Cliente_final': '',
             'Obtuvo_Certificado': cert ? 'Sí' : 'No',
             'Fecha_Emision_Certificado': cert ? fmtDate(cert.fecha_emision) : 'N/A',
@@ -1286,6 +1311,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const resumen = [
       { 'Indicador': 'Matriculados', 'Total': k.matriculados },
       { 'Indicador': 'Cursando', 'Total': k.cursando },
+      { 'Indicador': 'Cursando (estimado)', 'Total': k.cursandoEstimado },
       { 'Indicador': 'Completados', 'Total': k.completados },
       { 'Indicador': 'Certificados', 'Total': k.certificados },
       { 'Indicador': 'Fallaron (estimado)', 'Total': k.fallaron },
