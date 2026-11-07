@@ -965,14 +965,14 @@ document.addEventListener('DOMContentLoaded', () => {
             const fin = fmtEndDate(c.enddate);
             const members = c.members || [];
             if(!members.length){
-              return `<tr class="table-group-divider"><td>${courseName}</td><td>${fin}</td><td colspan="3" class="text-muted">Sin estudiantes</td></tr>`;
+              return `<tr class="table-group-divider"><td>${courseName}</td><td colspan="3" class="text-muted">Sin estudiantes</td><td>${fin}</td></tr>`;
             }
             return members.map((m, i) => {
               const nombre = escapeHTML(m.fullname || m.username || '—');
               const correo = m.email ? escapeHTML(m.email) : '—';
               const matriculado = m.enrolled_at ? fmtEndDate(m.enrolled_at) : '—';
               if(i === 0){
-                return `<tr class="table-group-divider"><td rowspan="${members.length}">${courseName}</td><td rowspan="${members.length}">${fin}</td><td>${nombre}</td><td>${correo}</td><td>${matriculado}</td></tr>`;
+                return `<tr class="table-group-divider"><td rowspan="${members.length}">${courseName}</td><td>${nombre}</td><td>${correo}</td><td>${matriculado}</td><td rowspan="${members.length}">${fin}</td></tr>`;
               }
               return `<tr><td>${nombre}</td><td>${correo}</td><td>${matriculado}</td></tr>`;
             }).join('');
