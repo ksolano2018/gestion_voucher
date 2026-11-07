@@ -1309,13 +1309,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function removeFromCart(itemId){
-    let cart = loadCart();
-    cart = cart.filter(i => i.id !== itemId);
-    saveCart(cart);
-    renderCartSummary();
-  }
-
   function changeQty(itemId, qty){
     const cart = loadCart();
     const idx = cart.findIndex(i => i.id === itemId);
@@ -1342,13 +1335,11 @@ document.addEventListener('DOMContentLoaded', () => {
   async function refreshVoucherPricingPreview(){
     const qtyInput = el('voucher-qty');
     const previewEl = el('partner-pricing-preview');
-    const cartNoteEl = el('cart-pricing-note');
     const cart = loadCart();
     const cartVoucher = cart.find(item => item.id === 'voucher-certjoin');
     const qty = cartVoucher ? parseInt(cartVoucher.qty || 1, 10) : Math.max(1, parseInt((qtyInput && qtyInput.value) || '1', 10));
 
     if(previewEl) previewEl.textContent = 'Calculando total...';
-    if(cartNoteEl) cartNoteEl.textContent = 'Calculando precio aplicado...';
 
     try {
       const pricing = await fetchPartnerPricingPreview(qty);
@@ -1357,9 +1348,6 @@ document.addEventListener('DOMContentLoaded', () => {
           ? '<span class="badge bg-warning text-dark ms-2" style="font-size:0.7rem;">Precio especial</span>'
           : '<span class="badge bg-secondary ms-2" style="font-size:0.7rem;">Categoría base</span>';
         previewEl.innerHTML = `Total: $${parseFloat(pricing.total_price || 0).toFixed(2)}${sourceBadge}`;
-      }
-      if(cartNoteEl){
-        cartNoteEl.textContent = pricing.cumulative_message || pricing.breakdown_message || '';
       }
 
       if(cartVoucher){
@@ -1373,7 +1361,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (e) {
       if(previewEl) previewEl.textContent = 'No se pudo calcular el precio actual.';
-      if(cartNoteEl) cartNoteEl.textContent = 'No se pudo calcular el precio aplicado.';
     }
   }
 
@@ -1385,20 +1372,25 @@ document.addEventListener('DOMContentLoaded', () => {
       container.innerHTML = '<div class="text-muted">Tu carrito esta vacio</div>';
       const totalEl = el('cart-total');
       if(totalEl) totalEl.textContent = '$0.00';
-      if(el('cart-pricing-note')) el('cart-pricing-note').textContent = '';
       updateCartCount();
       return;
     }
     container.innerHTML = cart.map(it => {
       const safeTitle = escapeHTML(it.title || 'Producto');
-      const safePrice = parseFloat(it.price || 0).toFixed(2);
       const safeQty = parseInt(it.qty || 1, 10);
       const safeId = escapeHTML(String(it.id || ''));
-      return `<div style="display:flex;justify-content:space-between;align-items:center;padding:.4rem .2rem;border-bottom:1px solid #f1f1f1;">
-        <div style="flex:1"><div style="font-weight:600">${safeTitle}</div><div class="small-muted">$${safePrice}</div></div>
-        <div style="display:flex;gap:.5rem;align-items:center">
-          <input type="number" min="1" value="${safeQty}" data-id="${safeId}" class="cart-qty form-control form-control-sm" style="width:70px;" />
-          <button class="btn btn-sm btn-outline-danger cart-remove" data-id="${safeId}">Eliminar</button>
+      return `<div class="cart-item-row">
+        <div class="cart-item-main">
+          <div class="cart-item-icon">🎫</div>
+          <div>
+            <div class="cart-item-title">${safeTitle}</div>
+            <div class="cart-item-sub small-muted">Certificación digital por voucher</div>
+          </div>
+        </div>
+        <div class="cart-item-qty-group">
+          <button type="button" class="cart-qty-btn cart-qty-dec" data-id="${safeId}" aria-label="Restar">−</button>
+          <input type="number" min="1" value="${safeQty}" data-id="${safeId}" class="cart-qty-input cart-qty" />
+          <button type="button" class="cart-qty-btn cart-qty-inc" data-id="${safeId}" aria-label="Sumar">+</button>
         </div>
       </div>`;
     }).join('');
@@ -1407,11 +1399,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const totalEl = el('cart-total');
     if(totalEl) totalEl.textContent = `$${total.toFixed(2)}`;
 
-    document.querySelectorAll('.cart-remove').forEach(btn => {
-      btn.addEventListener('click', () => removeFromCart(btn.dataset.id));
-    });
     document.querySelectorAll('.cart-qty').forEach(input => {
       input.addEventListener('change', () => changeQty(input.dataset.id, parseInt(input.value || '1', 10)));
+    });
+    document.querySelectorAll('.cart-qty-dec').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = container.querySelector(`.cart-qty[data-id="${btn.dataset.id}"]`);
+        const next = Math.max(1, parseInt((input && input.value) || '1', 10) - 1);
+        changeQty(btn.dataset.id, next);
+      });
+    });
+    document.querySelectorAll('.cart-qty-inc').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const input = container.querySelector(`.cart-qty[data-id="${btn.dataset.id}"]`);
+        const next = Math.max(1, parseInt((input && input.value) || '1', 10) + 1);
+        changeQty(btn.dataset.id, next);
+      });
     });
 
     refreshVoucherPricingPreview();
