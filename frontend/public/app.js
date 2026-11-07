@@ -1245,6 +1245,44 @@ document.addEventListener('DOMContentLoaded', () => {
     });
     const hasDateFilter = !!((el('admin-hist-from') || {}).value || (el('admin-hist-to') || {}).value);
     const k = closingKpis(d, rows, hasDateFilter);
+
+    // Sin filtro de fecha, el Resumen suma también el histórico de Moodle (alumnos sin
+    // voucher en la app, vía closingKpis/moodlePopulationKeys) — se agregan esas mismas
+    // filas al Detalle para que no quede vacío cuando un partner no tiene activaciones
+    // por la app (antes el Detalle solo traía closingRows() y podía no tener nada que
+    // mostrar aunque el Resumen ya mostrara Matriculados/Certificados reales).
+    if(!hasDateFilter){
+      const activationKeys = new Set(rows.filter(r => r.moodle_course_id && r.moodle_user_id).map(r => r.moodle_course_id + ':' + r.moodle_user_id));
+      const certByKey = new Map();
+      (d.cert || []).forEach(c => certByKey.set(c.moodle_course_id + ':' + c.moodle_user_id, c));
+      const courses = (d.moodle && Array.isArray(d.moodle.courses)) ? d.moodle.courses : [];
+      courses.forEach(c => {
+        (c.members || []).forEach(m => {
+          if(!m || !m.id) return;
+          const key = c.moodle_course_id + ':' + m.id;
+          if(activationKeys.has(key)) return; // ya está en detail vía rows
+          const partes = (m.fullname || m.username || '').trim().split(/\s+/);
+          const cert = certByKey.get(key);
+          detail.push({
+            'Codigo_Curso': c.moodle_course_id || '',
+            'Nombre_Curso': c.course_name || '',
+            'Grupo': (d.moodle && d.moodle.grupo_moodle) || '',
+            'Nombre': partes.slice(0, 1).join(' '),
+            'Apellido': partes.slice(1).join(' '),
+            'Correo_Electronico': m.email || '',
+            'Fecha_Activacion': 'N/A',
+            'Fecha_Completado': 'N/A',
+            'Vence': 'N/A',
+            'Estado': 'Histórico sin estado',
+            'Cliente_final': '',
+            'Obtuvo_Certificado': cert ? 'Sí' : 'No',
+            'Fecha_Emision_Certificado': cert ? fmtDate(cert.fecha_emision) : 'N/A',
+            'Codigo_Certificado': cert ? (cert.codigo_certificado || 'N/A') : 'N/A',
+          });
+        });
+      });
+    }
+
     const resumen = [
       { 'Indicador': 'Matriculados', 'Total': k.matriculados },
       { 'Indicador': 'Cursando', 'Total': k.cursando },
