@@ -524,18 +524,26 @@ router.get('/admin/reports/summary', authenticate, requireAnyPermission(['dashbo
 
     const where = conditions.length ? 'WHERE ' + conditions.join(' AND ') : '';
 
+    // Los KPIs principales (total_purchases/total_revenue/total_vouchers_sold) solo deben
+    // contar compras que SÍ se pagaron (status='PAID' — Stripe, cortesía y externas lo marcan
+    // así al confirmarse; 'PENDING' es el estado inicial antes de que llegue el webhook/pago,
+    // y 'FAILED' es el de un pago que no se completó). Antes se sumaba sin filtrar por status,
+    // así que una compra abandonada en PENDING inflaba Ingresos/Compras/Vouchers del dashboard
+    // (bug real confirmado en PD: 2 compras PENDING sumaban $160 y 2 vouchers de más).
+    // Nota: 'COMPLETED'/'CANCELLED' nunca se escriben en purchases.status (el webhook real usa
+    // 'PAID'/'FAILED') — por eso completed_purchases/cancelled_purchases daban siempre 0.
     const purchasesQ = await pool.query(`
       SELECT
-        COUNT(*)::int                                                                                           AS total_purchases,
-        COALESCE(SUM(p.total_price),0)::numeric                                                                AS total_revenue,
-        COALESCE(SUM(p.qty),0)::int                                                                            AS total_vouchers_sold,
-        COUNT(*) FILTER (WHERE p.status='COMPLETED')::int                                                      AS completed_purchases,
+        COUNT(*) FILTER (WHERE p.status='PAID')::int                                                           AS total_purchases,
+        COALESCE(SUM(p.total_price) FILTER (WHERE p.status='PAID'),0)::numeric                                 AS total_revenue,
+        COALESCE(SUM(p.qty) FILTER (WHERE p.status='PAID'),0)::int                                              AS total_vouchers_sold,
+        COUNT(*) FILTER (WHERE p.status='PAID')::int                                                            AS completed_purchases,
         COUNT(*) FILTER (WHERE p.status='PENDING')::int                                                        AS pending_purchases,
-        COUNT(*) FILTER (WHERE p.status='CANCELLED')::int                                                      AS cancelled_purchases,
-        COUNT(*) FILTER (WHERE p.payment_method='complimentary')::int                                          AS complimentary_purchases,
-        COALESCE(SUM(p.total_price) FILTER (WHERE p.payment_method != 'complimentary'),0)::numeric             AS paid_revenue,
-        COALESCE(SUM(p.total_price) FILTER (WHERE p.payment_method = 'stripe'),0)::numeric                     AS stripe_revenue,
-        COALESCE(SUM(p.total_price) FILTER (WHERE p.payment_method NOT IN ('stripe','complimentary')),0)::numeric AS external_revenue
+        COUNT(*) FILTER (WHERE p.status='FAILED')::int                                                         AS cancelled_purchases,
+        COUNT(*) FILTER (WHERE p.status='PAID' AND p.payment_method='complimentary')::int                      AS complimentary_purchases,
+        COALESCE(SUM(p.total_price) FILTER (WHERE p.status='PAID' AND p.payment_method != 'complimentary'),0)::numeric AS paid_revenue,
+        COALESCE(SUM(p.total_price) FILTER (WHERE p.status='PAID' AND p.payment_method = 'stripe'),0)::numeric  AS stripe_revenue,
+        COALESCE(SUM(p.total_price) FILTER (WHERE p.status='PAID' AND p.payment_method NOT IN ('stripe','complimentary')),0)::numeric AS external_revenue
       FROM purchases p ${where}
     `, params);
 
@@ -607,9 +615,9 @@ router.get('/admin/reports/monthly', authenticate, requireAnyPermission(['dashbo
       WITH purchases_m AS (
         SELECT
           DATE_TRUNC('month', created_at) AS month_date,
-          COUNT(*)::int                   AS purchases,
-          COALESCE(SUM(total_price),0)::numeric AS revenue,
-          COALESCE(SUM(qty),0)::int       AS vouchers_sold
+          COUNT(*) FILTER (WHERE status='PAID')::int                   AS purchases,
+          COALESCE(SUM(total_price) FILTER (WHERE status='PAID'),0)::numeric AS revenue,
+          COALESCE(SUM(qty) FILTER (WHERE status='PAID'),0)::int       AS vouchers_sold
         FROM purchases ${pWhere}
         GROUP BY 1
       ),
@@ -656,10 +664,10 @@ router.get('/admin/reports/top-partners', authenticate, requireAnyPermission(['d
       SELECT
         pt.id                                  AS partner_id,
         pt.name AS partner_name,
-        COUNT(p.id)::int                       AS total_purchases,
-        COALESCE(SUM(p.total_price),0)::numeric AS total_revenue,
-        COALESCE(SUM(p.qty),0)::int            AS vouchers_sold,
-        COUNT(p.id) FILTER (WHERE p.status='COMPLETED')::int AS completed
+        COUNT(p.id) FILTER (WHERE p.status='PAID')::int AS total_purchases,
+        COALESCE(SUM(p.total_price) FILTER (WHERE p.status='PAID'),0)::numeric AS total_revenue,
+        COALESCE(SUM(p.qty) FILTER (WHERE p.status='PAID'),0)::int AS vouchers_sold,
+        COUNT(p.id) FILTER (WHERE p.status='PAID')::int AS completed
       FROM partners pt
       LEFT JOIN purchases p ON p.partner_id = pt.id ${where.replace('WHERE','AND')}
       GROUP BY pt.id, pt.name
