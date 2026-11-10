@@ -236,6 +236,14 @@ app.post('/oauth/token',
       return res.status(400).json({error:'invalid_grant'});
     }
 
+    // Usuario desactivado por un admin (active=FALSE): mismo error genérico que credenciales
+    // inválidas, para no revelar por la respuesta si la cuenta existe/está activa.
+    if (user.active === false) {
+      logSecurityEvent('LOGIN_FAILED', { username, reason: 'inactive_account', ip: req.ip });
+      await logSystemEvent('LOGIN_FAILED', 'AUTH', user.id, user.stripe_customer_id || null, null, { username, reason: 'inactive_account' }, 'FAILED', 'invalid_grant', req);
+      return res.status(400).json({error:'invalid_grant'});
+    }
+
     // Verificar si la contraseña ha caducado
     if (user.password_expires_at && new Date(user.password_expires_at) < new Date()) {
       await pool.query('UPDATE users SET must_change_password=TRUE, updated_at=NOW() WHERE id=$1', [user.id]);
