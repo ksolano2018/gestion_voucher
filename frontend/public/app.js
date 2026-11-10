@@ -1152,6 +1152,39 @@ document.addEventListener('DOMContentLoaded', () => {
   function countCertificados(rows){ return rows.filter(r => r.obtuvo_certificado).length; }
   function countFallaronEstimado(rows){ return rows.filter(r => r.estado_cierre === 'Completado' && !r.obtuvo_certificado).length; }
 
+  // Un mismo curso+alumno puede tener varias activaciones (ej. un voucher activado 2-3 veces
+  // por error, o un reintento tras un FAILED) — cada una es una fila distinta en `rows`. Para
+  // que los tiles de estado (Cursando/Completados/Vencidos/Sin matricular) representen alumnos
+  // únicos por curso (y así sumen con Matriculados, que sí está deduplicado), se colapsa a una
+  // sola fila por curso+alumno, quedándose con el estado "más avanzado" (Completado > Cursando >
+  // Vencido > Sin matricular). Sin moodle_user_id (nunca llegó a crear usuario en Moodle) se usa
+  // curso+correo como llave, ya que no hay otro identificador confiable para agrupar.
+  function closingStatusRank(status){
+    return { 'Completado': 3, 'Cursando': 2, 'Vencido': 1, 'Sin matricular': 0 }[status] ?? 0;
+  }
+  function dedupeKeyForRow(r){
+    // course_id (nuestro, no el de Moodle) + correo: siempre presentes en toda fila de
+    // activación, a diferencia de moodle_user_id (solo existe si la matrícula en Moodle llegó
+    // a crear el usuario). Usar siempre esta llave evita que un reintento fallido del mismo
+    // curso+alumno (sin moodle_user_id) quede como una entrada aparte en vez de colapsar con
+    // el intento que sí tuvo éxito.
+    return `${r.course_id}:${r.user_email}`;
+  }
+  function dedupeClosingRows(rows){
+    const best = new Map();
+    rows.forEach(r => {
+      const key = dedupeKeyForRow(r);
+      const current = best.get(key);
+      if(!current) { best.set(key, r); return; }
+      const rankDiff = closingStatusRank(r.estado_cierre) - closingStatusRank(current.estado_cierre);
+      const better = rankDiff !== 0
+        ? rankDiff > 0
+        : (r.obtuvo_certificado ? 1 : 0) > (current.obtuvo_certificado ? 1 : 0);
+      if(better) best.set(key, r);
+    });
+    return [...best.values()];
+  }
+
   // Miembros del grupo en Moodle (curso+usuario), sin fecha de matrícula disponible.
   function moodlePopulationKeys(d){
     const keys = new Set();
@@ -1183,9 +1216,10 @@ document.addEventListener('DOMContentLoaded', () => {
   // fecha activo, el histórico no se puede ubicar en el rango, así que solo cuenta lo que
   // vino por voucher (igual que Cursando/Completados/Vencidos/Fallaron, siempre activación-only).
   function closingKpis(d, rows, hasDateFilter){
-    const count = s => rows.filter(r => r.estado_cierre === s).length;
-    let matriculados = rows.length;
-    let certificados = countCertificados(rows);
+    const dedupedRows = dedupeClosingRows(rows);
+    const count = s => dedupedRows.filter(r => r.estado_cierre === s).length;
+    let matriculados = dedupedRows.length;
+    let certificados = countCertificados(dedupedRows);
     let cursandoEstimado = 0;
     const cursando = count('Cursando');
     const completados = count('Completado');
@@ -1214,7 +1248,7 @@ document.addEventListener('DOMContentLoaded', () => {
       cursandoEstimado,
       completados,
       certificados,
-      fallaron: countFallaronEstimado(rows),
+      fallaron: countFallaronEstimado(dedupedRows),
       vencidos,
       sinMatricular,
       historicoSinEstado,
