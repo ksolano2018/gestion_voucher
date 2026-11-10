@@ -1556,6 +1556,11 @@ document.addEventListener('DOMContentLoaded', () => {
     partners: []
   };
 
+  // Categoría base: bloqueada hasta que se pulsa "Editar"; snapshot para poder cancelar
+  // (volver a los valores previos) y para construir el resumen de cambios del popup.
+  let pricingBaseEditMode = false;
+  let pricingBaseSnapshot = null;
+
   function buildPartnerOptions(partners, includePlaceholder = true){
     const options = [];
     if(includePlaceholder) options.push('<option value="">-- Selecciona un partner --</option>');
@@ -1744,12 +1749,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const tbody = el('pricing-base-rules-body');
     if(!tbody) return;
     const rows = Array.isArray(rules) && rules.length > 0 ? rules : [{ min_qty: 1, max_qty: '', unit_price: '' }];
+    const dis = pricingBaseEditMode ? '' : 'disabled';
+    const removeBtnCls = pricingBaseEditMode ? '' : 'd-none';
     tbody.innerHTML = rows.map(rule => `
       <tr>
-        <td><input type="number" min="1" class="form-control base-rule-min" value="${escapeHTML(String(rule.min_qty ?? 1))}"></td>
-        <td><input type="number" min="1" class="form-control base-rule-max" value="${rule.max_qty === null || rule.max_qty === undefined ? '' : escapeHTML(String(rule.max_qty))}" placeholder="Sin límite"></td>
-        <td><input type="number" min="0.01" step="0.01" class="form-control base-rule-price" value="${escapeHTML(String(rule.unit_price ?? ''))}"></td>
-        <td><button type="button" class="btn btn-sm btn-outline-danger remove-base-rule">Eliminar</button></td>
+        <td><input type="number" min="1" class="form-control base-rule-min" value="${escapeHTML(String(rule.min_qty ?? 1))}" ${dis}></td>
+        <td><input type="number" min="1" class="form-control base-rule-max" value="${rule.max_qty === null || rule.max_qty === undefined ? '' : escapeHTML(String(rule.max_qty))}" placeholder="Sin límite" ${dis}></td>
+        <td><input type="number" min="0.01" step="0.01" class="form-control base-rule-price" value="${escapeHTML(String(rule.unit_price ?? ''))}" ${dis}></td>
+        <td><button type="button" class="btn btn-sm btn-outline-danger remove-base-rule ${removeBtnCls}" ${dis}>Eliminar</button></td>
       </tr>
     `).join('');
     tbody.querySelectorAll('.remove-base-rule').forEach(btn => {
@@ -1758,6 +1765,21 @@ document.addEventListener('DOMContentLoaded', () => {
         if(row && tbody.children.length > 1) row.remove();
       });
     });
+  }
+
+  // Habilita/bloquea los campos de la categoría base y alterna los botones Editar/Agregar/Guardar/Cancelar.
+  function setPricingBaseEditMode(enabled){
+    pricingBaseEditMode = enabled;
+    const descInput = el('pricing-base-profile-description');
+    if(descInput) descInput.disabled = !enabled;
+    const editBtn   = el('edit-pricing-base-btn');
+    const addBtn    = el('add-pricing-base-rule-row');
+    const saveBtn   = el('save-pricing-base-profile');
+    const cancelBtn = el('cancel-pricing-base-edit');
+    if(editBtn)   editBtn.classList.toggle('d-none', enabled);
+    if(addBtn)    addBtn.classList.toggle('d-none', !enabled);
+    if(saveBtn)   saveBtn.classList.toggle('d-none', !enabled);
+    if(cancelBtn) cancelBtn.classList.toggle('d-none', !enabled);
   }
 
   function getBasePricingRulesFromEditor(){
@@ -1857,12 +1879,98 @@ document.addEventListener('DOMContentLoaded', () => {
     tbody.appendChild(row);
   });
 
-  on('save-pricing-base-profile', 'click', async () => {
+  on('edit-pricing-base-btn', 'click', () => {
     const baseProfile = (pricingState.profiles || []).find(p => p.profile_type === 'CATEGORY');
     if(!baseProfile){
       showInlineAlert('pricing-base-message', 'No se encontró la categoría base.', 'danger');
       return;
     }
+    pricingBaseSnapshot = {
+      description: (el('pricing-base-profile-description') || {}).value || '',
+      rules: getBasePricingRulesFromEditor()
+    };
+    setPricingBaseEditMode(true);
+    renderBasePricingRulesEditor(pricingBaseSnapshot.rules);
+  });
+
+  on('cancel-pricing-base-edit', 'click', () => {
+    setPricingBaseEditMode(false);
+    if(pricingBaseSnapshot){
+      if(el('pricing-base-profile-description')) el('pricing-base-profile-description').value = pricingBaseSnapshot.description;
+      renderBasePricingRulesEditor(pricingBaseSnapshot.rules);
+    }
+    pricingBaseSnapshot = null;
+    clearInlineAlert('pricing-base-message');
+  });
+
+  // En vez de guardar directo, arma un resumen antes/después y lo muestra en un popup de
+  // confirmación — el guardado real ocurre en "confirm-pricing-base-save". Esto aplica a
+  // TODOS los partners con categoría base, por eso el paso extra de confirmación.
+  on('save-pricing-base-profile', 'click', () => {
+    const baseProfile = (pricingState.profiles || []).find(p => p.profile_type === 'CATEGORY');
+    if(!baseProfile){
+      showInlineAlert('pricing-base-message', 'No se encontró la categoría base.', 'danger');
+      return;
+    }
+    const newRules       = getBasePricingRulesFromEditor();
+    const newDescription = (el('pricing-base-profile-description') || {}).value || '';
+    const oldRules       = (pricingBaseSnapshot && pricingBaseSnapshot.rules) || baseProfile.rules || [];
+    const oldDescription = (pricingBaseSnapshot && pricingBaseSnapshot.description) || baseProfile.description || '';
+
+    const fmtMoney = n => (n === null || n === undefined || n === '' || isNaN(n)) ? '—' : `$${Number(n).toFixed(2)}`;
+    const fmtMax   = v => (v === null || v === undefined || v === '') ? 'Sin límite' : v;
+
+    let hasChanges = oldDescription !== newDescription;
+    const maxLen = Math.max(oldRules.length, newRules.length);
+    let rowsHtml = '';
+    for(let i = 0; i < maxLen; i++){
+      const o = oldRules[i];
+      const n = newRules[i];
+      if(o && !n){
+        hasChanges = true;
+        rowsHtml += `<tr class="table-danger"><td>${i + 1}</td><td colspan="3">Tramo eliminado: ${o.min_qty}–${fmtMax(o.max_qty)} · ${fmtMoney(o.unit_price)}</td></tr>`;
+      } else if(!o && n){
+        hasChanges = true;
+        rowsHtml += `<tr class="table-success"><td>${i + 1}</td><td colspan="3">Tramo nuevo: ${n.min_qty}–${fmtMax(n.max_qty)} · ${fmtMoney(n.unit_price)}</td></tr>`;
+      } else {
+        const minChanged   = o.min_qty !== n.min_qty;
+        const maxChanged   = (o.max_qty ?? null) !== (n.max_qty ?? null);
+        const priceChanged = Number(o.unit_price) !== Number(n.unit_price);
+        if(minChanged || maxChanged || priceChanged) hasChanges = true;
+        rowsHtml += `<tr>
+          <td>${i + 1}</td>
+          <td class="${minChanged ? 'text-danger fw-bold' : ''}">${minChanged ? `${o.min_qty} → ${n.min_qty}` : n.min_qty}</td>
+          <td class="${maxChanged ? 'text-danger fw-bold' : ''}">${maxChanged ? `${fmtMax(o.max_qty)} → ${fmtMax(n.max_qty)}` : fmtMax(n.max_qty)}</td>
+          <td class="${priceChanged ? 'text-danger fw-bold' : ''}">${priceChanged ? `${fmtMoney(o.unit_price)} → ${fmtMoney(n.unit_price)}` : fmtMoney(n.unit_price)}</td>
+        </tr>`;
+      }
+    }
+
+    if(!hasChanges){
+      showInlineAlert('pricing-base-message', 'No hay cambios para guardar.', 'info');
+      return;
+    }
+
+    const descHtml = oldDescription !== newDescription
+      ? `<div class="mb-3"><strong>Descripción:</strong> <span class="text-muted">${escapeHTML(oldDescription || '(vacía)')}</span> → <span class="fw-bold">${escapeHTML(newDescription || '(vacía)')}</span></div>`
+      : '';
+
+    if(el('pricing-base-confirm-summary')){
+      el('pricing-base-confirm-summary').innerHTML = `
+        ${descHtml}
+        <div class="table-responsive">
+          <table class="table table-sm table-bordered mb-0">
+            <thead><tr><th>Tramo</th><th>Mín. cantidad</th><th>Máx. cantidad</th><th>Precio unitario</th></tr></thead>
+            <tbody>${rowsHtml}</tbody>
+          </table>
+        </div>`;
+    }
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('pricingBaseConfirmModal')).show();
+  });
+
+  on('confirm-pricing-base-save', 'click', async () => {
+    const baseProfile = (pricingState.profiles || []).find(p => p.profile_type === 'CATEGORY');
+    if(!baseProfile) return;
     const profileId   = baseProfile.id;
     const profileName = (el('pricing-base-profile-name') || {}).value || baseProfile.name;
     const rules       = getBasePricingRulesFromEditor();
@@ -1880,8 +1988,13 @@ document.addEventListener('DOMContentLoaded', () => {
       );
       const data = await resp.json();
       if(!resp.ok) throw new Error(data.error || 'No se pudo guardar la categoría base');
+      const modalEl = document.getElementById('pricingBaseConfirmModal');
+      const modal = bootstrap.Modal.getInstance(modalEl);
+      if(modal) modal.hide();
       showToast('Reglas de categoría base guardadas correctamente', 'success');
       showInlineAlert('pricing-base-message', 'Reglas guardadas correctamente.', 'success');
+      pricingBaseSnapshot = null;
+      setPricingBaseEditMode(false);
       await loadAdminPricingData();
     } catch(e) { showInlineAlert('pricing-base-message', `Error: ${escapeHTML(e.message)}`, 'danger'); }
   });
