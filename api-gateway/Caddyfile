@@ -4,6 +4,18 @@
 #   - Local: SITE_ADDRESS sin definir → ":8080" (HTTP plano; el host publica :3000→:8080).
 #   - QA:    SITE_ADDRESS=demo-certjoin.duckdns.org → Caddy emite/renueva cert Let's Encrypt
 #            automáticamente (HTTP-01 en :80, sirve :443). Requiere :80 y :443 abiertos.
+# Detrás de un proxy previo (PD: CloudPanel/nginx, que conecta desde la IP privada del
+# puente de Docker) Caddy descartaba el X-Forwarded-For entrante y lo reemplazaba por
+# la IP del vecino, así que la auditoría y el rate-limit veían siempre 172.18.0.1 (QA-13).
+# Con trusted_proxies Caddy CONSERVA ese header cuando el vecino es una IP privada; si
+# alguien llega directo desde una IP pública (QA, local) el header se sigue sobrescribiendo,
+# por lo que no se puede falsear desde internet.
+{
+	servers {
+		trusted_proxies static private_ranges
+	}
+}
+
 {$SITE_ADDRESS::8080} {
 	# Compras + pagos Stripe → servicio-compras. Se usa path_regexp (no glob) para
 	# capturar TAMBIÉN los sub-paths profundos (/purchases/:id/status, /transaction-history,
