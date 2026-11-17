@@ -385,27 +385,35 @@ document.addEventListener('DOMContentLoaded', () => {
     if(node) node.innerHTML = '';
   }
 
-  function getToken(){ return localStorage.getItem('access_token'); }
-  function setToken(t){
-    if(t){
-      localStorage.setItem('access_token', t);
+  // QA-10: el JWT real vive SOLO en una cookie httpOnly (el JS ni XSS pueden leerla ni
+  // exfiltrarla). Acá se guardan únicamente los "claims" no secretos (rol, partner_id,
+  // permisos, exp) que el servidor devuelve en login/refresh, para decidir qué UI
+  // mostrar. Con esto no se puede suplantar a nadie contra la API desde afuera.
+  const CLAIMS_KEY = 'session_claims';
+  function getToken(){
+    try {
+      const raw = localStorage.getItem(CLAIMS_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch(e) { return null; }
+  }
+  function setToken(claims){
+    if(claims){
+      localStorage.setItem(CLAIMS_KEY, JSON.stringify(claims));
       if(userDropdownWrap) userDropdownWrap.style.display = 'block';
       showAppScreen();
       showUser();
     } else {
-      localStorage.removeItem('access_token');
+      localStorage.removeItem(CLAIMS_KEY);
+      localStorage.removeItem('access_token'); // limpia el token legado de sesiones previas al cambio
       if(userDropdownWrap) userDropdownWrap.style.display = 'none';
       showLoginScreen();
     }
   }
 
-  function decodeJwt(token){
-    try{
-      const p = token.split('.')[1];
-      return JSON.parse(atob(p.replace(/-/g,'+').replace(/_/g,'/')));
-    }catch(e){
-      return null;
-    }
+  // Los claims ya vienen decodificados del servidor: se conserva el nombre por los
+  // ~35 call-sites existentes (decodeJwt(getToken())), que ahora reciben el objeto.
+  function decodeJwt(claims){
+    return (claims && typeof claims === 'object') ? claims : null;
   }
 
   // ── Timeout por inactividad (30 min) ───────────────────────────────────────
@@ -607,9 +615,9 @@ document.addEventListener('DOMContentLoaded', () => {
     updateFinancialOpsButtons();
   }
 
+  // La autenticación viaja en la cookie httpOnly (credentials:'include'), no en un header.
   function authHeaders(){
-    const t = getToken();
-    return t ? { 'Content-Type':'application/json', 'Authorization': 'Bearer ' + t } : { 'Content-Type':'application/json' };
+    return { 'Content-Type':'application/json' };
   }
 
   let isRefreshing = false;
@@ -646,10 +654,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await resp.json();
       isRefreshing = false;
 
-      if(resp.ok && data.access_token){
-        setToken(data.access_token);
-        onTokenRefreshed(data.access_token);
-        return data.access_token;
+      if(resp.ok && data.claims){
+        setToken(data.claims);
+        onTokenRefreshed(data.claims);
+        return data.claims;
       } else {
         setToken(null);
         showLoginMessage('Sesión expirada. Por favor, inicia sesión de nuevo.', 'warning', 4000);
@@ -664,20 +672,15 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function safeFetch(url, options = {}){
-    const mergedOptions = { cache: 'no-store', ...options };
+    // credentials:'include' por defecto: la sesión es una cookie httpOnly (QA-10).
+    const mergedOptions = { cache: 'no-store', credentials: 'include', ...options };
     let response = await fetch(url, mergedOptions);
 
     if(response.status === 401){
-      const newToken = await refreshAccessToken();
-      if(newToken){
-        const newOptions = {
-          ...mergedOptions,
-          headers: {
-            ...mergedOptions.headers,
-            'Authorization': 'Bearer ' + newToken
-          }
-        };
-        response = await fetch(url, newOptions);
+      const refreshed = await refreshAccessToken();
+      if(refreshed){
+        // La cookie nueva ya la guardó el navegador: basta reintentar la misma petición.
+        response = await fetch(url, mergedOptions);
       }
     }
 
@@ -703,7 +706,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       setButtonLoading(loginBtn, true);
       const url = apiUrl + '/oauth/token';
-      const resp = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ grant_type:'password', username, password }) });
+      const resp = await fetch(url, { method:'POST', credentials:'include', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ grant_type:'password', username, password }) });
       const data = await resp.json();
       setButtonLoading(loginBtn, false);
       if(resp.ok && data.must_change_password){
@@ -711,9 +714,9 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoginMessage('Debes cambiar tu contraseña temporal para continuar.', 'warning', 6000);
         return;
       }
-      if(resp.ok && data.access_token){
-        setToken(data.access_token);
-        const d = decodeJwt(data.access_token) || {};
+      if(resp.ok && data.claims){
+        setToken(data.claims);
+        const d = decodeJwt(data.claims) || {};
         if(d.role === 'admin'){
           show(sAdmin);
           // Activar tarjeta dashboard y cargar datos
@@ -2721,10 +2724,10 @@ document.addEventListener('DOMContentLoaded', () => {
       const isComp = method === 'complimentary';
       const isAdjustable = method !== 'stripe' && !isVoided;
       const adjustBtn = (canAdjust && isAdjustable)
-        ? `<button class="btn btn-outline-secondary btn-xs py-0 px-1" onclick="openAdjustPurchaseModal(${p.id})">✏️ Ajustar</button>`
+        ? `<button class="btn btn-outline-secondary btn-xs py-0 px-1" data-purchase-action="adjust" data-purchase-id="${p.id}">✏️ Ajustar</button>`
         : '';
       const voidBtn = (canAdjust && isPaid)
-        ? `<button class="btn btn-outline-danger btn-xs py-0 px-1 ms-1" onclick="openVoidPurchaseModal(${p.id})">🛑 Anular</button>`
+        ? `<button class="btn btn-outline-danger btn-xs py-0 px-1 ms-1" data-purchase-action="void" data-purchase-id="${p.id}">🛑 Anular</button>`
         : '';
 
       // For complimentary: show issuer + reason under the badge
@@ -3026,12 +3029,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const baseApi = apiUrl;
       const url = `${baseApi}/admin/audit/movements/export/csv?${params.toString()}`;
 
-      const resp = await safeFetch(url, {
-        method: 'GET',
-        headers: {
-          Authorization: 'Bearer ' + (getToken() || '')
-        }
-      });
+      const resp = await safeFetch(url, { method: 'GET' });
 
       if(!resp.ok){
         const text = await resp.text();
@@ -3335,6 +3333,17 @@ document.addEventListener('DOMContentLoaded', () => {
         } catch(e) { setButtonLoading(btn, false); setMsg(e.message); }
       }
     });
+  });
+
+  // Delegación para los botones Ajustar/Anular de la tabla de compras (sin onclick inline,
+  // para poder quitar 'unsafe-inline' de la CSP de scripts — QA-10).
+  document.addEventListener('click', ev => {
+    const btn = ev.target.closest && ev.target.closest('[data-purchase-action]');
+    if (!btn) return;
+    const id = parseInt(btn.dataset.purchaseId, 10);
+    if (!id) return;
+    if (btn.dataset.purchaseAction === 'adjust') window.openAdjustPurchaseModal(id);
+    else if (btn.dataset.purchaseAction === 'void') window.openVoidPurchaseModal(id);
   });
 
   // ── Modal Anular Compra (QA-14) ──
@@ -5558,6 +5567,7 @@ document.addEventListener('DOMContentLoaded', () => {
       
       const resp = await fetch(apiUrl + `/admin/users/${userId}`, {
         method: 'PUT',
+        credentials: 'include',
         headers: authHeaders(),
         body: JSON.stringify(payload)
       });
@@ -5588,6 +5598,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try{
       const resp = await fetch(apiUrl + `/admin/users/${userId}`, {
         method: 'DELETE',
+        credentials: 'include',
         headers: authHeaders()
       });
       

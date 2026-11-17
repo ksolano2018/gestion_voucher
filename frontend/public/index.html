@@ -2246,12 +2246,72 @@
           padding: 0.5rem 0.65rem;
         }
       }
-      /* Oculto por defecto para evitar flash; el script inline lo muestra si no hay sesión */
+      /* Oculto por defecto para evitar flash; /static/session-hint.js marca html.no-session si no hay sesión */
       #login-container { display: none; }
       html.no-session #login-container { display: flex; }
+
+      /* ===== RESPONSIVE ADMIN/PARTNER (QA-07) =====
+         El menú lateral es un panel fijo de 220px dentro de un flex horizontal: en pantallas
+         angostas aplastaba el contenido (tarjetas KPI partiendo palabras) y se recortaba.
+         Por debajo de 900px el panel pasa arriba como una barra horizontal desplazable. */
+      .card .small.text-muted,
+      .card .fw-bold {
+        overflow-wrap: normal;
+        word-break: normal;
+        hyphens: manual;
+      }
+
+      @media (max-width: 900px) {
+        .admin-layout,
+        body.authenticated .admin-layout {
+          flex-direction: column;
+          min-height: 0;
+        }
+
+        .admin-left-panel,
+        body.authenticated .admin-left-panel {
+          position: static;
+          width: 100%;
+          min-width: 0;
+          height: auto;
+          max-height: none;
+          flex-direction: row;
+          flex-wrap: nowrap;
+          align-items: center;
+          overflow-x: auto;
+          overflow-y: hidden;
+          -webkit-overflow-scrolling: touch;
+          padding: 0.5rem;
+          gap: 0.25rem;
+        }
+
+        .admin-sidebar-brand,
+        body.authenticated .admin-sidebar-brand {
+          display: none;
+        }
+
+        .admin-side-item,
+        body.authenticated .admin-side-item {
+          flex: 0 0 auto;
+          white-space: nowrap;
+          border-left: none;
+          border-bottom: 3px solid transparent;
+          border-radius: 8px;
+        }
+
+        .admin-side-item.active,
+        body.authenticated .admin-side-item.active {
+          border-bottom-color: var(--primary);
+        }
+
+        #admin.fade-in,
+        #partner.fade-in {
+          margin: -1rem -0.75rem;
+        }
+      }
     </style>
     <!-- Anti-flash: muestra login solo si no hay token, antes del primer paint -->
-    <script>(function(){if(!localStorage.getItem('access_token'))document.documentElement.classList.add('no-session');}());</script>
+    <script src="/static/session-hint.js"></script>
   </head>
   <body>
     <span id="api-url" style="display:none;">%API_URL%</span>
@@ -2262,7 +2322,7 @@
         <!-- Brand Panel (visible en pantallas grandes) -->
         <div class="login-brand-panel">
           <div class="login-brand-content">
-            <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN" onerror="this.style.display='none'">
+            <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN">
             <h1>La plataforma de certificaciones para tu empresa</h1>
             <p>Gestiona, compra y activa vouchers de certificación profesional en un solo lugar.</p>
             <div class="login-brand-features">
@@ -2290,7 +2350,7 @@
         <div class="login-form-panel">
           <div class="login-box">
             <div class="login-logo">
-              <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" class="login-logo-img" onerror="this.style.display='none';document.querySelector('.login-logo-text').style.display='block';" />
+              <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" class="login-logo-img" />
               <div class="login-logo-text" style="display:none;">CertJOIN</div>
               <p>Bienvenido de nuevo</p>
             </div>
@@ -2404,7 +2464,7 @@
             <!-- Left Panel -->
             <div class="admin-left-panel">
               <div class="admin-sidebar-brand">
-                <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" onerror="this.style.display='none';" />
+                <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" />
               </div>
               <!-- Dashboard: en la raíz, sin grupo -->
               <div class="admin-side-item active admin-menu-item" data-target="admin-dashboard">
@@ -3555,7 +3615,7 @@
             <!-- Left Panel -->
             <div class="admin-left-panel">
               <div class="admin-sidebar-brand">
-                <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" onerror="this.style.display='none';" />
+                <img src="/static/assets/certjoin-logo.png?v=2" alt="CertJOIN logo" />
               </div>
               <!-- Estadísticas: vista de inicio, en la raíz -->
               <div class="admin-side-item active partner-menu-item" data-target="partner-stats">

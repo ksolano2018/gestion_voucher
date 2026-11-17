@@ -41,9 +41,9 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+      scriptSrc: ["'self'", "https://cdn.jsdelivr.net"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
       imgSrc: ["'self'", "data:", "https:"],
       // 'http://localhost:*' es solo para desarrollo local; en producción se filtraba
       // igual y quedaba expuesto en la CSP real servida (QA-11).
@@ -212,6 +212,24 @@ app.use(require('./src/modules/final-clients/routes'));
 // /catalogs ahora vive en src/modules/courses/routes.js
 
 // OAuth2-like token endpoint (password grant) with rate limiting and validation
+// QA-10: el JWT viaja SOLO en una cookie httpOnly (no legible por JS/XSS). El cuerpo
+// de la respuesta trae únicamente los claims no secretos que la UI necesita para
+// decidir qué mostrar (rol, permisos, partner_id, exp) — no sirven para suplantar a nadie.
+function sendSession(res, token) {
+  res.cookie('access_token', token, {
+    httpOnly: true,
+    sameSite: 'lax',
+    maxAge: SESSION_TIMEOUT_MINUTES * 60 * 1000,
+    secure: process.env.NODE_ENV === 'production'
+  });
+  const { sub, role, role_type, partner_id, permissions, must_change_password, exp } = jwt.decode(token);
+  return res.json({
+    token_type: 'cookie',
+    expires_in: SESSION_TIMEOUT_MINUTES * 60,
+    claims: { sub, role, role_type, partner_id, permissions, must_change_password, exp }
+  });
+}
+
 app.post('/oauth/token',
   authLimiter,
   body('grant_type').equals('password').withMessage('grant_type debe ser "password"'),
@@ -296,8 +314,8 @@ app.post('/oauth/token',
       secure: process.env.NODE_ENV === 'production'
     });
 
-    return res.json({ access_token: token, token_type: 'bearer', expires_in: SESSION_TIMEOUT_MINUTES * 60 });
-  }catch(e){ 
+    return sendSession(res, token);
+  }catch(e){
     await logSystemEvent('LOGIN_ERROR', 'AUTH', null, null, null, { username }, 'FAILED', e.message, req);
     logSecurityEvent('LOGIN_ERROR', { username, error: e.message, ip: req.ip });
     res.status(500).json({error:'server_error'}); 
@@ -485,8 +503,8 @@ app.post('/oauth/refresh', authLimiter, async (req,res)=>{
 
     logSecurityEvent('REFRESH_SUCCESS', { userId: user.id, email: user.email, ip: req.ip });
     await logSystemEvent('REFRESH_SUCCESS', 'AUTH', user.id, user.stripe_customer_id || null, null, { email: user.email }, 'SUCCESS', null, req);
-    return res.json({ access_token: token, token_type: 'bearer', expires_in: SESSION_TIMEOUT_MINUTES * 60 });
-  }catch(e){ 
+    return sendSession(res, token);
+  }catch(e){
     await logSystemEvent('REFRESH_ERROR', 'AUTH', null, null, null, {}, 'FAILED', e.message, req);
     logSecurityEvent('REFRESH_ERROR', { error: e.message, ip: req.ip });
     res.status(500).json({error:'server_error'}); 
@@ -507,6 +525,8 @@ app.post('/oauth/logout', async (req,res)=>{
     }
     res.clearCookie('refresh_token');
   }
+  // Siempre limpiar la cookie de acceso, aunque no llegue refresh_token (QA-10).
+  res.clearCookie('access_token');
   res.json({ok:true});
 });
 

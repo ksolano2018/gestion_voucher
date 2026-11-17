@@ -4,14 +4,17 @@ const jwt = require('jsonwebtoken');
 const pool = require('../db/pool');
 const { logSecurityEvent } = require('./audit');
 
-// Verifica el Bearer token y adjunta req.user.
+// Verifica el JWT y adjunta req.user. El navegador lo manda en la cookie httpOnly
+// `access_token` (QA-10); el header Bearer se acepta como respaldo para clientes no
+// navegador (tests, Postman, integraciones).
 function authenticate(req, res, next) {
   const h = req.headers['authorization'];
-  if (!h || !h.startsWith('Bearer ')) {
+  const cookieToken = req.cookies && req.cookies['access_token'];
+  const token = cookieToken || ((h && h.startsWith('Bearer ')) ? h.slice(7) : null);
+  if (!token) {
     logSecurityEvent('AUTH_MISSING_TOKEN', { ip: req.ip, path: req.path });
     return res.status(401).json({ error: 'missing_token' });
   }
-  const token = h.slice(7);
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     req.user = decoded;

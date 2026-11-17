@@ -8,6 +8,7 @@
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
+const cookieParser = require('cookie-parser');
 require('dotenv').config();
 
 const purchasesRoutes = require('./src/modules/purchases/routes');
@@ -24,6 +25,8 @@ const app = express();
 app.set('trust proxy', parseInt(process.env.TRUST_PROXY_HOPS, 10) || 1);
 
 app.use(helmet({ contentSecurityPolicy: false }));
+// Necesario para leer la cookie httpOnly `access_token` en authenticate() (QA-10).
+app.use(cookieParser());
 
 // JSON para todas las rutas EXCEPTO /webhook/stripe (Stripe exige el body crudo;
 // express.raw se aplica en la propia ruta dentro de purchases/routes.js).

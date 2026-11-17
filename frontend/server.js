@@ -14,9 +14,12 @@ app.use(helmet({
   contentSecurityPolicy: {
     directives: {
       defaultSrc: ["'self'"],
-      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+      // Sin 'unsafe-inline' (QA-10): todo el JS es externo (app.js, session-hint.js,
+      // set-password.js) y no hay handlers inline. Un XSS inyectado ya no puede ejecutarse.
+      scriptSrc: ["'self'", "https://cdn.jsdelivr.net"],
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
-      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      // jsdelivr también sirve la fuente de bootstrap-icons (referenciada desde su CSS).
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "https://cdn.jsdelivr.net"],
       imgSrc: ["'self'", "data:", "https:"],
       connectSrc: process.env.NODE_ENV === 'production' ? ["'self'"] : ["'self'", "http://localhost:*"]
     }
