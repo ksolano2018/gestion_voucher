@@ -143,6 +143,10 @@ PARTNER_PASSWORD=${PARTNER_PASSWORD}
 
 FRONTEND_URL=${FRONTEND_URL}
 
+# Saltos de proxy en que confiar para leer la IP real del visitante (auditoría y rate-limit).
+# Cadena en PD: CloudPanel/nginx -> Caddy (api-gateway) -> servicio. Ver api-gateway/Caddyfile.
+TRUST_PROXY_HOPS=2
+
 STRIPE_PUBLISHABLE_KEY=${STRIPE_PUBLISHABLE_KEY}
 STRIPE_SECRET_KEY=${STRIPE_SECRET_KEY}
 STRIPE_WEBHOOK_SECRET=${STRIPE_WEBHOOK_SECRET}
