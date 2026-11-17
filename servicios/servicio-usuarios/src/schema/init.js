@@ -98,6 +98,9 @@ async function initDb(){
       stripe_status VARCHAR(50) DEFAULT 'pending',
       pricing_details JSONB,
       expires_at TIMESTAMP,
+      void_reason TEXT,
+      voided_at TIMESTAMP,
+      voided_by INTEGER,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
@@ -307,6 +310,9 @@ async function initDb(){
     ALTER TABLE purchases ADD COLUMN IF NOT EXISTS stripe_session_id VARCHAR(200);
     ALTER TABLE purchases ADD COLUMN IF NOT EXISTS pricing_details JSONB;
     ALTER TABLE purchases ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;
+    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS void_reason TEXT;
+    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS voided_at TIMESTAMP;
+    ALTER TABLE purchases ADD COLUMN IF NOT EXISTS voided_by INTEGER;
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS active BOOLEAN DEFAULT TRUE;
     ALTER TABLE courses ADD COLUMN IF NOT EXISTS moodle_course_id INTEGER;
     -- Suspensión hecha por un admin desde la UI. El sync de Moodle NO debe reactivar
@@ -467,6 +473,22 @@ async function initDb(){
     );
     CREATE INDEX IF NOT EXISTS idx_email_templates_key ON email_templates(template_key);
     CREATE UNIQUE INDEX IF NOT EXISTS uniq_email_templates_active ON email_templates(template_key) WHERE is_active;
+  `);
+
+  // Enlace de un solo uso para que el estudiante cree su propia contraseña de Moodle
+  // (QA-08): al crear la cuenta se genera una contraseña aleatoria que NUNCA se envía
+  // por correo; en su lugar el correo de bienvenida trae un link con este token.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS moodle_password_setup_tokens (
+      id SERIAL PRIMARY KEY,
+      token VARCHAR(100) UNIQUE NOT NULL,
+      moodle_user_id INTEGER NOT NULL,
+      email VARCHAR(200) NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      used_at TIMESTAMP,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_moodle_pw_tokens_token ON moodle_password_setup_tokens(token);
   `);
 
   // Matrícula de cursos hijo (Content/Simulator) por activación. `activations` es 1:1

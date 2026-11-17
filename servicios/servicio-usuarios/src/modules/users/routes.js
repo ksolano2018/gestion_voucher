@@ -200,7 +200,17 @@ router.get('/admin/users/:id', authenticate, requireRole('admin'), apiLimiter,
 });
 
 // Update user (admin) - can change password, role, partner_id, first_name, last_name, expiry
-router.put('/admin/users/:id', authenticate, requireRole('admin'), async (req,res)=>{
+// La contraseña nueva, si viene, debe cumplir la misma política de complejidad que al
+// crear un usuario — antes esta ruta la guardaba sin validar nada (QA-25).
+router.put('/admin/users/:id', authenticate, requireRole('admin'),
+  body('password').optional({ checkFalsy: true })
+    .isLength({ min: 8 }).withMessage('Contraseña debe tener al menos 8 caracteres')
+    .matches(/[A-Z]/).withMessage('Contraseña debe contener al menos una mayúscula')
+    .matches(/[a-z]/).withMessage('Contraseña debe contener al menos una minúscula')
+    .matches(/[0-9]/).withMessage('Contraseña debe contener al menos un número')
+    .matches(/[!@#$%^&*]/).withMessage('Contraseña debe contener al menos un caracter especial (!@#$%^&*)'),
+  handleValidationErrors,
+  async (req,res)=>{
   const userId = req.params.id;
   const { password, partner_id, first_name, last_name, active, must_change_password, password_expires_days } = req.body;
   const role = req.body.role !== undefined ? normalizeRoleName(req.body.role) : '';

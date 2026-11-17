@@ -1473,6 +1473,63 @@ router.put('/admin/purchases/:id/adjust',
   }
 );
 
+// PUT /admin/purchases/:id/void — anular una compra o cortesía ya pagada (QA-14).
+// Solo compras en PAID sin vouchers ya consumidos (si ya se activó/matriculó algo con
+// ellos, no hay forma segura de "deshacer" esa certificación desde aquí). Los vouchers
+// AVAILABLE restantes de esa compra se marcan EXPIRED para que no puedan activarse
+// después. VOIDED queda fuera de los KPIs de ingresos (solo cuentan status='PAID').
+router.put('/admin/purchases/:id/void',
+  authenticate, requirePermission('financial_ops', 'edit'), apiLimiter,
+  param('id').isInt({ min: 1 }),
+  body('reason').trim().isLength({ min: 3, max: 500 }).withMessage('El motivo de anulación es obligatorio (mínimo 3 caracteres)'),
+  handleValidationErrors,
+  async (req, res) => {
+    const purchaseId = parseInt(req.params.id, 10);
+    const { reason } = req.body;
+    try {
+      const existing = await pool.query(
+        'SELECT id, status, payment_method, partner_id, total_price, qty FROM purchases WHERE id=$1',
+        [purchaseId]
+      );
+      if (existing.rowCount === 0) return res.status(404).json({ error: 'Compra no encontrada' });
+
+      const current = existing.rows[0];
+      if (current.status !== 'PAID') {
+        return res.status(400).json({ error: `Solo se pueden anular compras pagadas (estado actual: ${current.status})` });
+      }
+
+      const consumedQ = await pool.query(
+        `SELECT COUNT(*)::int AS consumed FROM vouchers WHERE purchase_id=$1 AND status='CONSUMED'`,
+        [purchaseId]
+      );
+      const consumed = consumedQ.rows[0].consumed;
+      if (consumed > 0) {
+        return res.status(400).json({
+          error: `No se puede anular: ${consumed} voucher(s) de esta compra ya fueron activados/consumidos`
+        });
+      }
+
+      await pool.query(
+        `UPDATE purchases SET status='VOIDED', void_reason=$1, voided_at=NOW(), voided_by=$2, updated_at=NOW() WHERE id=$3`,
+        [reason, req.user.sub, purchaseId]
+      );
+      const expiredQ = await pool.query(
+        `UPDATE vouchers SET status='EXPIRED' WHERE purchase_id=$1 AND status='AVAILABLE' RETURNING id`,
+        [purchaseId]
+      );
+
+      await logSystemEvent('PURCHASE_VOIDED', 'PURCHASE', req.user.sub, null, purchaseId,
+        { purchase_id: purchaseId, reason, vouchers_expired: expiredQ.rowCount, partner_id: current.partner_id, total_price: current.total_price },
+        'SUCCESS', null, req);
+
+      res.json({ ok: true, purchase_id: purchaseId, status: 'VOIDED', vouchers_expired: expiredQ.rowCount });
+    } catch (e) {
+      console.error('❌ Error anulando compra:', e);
+      res.status(500).json({ error: 'Error al anular la compra' });
+    }
+  }
+);
+
 // GET /admin/purchases/:id  — detalle de una compra
 router.get('/admin/purchases/:id',
   authenticate, requirePermission('financial_ops', 'view'), apiLimiter,

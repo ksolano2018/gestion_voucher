@@ -12,6 +12,7 @@ const { handleValidationErrors } = require('../../lib/validation');
 const { logSystemEvent } = require('../../lib/audit');
 const { sendStudentWelcomeEmail } = require('../../integrations/notifications');
 const { syncMoodleCompletions, syncMoodleCourses } = require('./service');
+const { createPasswordSetupUrl } = require('../../lib/passwordSetupToken');
 
 // ── Moodle webhook: receptor de eventos push de cursos ───────────────────────
 // Moodle llama este endpoint cuando crea, actualiza o elimina un curso.
@@ -199,16 +200,18 @@ router.post('/admin/moodle/enrollments/:activationId/retry',
       );
 
       // Correo al estudiante (no bloqueante):
-      //  - cuenta nueva en Moodle        → bienvenida con credenciales
+      //  - cuenta nueva en Moodle        → bienvenida con link de un solo uso (QA-08)
       //  - cuenta existente, curso nuevo → aviso de nueva certificación (sin contraseña)
       if (moodleResult.createdNewUser && moodleTempPassword) {
+        const setPasswordUrl = await createPasswordSetupUrl(moodleUserId, act.user_email);
         await sendStudentWelcomeEmail({
           activationId: parseInt(activationId, 10),
           to:           act.user_email,
           studentName:  act.user_name,
           courseName:   act.course_name,
           username:     moodleUsername,
-          tempPassword: moodleTempPassword,
+          tempPassword: setPasswordUrl ? null : moodleTempPassword,
+          setPasswordUrl,
           expiresAt:    act.expires_at,
           userId:       req.user.sub,
           req
@@ -306,16 +309,18 @@ router.post('/admin/moodle/enrollments/retry-all-failed',
         );
 
         // Correo al estudiante (no bloqueante):
-        //  - cuenta nueva en Moodle        → bienvenida con credenciales
+        //  - cuenta nueva en Moodle        → bienvenida con link de un solo uso (QA-08)
         //  - cuenta existente, curso nuevo → aviso de nueva certificación (sin contraseña)
         if (moodleResult.createdNewUser && moodleResult.moodleTempPassword) {
+          const setPasswordUrl = await createPasswordSetupUrl(moodleResult.moodleUserId, act.user_email);
           await sendStudentWelcomeEmail({
             activationId: row.id,
             to:           act.user_email,
             studentName:  act.user_name,
             courseName:   act.course_name,
             username:     moodleResult.moodleUsername,
-            tempPassword: moodleResult.moodleTempPassword,
+            tempPassword: setPasswordUrl ? null : moodleResult.moodleTempPassword,
+            setPasswordUrl,
             expiresAt:    act.expires_at,
             userId:       req.user.sub,
             req

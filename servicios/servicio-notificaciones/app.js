@@ -55,7 +55,7 @@ async function logSystemEvent(eventType, eventCategory, userId, stripeCustomerId
  * Envía el correo al estudiante. Idempotente (no reenvía si email_status ya es
  * 'SENT', salvo force) y no bloqueante (nunca lanza). Devuelve el estado del envío.
  */
-async function sendStudentWelcomeEmail({ activationId, to, studentName, courseName, username, tempPassword, months = null, expiresAt, userId = null, isNewEnrollment = false, force = false }) {
+async function sendStudentWelcomeEmail({ activationId, to, studentName, courseName, username, tempPassword, setPasswordUrl, months = null, expiresAt, userId = null, isNewEnrollment = false, force = false }) {
   try {
     if (!to) return null;
 
@@ -65,7 +65,7 @@ async function sendStudentWelcomeEmail({ activationId, to, studentName, courseNa
     }
 
     const { subject, html, text } = await renderEmail(pool, keyFor(isNewEnrollment), {
-      studentName, email: to, courseName, username, tempPassword, months, expiresAt, campusUrl: CAMPUS_URL, isNewEnrollment
+      studentName, email: to, courseName, username, tempPassword, setPasswordUrl, months, expiresAt, campusUrl: CAMPUS_URL, isNewEnrollment
     });
 
     const result = await mailer.sendMail({ to, subject, html, text });

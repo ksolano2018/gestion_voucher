@@ -192,6 +192,29 @@ async function forcePasswordChange(moodleUserId) {
 }
 
 /**
+ * Set a Moodle user's real password — usado por el flujo de "crea tu contraseña"
+ * del correo de bienvenida (QA-08): en vez de mandar por correo la contraseña
+ * temporal generada en createUser(), el estudiante elige la suya a través de un
+ * enlace de un solo uso, y acá se la aplicamos a su cuenta real de Moodle.
+ * Reusa core_user_update_users, ya whitelisteado para forcePasswordChange.
+ */
+async function setUserPassword(moodleUserId, newPassword) {
+  if (MOODLE_MOCK) {
+    console.log(`[MOODLE MOCK] setUserPassword userId=${moodleUserId}`);
+    return { ok: true, mocked: true };
+  }
+  try {
+    await moodleRequest('core_user_update_users', {
+      'users[0][id]':       moodleUserId,
+      'users[0][password]': newPassword
+    });
+    return { ok: true };
+  } catch (err) {
+    return { error: err.message };
+  }
+}
+
+/**
  * Enroll a Moodle user in a course.
  * @param {number} timeend - Unix timestamp (seconds) en que expira la matrícula. 0/null = ilimitado.
  * Returns { ok: true } or { error }.
@@ -683,5 +706,6 @@ module.exports = {
   testConnection,
   getGroupReport,
   getCertificateIssues,
+  setUserPassword,
   isMockMode
 };

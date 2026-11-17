@@ -14,6 +14,7 @@ const { logSecurityEvent, logSystemEvent } = require('./src/lib/audit');
 const { authLimiter, apiLimiter } = require('./src/lib/rateLimit');
 const { handleValidationErrors } = require('./src/lib/validation');
 const { authenticate, requireRole, requirePermission, requireAnyPermission } = require('./src/lib/auth');
+const moodleService = require('./src/integrations/moodle');
 // Notificaciones, pricing, RBAC, Stripe y backfill de vouchers ya no se usan directamente
 // en app.js: viven en sus módulos (src/modules/*, src/lib/*, src/integrations/*) y los
 // consumen los routers / initDb.
@@ -350,6 +351,70 @@ app.post('/oauth/change-password-first',
       }, 'SUCCESS', null, req);
 
       return res.json({ ok: true, message: 'Contraseña actualizada correctamente. Inicia sesión nuevamente.' });
+    } catch (e) {
+      return res.status(500).json({ error: 'server_error' });
+    }
+  }
+);
+
+// ── "Crea tu contraseña" (QA-08) ───────────────────────────────────────────
+// En vez de mandar por correo la contraseña temporal real de Moodle, el correo de
+// bienvenida trae un link con un token de un solo uso. Estos dos endpoints son
+// públicos (sin JWT) a propósito, como /oauth/token — los protege el propio token
+// (aleatorio, de un solo uso, con expiración) y el rate limit de authLimiter.
+
+// GET: valida el token ANTES de mostrar el formulario, para no hacer perder tiempo
+// al estudiante si el link ya expiró o se usó.
+app.get('/oauth/set-moodle-password/:token', authLimiter, async (req, res) => {
+  try {
+    const row = await pool.query(
+      `SELECT email, expires_at, used_at FROM moodle_password_setup_tokens WHERE token=$1`,
+      [req.params.token]
+    );
+    if (row.rowCount === 0) return res.status(400).json({ error: 'invalid_token' });
+    const t = row.rows[0];
+    if (t.used_at) return res.status(400).json({ error: 'token_already_used' });
+    if (new Date(t.expires_at) < new Date()) return res.status(400).json({ error: 'token_expired' });
+    return res.json({ valid: true, email: t.email });
+  } catch (e) {
+    return res.status(500).json({ error: 'server_error' });
+  }
+});
+
+app.post('/oauth/set-moodle-password',
+  authLimiter,
+  body('token').isLength({ min: 10 }).withMessage('Token inválido'),
+  body('password')
+    .isLength({ min: 8 }).withMessage('Contraseña debe tener al menos 8 caracteres')
+    .matches(/[A-Z]/).withMessage('Contraseña debe contener al menos una mayúscula')
+    .matches(/[a-z]/).withMessage('Contraseña debe contener al menos una minúscula')
+    .matches(/[0-9]/).withMessage('Contraseña debe contener al menos un número')
+    .matches(/[!@#$%^&*]/).withMessage('Contraseña debe contener al menos un caracter especial (!@#$%^&*)'),
+  handleValidationErrors,
+  async (req, res) => {
+    const { token, password } = req.body;
+    try {
+      const row = await pool.query(
+        `SELECT id, moodle_user_id, email, expires_at, used_at FROM moodle_password_setup_tokens WHERE token=$1`,
+        [token]
+      );
+      if (row.rowCount === 0) return res.status(400).json({ error: 'invalid_token' });
+      const t = row.rows[0];
+      if (t.used_at) return res.status(400).json({ error: 'token_already_used' });
+      if (new Date(t.expires_at) < new Date()) return res.status(400).json({ error: 'token_expired' });
+
+      const result = await moodleService.setUserPassword(t.moodle_user_id, password);
+      if (result.error) {
+        await logSystemEvent('MOODLE_SET_PASSWORD_ERROR', 'AUTH', null, null, null,
+          { email: t.email, moodle_user_id: t.moodle_user_id }, 'FAILED', result.error, req);
+        return res.status(502).json({ error: 'No se pudo actualizar la contraseña en el campus. Intenta de nuevo o contacta soporte.' });
+      }
+
+      await pool.query(`UPDATE moodle_password_setup_tokens SET used_at=NOW() WHERE id=$1`, [t.id]);
+      await logSystemEvent('MOODLE_SET_PASSWORD_SUCCESS', 'AUTH', null, null, null,
+        { email: t.email, moodle_user_id: t.moodle_user_id }, 'SUCCESS', null, req);
+
+      return res.json({ ok: true, message: 'Contraseña creada correctamente. Ya puedes iniciar sesión en el campus.' });
     } catch (e) {
       return res.status(500).json({ error: 'server_error' });
     }

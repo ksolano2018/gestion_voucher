@@ -2705,20 +2705,26 @@ document.addEventListener('DOMContentLoaded', () => {
     tbody.innerHTML = pageData.map(p => {
       const stripeStatus = (p.stripe_status || '').toLowerCase();
       const purchaseStatus = (p.status || '').toUpperCase();
-      const isPaid = purchaseStatus === 'PAID' || stripeStatus === 'paid' || stripeStatus === 'succeeded';
-      const isFailed = purchaseStatus === 'FAILED' || stripeStatus === 'failed' || stripeStatus === 'canceled';
-      const statusBadge = isPaid
-        ? '<span class="badge bg-success">✓ Pagado</span>'
-        : (isFailed
-          ? '<span class="badge bg-danger">✗ Fallido</span>'
-          : '<span class="badge bg-warning text-dark">⏳ Pendiente</span>');
+      const isVoided = purchaseStatus === 'VOIDED';
+      const isPaid = !isVoided && (purchaseStatus === 'PAID' || stripeStatus === 'paid' || stripeStatus === 'succeeded');
+      const isFailed = !isVoided && (purchaseStatus === 'FAILED' || stripeStatus === 'failed' || stripeStatus === 'canceled');
+      const statusBadge = isVoided
+        ? '<span class="badge bg-dark">🛑 Anulado</span>'
+        : (isPaid
+          ? '<span class="badge bg-success">✓ Pagado</span>'
+          : (isFailed
+            ? '<span class="badge bg-danger">✗ Fallido</span>'
+            : '<span class="badge bg-warning text-dark">⏳ Pendiente</span>'));
       const created = p.created_at ? new Date(p.created_at).toLocaleDateString('es-ES') : '-';
       const paymentId = p.payment_intent_id ? escapeHTML(p.payment_intent_id.substring(0, 22) + '...') : '-';
       const method =(p.payment_method || 'stripe');
       const isComp = method === 'complimentary';
-      const isAdjustable = method !== 'stripe';
+      const isAdjustable = method !== 'stripe' && !isVoided;
       const adjustBtn = (canAdjust && isAdjustable)
         ? `<button class="btn btn-outline-secondary btn-xs py-0 px-1" onclick="openAdjustPurchaseModal(${p.id})">✏️ Ajustar</button>`
+        : '';
+      const voidBtn = (canAdjust && isPaid)
+        ? `<button class="btn btn-outline-danger btn-xs py-0 px-1 ms-1" onclick="openVoidPurchaseModal(${p.id})">🛑 Anular</button>`
         : '';
 
       // For complimentary: show issuer + reason under the badge
@@ -2743,7 +2749,7 @@ document.addEventListener('DOMContentLoaded', () => {
         <td>${created}</td>
         <td><small class="text-muted">${escapeHTML(p.status || '—')}</small></td>
         <td>${paymentMethodBadge(method)}${compDetailHtml}</td>
-        <td>${adjustBtn}</td>
+        <td>${adjustBtn}${voidBtn}</td>
       </tr>`;
     }).join('');
     renderPurchasesPagination();
@@ -2785,11 +2791,13 @@ document.addEventListener('DOMContentLoaded', () => {
       if (status) {
         const ss = (p.stripe_status || '').toLowerCase();
         const ps = (p.status || '').toUpperCase();
-        const isPaid   = ps === 'PAID'   || ss === 'paid'   || ss === 'succeeded';
-        const isFailed = ps === 'FAILED' || ss === 'failed' || ss === 'canceled';
-        if (status === 'paid'    && !isPaid)            return false;
-        if (status === 'failed'  && !isFailed)          return false;
-        if (status === 'pending' && (isPaid || isFailed)) return false;
+        const isVoided = ps === 'VOIDED';
+        const isPaid   = !isVoided && (ps === 'PAID'   || ss === 'paid'   || ss === 'succeeded');
+        const isFailed = !isVoided && (ps === 'FAILED' || ss === 'failed' || ss === 'canceled');
+        if (status === 'paid'    && !isPaid)              return false;
+        if (status === 'failed'  && !isFailed)            return false;
+        if (status === 'voided'  && !isVoided)            return false;
+        if (status === 'pending' && (isPaid || isFailed || isVoided)) return false;
       }
 
       if (method) {
@@ -3329,6 +3337,51 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
+  // ── Modal Anular Compra (QA-14) ──
+  window.openVoidPurchaseModal = function(purchaseId) {
+    const idEl = el('void-purchase-id');           if (idEl) idEl.value = purchaseId;
+    const disp = el('void-purchase-id-display');   if (disp) disp.textContent = '#' + purchaseId;
+    const reasonEl = el('void-purchase-reason');    if (reasonEl) reasonEl.value = '';
+    const msg = el('void-purchase-msg');            if (msg) msg.innerHTML = '';
+    bootstrap.Modal.getOrCreateInstance(document.getElementById('modal-void-purchase')).show();
+  };
+
+  on('modal-void-purchase-submit', 'click', async () => {
+    const purchaseId = (el('void-purchase-id') || {}).value || '';
+    const reason = (el('void-purchase-reason') || {}).value.trim();
+    const msgEl  = el('void-purchase-msg');
+    const setMsg = (txt, type='danger') => { if(msgEl) msgEl.innerHTML = `<div class="alert alert-${type} py-1 mb-2">${escapeHTML(txt)}</div>`; };
+    if (msgEl) msgEl.innerHTML = '';
+    if (!purchaseId) return setMsg('ID de compra inválido');
+    if (!reason || reason.length < 3) return setMsg('El motivo de anulación es obligatorio (mínimo 3 caracteres)');
+
+    showConfirmAction({
+      title: `Anular Compra #${purchaseId}`, icon: '🛑',
+      rows: [
+        { label: 'Compra ID:', value: '#' + purchaseId },
+        { label: 'Motivo:', value: reason }
+      ],
+      confirmLabel: '🛑 Confirmar Anulación', confirmClass: 'btn-danger',
+      onConfirm: async () => {
+        const btn = el('modal-void-purchase-submit');
+        try {
+          setButtonLoading(btn, true);
+          const base = apiUrl;
+          const resp = await safeFetch(`${base}/admin/purchases/${purchaseId}/void`, {
+            method: 'PUT', headers: authHeaders(),
+            body: JSON.stringify({ reason })
+          });
+          const data = await resp.json();
+          setButtonLoading(btn, false);
+          if (!resp.ok) return setMsg(data.error || 'Error al anular la compra');
+          bootstrap.Modal.getInstance(document.getElementById('modal-void-purchase')).hide();
+          showToast('🛑 Compra anulada correctamente', 'success');
+          loadAdminPurchases();
+        } catch(e) { setButtonLoading(btn, false); setMsg(e.message); }
+      }
+    });
+  });
+
   // ──────────────────────────────────────────────────────────
   // MÓDULO REPORTERÍA
   // ──────────────────────────────────────────────────────────
@@ -3410,7 +3463,7 @@ document.addEventListener('DOMContentLoaded', () => {
         } else {
           // Los valores reales de purchases.status son PAID/PENDING/FAILED — nunca
           // COMPLETED/CANCELLED (QA-23), por eso antes siempre caía al gris por defecto.
-          const statusColors = { PAID:'success', PENDING:'warning', FAILED:'danger' };
+          const statusColors = { PAID:'success', PENDING:'warning', FAILED:'danger', VOIDED:'dark' };
           tbody.innerHTML = rows.map(r => `<tr>
             <td><small>${r.id}</small></td>
             <td>${escapeHTML(r.partner_name||'-')}</td>
@@ -6498,7 +6551,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const created = p.created_at ? new Date(p.created_at).toLocaleString('es-ES') : '-';
 
       let statusBadge = '<span class="badge bg-warning text-dark">Pendiente</span>';
-      if(status === 'PAID' || stripeStatus === 'paid' || stripeStatus === 'succeeded'){
+      if(status === 'VOIDED'){
+        statusBadge = '<span class="badge bg-dark">Anulado</span>';
+      } else if(status === 'PAID' || stripeStatus === 'paid' || stripeStatus === 'succeeded'){
         statusBadge = '<span class="badge bg-success">Pagado</span>';
       } else if(status === 'FAILED' || stripeStatus === 'failed' || stripeStatus === 'canceled'){
         statusBadge = '<span class="badge bg-danger">Fallido</span>';

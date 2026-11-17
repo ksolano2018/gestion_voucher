@@ -26,6 +26,7 @@ const { sendStudentWelcomeEmail } = require('../../integrations/notifications');
 const { backfillPaidPurchaseVouchers } = require('../../integrations/purchases');
 const { emitDomainEvent } = require('../../lib/events');
 const moodleService = require('../../integrations/moodle');
+const { createPasswordSetupUrl } = require('../../lib/passwordSetupToken');
 
 // Controles anti-spam del reenvío del partner (configurables por entorno).
 const MAX_PARTNER_EMAIL_RETRIES = parseInt(process.env.MAX_PARTNER_EMAIL_RETRIES) || 1;
@@ -374,16 +375,19 @@ router.post('/partner/:id/activate',
       }
 
       // Correo al estudiante (no bloqueante):
-      //  - cuenta nueva en Moodle        → bienvenida con credenciales (usuario + contraseña temporal)
+      //  - cuenta nueva en Moodle        → bienvenida con link de un solo uso para crear
+      //    su propia contraseña (QA-08; ya NO se manda la contraseña real en claro)
       //  - cuenta existente, curso nuevo → aviso de nueva certificación (misma plantilla, sin contraseña)
       if (moodleResult.createdNewUser && moodleTempPassword) {
+        const setPasswordUrl = await createPasswordSetupUrl(moodleResult.moodleUserId, user_email);
         await sendStudentWelcomeEmail({
           activationId,
           to:           user_email,
           studentName:  user_name,
           courseName:   course.rows[0].name,
           username:     moodleUsername,
-          tempPassword: moodleTempPassword,
+          tempPassword: setPasswordUrl ? null : moodleTempPassword, // fallback solo si no se pudo crear el link
+          setPasswordUrl,
           months:       reqMonths,
           expiresAt,
           userId:       req.user.sub,
@@ -453,7 +457,7 @@ router.post('/partner/:id/activations/:activationId/resend-email',
     try {
       const r = await pool.query(
         `SELECT a.id, a.user_name, a.user_email, a.expires_at,
-                a.moodle_status, a.moodle_username, a.moodle_temp_password,
+                a.moodle_status, a.moodle_username, a.moodle_temp_password, a.moodle_user_id,
                 a.email_status, a.email_retry_count, a.email_last_attempt_at,
                 c.name AS course_name, v.partner_id
          FROM activations a
@@ -509,6 +513,8 @@ router.post('/partner/:id/activations/:activationId/resend-email',
 
       // Variante: con credenciales (cuenta nueva) o aviso de nueva certificación (cuenta existente)
       const isNewEnrollment = !act.moodle_temp_password;
+      // Reenvío = link nuevo (QA-08): nunca se reenvía la contraseña real en claro.
+      const setPasswordUrl = isNewEnrollment ? null : await createPasswordSetupUrl(act.moodle_user_id, act.user_email);
 
       const emailStatus = await sendStudentWelcomeEmail({
         activationId:  parseInt(activationId, 10),
@@ -516,7 +522,8 @@ router.post('/partner/:id/activations/:activationId/resend-email',
         studentName:   act.user_name,
         courseName:    act.course_name,
         username:      act.moodle_username,
-        tempPassword:  act.moodle_temp_password,
+        tempPassword:  setPasswordUrl ? null : act.moodle_temp_password,
+        setPasswordUrl,
         expiresAt:     act.expires_at,
         userId:        req.user.sub,
         isNewEnrollment,
@@ -582,7 +589,7 @@ router.post('/admin/activations/:activationId/resend-email',
     try {
       const r = await pool.query(
         `SELECT a.id, a.user_name, a.user_email, a.expires_at,
-                a.moodle_status, a.moodle_username, a.moodle_temp_password, a.email_status,
+                a.moodle_status, a.moodle_username, a.moodle_temp_password, a.moodle_user_id, a.email_status,
                 c.name AS course_name
          FROM activations a
          LEFT JOIN courses c ON c.id = a.course_id
@@ -606,6 +613,7 @@ router.post('/admin/activations/:activationId/resend-email',
       await pool.query('UPDATE activations SET email_last_attempt_at = NOW() WHERE id=$1', [activationId]);
 
       const isNewEnrollment = !act.moodle_temp_password;
+      const setPasswordUrl = isNewEnrollment ? null : await createPasswordSetupUrl(act.moodle_user_id, act.user_email);
 
       const emailStatus = await sendStudentWelcomeEmail({
         activationId:  parseInt(activationId, 10),
@@ -613,7 +621,8 @@ router.post('/admin/activations/:activationId/resend-email',
         studentName:   act.user_name,
         courseName:    act.course_name,
         username:      act.moodle_username,
-        tempPassword:  act.moodle_temp_password,
+        tempPassword:  setPasswordUrl ? null : act.moodle_temp_password,
+        setPasswordUrl,
         expiresAt:     act.expires_at,
         userId:        req.user.sub,
         isNewEnrollment,

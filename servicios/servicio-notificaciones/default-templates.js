@@ -11,11 +11,16 @@
  *
  * Variables disponibles en el cuerpo (Mustache):
  *   {{studentName}} {{email}} {{username}} {{courseName}} {{tempPassword}}
- *   {{durationStr}} {{expiresLbl}} {{campusUrl}}
+ *   {{setPasswordUrl}} {{durationStr}} {{expiresLbl}} {{campusUrl}}
  *   {{{headerInner}}} {{{socialsHtml}}}            (HTML ya seguro; triple llave)
  * Secciones (condicionales):
  *   {{#hasCourse}}…{{/hasCourse}}  {{#hasTempPassword}}…{{/hasTempPassword}}
- *   {{#hasExpires}}…{{/hasExpires}}
+ *   {{#hasSetPasswordUrl}}…{{/hasSetPasswordUrl}}  {{#hasExpires}}…{{/hasExpires}}
+ *
+ * hasSetPasswordUrl (enlace de un solo uso para crear la contraseña) es la vía
+ * actual — ya NO se manda la contraseña real por correo (QA-08). hasTempPassword
+ * se conserva solo por compatibilidad con plantillas ya personalizadas en BD que
+ * aún referencien {{tempPassword}} directamente.
  *
  * Env opcionales que afectan el contexto: MAIL_LOGO_URL, CAMPUS_URL.
  */
@@ -39,7 +44,8 @@ const TEMPLATE_VARIABLES = [
   { token: '{{email}}',        desc: 'Correo / usuario de acceso' },
   { token: '{{username}}',     desc: 'Usuario de Moodle' },
   { token: '{{courseName}}',   desc: 'Nombre de la certificación' },
-  { token: '{{tempPassword}}', desc: 'Contraseña temporal' },
+  { token: '{{tempPassword}}', desc: 'Contraseña temporal (legado — evitar, usar el link de abajo)' },
+  { token: '{{setPasswordUrl}}', desc: 'Enlace de un solo uso para que el estudiante cree su contraseña' },
   { token: '{{durationStr}}',  desc: 'Duración del acceso (p. ej. "6 meses")' },
   { token: '{{expiresLbl}}',   desc: 'Fecha de expiración (formateada)' },
   { token: '{{campusUrl}}',    desc: 'URL del botón Campus' },
@@ -47,6 +53,7 @@ const TEMPLATE_VARIABLES = [
   { token: '{{{socialsHtml}}}', desc: 'Iconos de redes del footer. HTML ya generado.' },
   { token: '{{#hasCourse}}…{{/hasCourse}}',             desc: 'Bloque visible solo si hay certificación' },
   { token: '{{#hasTempPassword}}…{{/hasTempPassword}}', desc: 'Bloque visible solo si hay contraseña temporal' },
+  { token: '{{#hasSetPasswordUrl}}…{{/hasSetPasswordUrl}}', desc: 'Bloque visible solo si hay enlace de un solo uso para crear contraseña' },
   { token: '{{#hasExpires}}…{{/hasExpires}}',           desc: 'Bloque visible solo si hay fecha de expiración' }
 ];
 
@@ -84,6 +91,7 @@ function buildContext(p = {}) {
   const expiresLbl = formatDate(p.expiresAt);
   const courseName = p.courseName || '';
   const tempPassword = p.tempPassword || '';
+  const setPasswordUrl = p.setPasswordUrl || '';
 
   const headerInner = logoUrl
     ? `<img src="${escapeHtml(logoUrl)}" alt="CertJoin" width="239" style="display:block;border:0;height:auto;max-width:239px;">`
@@ -100,6 +108,7 @@ function buildContext(p = {}) {
     username: p.username || '',
     courseName,
     tempPassword,
+    setPasswordUrl,
     durationStr: months ? `${months} ${months === 1 ? 'mes' : 'meses'}` : 'el periodo contratado',
     expiresLbl: expiresLbl || '',
     campusUrl,
@@ -107,7 +116,10 @@ function buildContext(p = {}) {
     headerInner,
     socialsHtml,
     hasCourse: Boolean(courseName),
-    hasTempPassword: Boolean(tempPassword),
+    // El link de un solo uso es la vía vigente; tempPassword solo se muestra como
+    // fallback si por algún motivo no se pudo generar el link (QA-08).
+    hasSetPasswordUrl: Boolean(setPasswordUrl),
+    hasTempPassword: Boolean(tempPassword) && !setPasswordUrl,
     hasExpires: Boolean(expiresLbl),
     isNewEnrollment: Boolean(p.isNewEnrollment)
   };
@@ -156,6 +168,12 @@ function layoutHtml(copy) {
               <td width="50%" valign="top" style="padding:6px 12px;text-align:center;">
                 <h2 style="margin:0 0 8px;font-size:17pt;font-weight:700;color:${I};">🔐 Tus accesos</h2>
                 <p style="margin:0;font-size:14px;color:${I};"><strong>👤 Usuario:</strong> {{email}}</p>
+                {{#hasSetPasswordUrl}}
+                <p style="margin:10px 0 0;">
+                  <a href="{{setPasswordUrl}}" target="_blank" style="background:${I};color:${W};text-decoration:none;padding:8px 20px;border-radius:4px;font-size:11pt;font-weight:700;display:inline-block;">🔑 Crear mi contraseña</a>
+                </p>
+                <p style="margin:8px 0 0;font-size:11px;font-style:italic;color:${I};">Este enlace es de un solo uso y expira en 7 días.</p>
+                {{/hasSetPasswordUrl}}
                 {{#hasTempPassword}}<p style="margin:4px 0 0;font-size:14px;color:${I};"><strong>🔑 Contraseña:</strong> <strong style="font-family:monospace;">{{tempPassword}}</strong></p>{{/hasTempPassword}}
                 <p style="margin:6px 0 0;font-size:12px;font-style:italic;color:${I};">(Si ya habías creado tu propia contraseña anteriormente, usa la más reciente.)</p>
               </td>
@@ -199,6 +217,7 @@ function layoutText(copy) {
     '- Material de autoestudio', '- Simulador web', '- Recursos complementarios',
     '- Ruta de preparación hacia tu examen oficial',
     '', 'Tus accesos', 'Usuario: {{email}}',
+    '{{#hasSetPasswordUrl}}Crea tu contraseña (enlace de un solo uso, expira en 7 días): {{setPasswordUrl}}{{/hasSetPasswordUrl}}',
     '{{#hasTempPassword}}Contraseña: {{tempPassword}}{{/hasTempPassword}}',
     '', 'Duración del acceso',
     'Tendrás acceso completo a todos los recursos durante {{durationStr}}.',
@@ -244,7 +263,7 @@ function sampleContext(key) {
     email: 'ana.perez@example.com',
     username: 'ana.perez',
     courseName: 'Curso Java',
-    tempPassword: key === 'student_new_enrollment' ? '' : 'Temp-7K2m!xQ',
+    setPasswordUrl: key === 'student_new_enrollment' ? '' : 'https://vouchers.certjoin.com/set-password?token=ejemplo',
     months: 6,
     expiresAt: new Date(Date.now() + 1000 * 60 * 60 * 24 * 182).toISOString(),
     isNewEnrollment: key === 'student_new_enrollment'

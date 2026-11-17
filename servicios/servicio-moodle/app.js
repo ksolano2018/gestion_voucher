@@ -109,6 +109,20 @@ app.get('/internal/activities-completion', requireInternalToken, async (req, res
   }
 });
 
+// Fija la contraseña real de un usuario de Moodle (flujo "crea tu contraseña" del
+// correo de bienvenida — QA-08). Body: { moodleUserId, newPassword }.
+app.post('/internal/set-password', requireInternalToken, async (req, res) => {
+  try {
+    const { moodleUserId, newPassword } = req.body || {};
+    if (!moodleUserId || !newPassword) {
+      return res.json({ error: 'moodleUserId y newPassword son requeridos' });
+    }
+    res.json(await moodle.setUserPassword(moodleUserId, newPassword));
+  } catch (e) {
+    res.json({ error: e.message });
+  }
+});
+
 if (require.main === module) {
   app.listen(PORT, () => {
     console.log(`✓ servicio-moodle escuchando en puerto: ${PORT} (mock=${moodle.isMockMode()})`);

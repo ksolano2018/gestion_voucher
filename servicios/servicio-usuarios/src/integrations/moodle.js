@@ -70,6 +70,10 @@ async function getCertificateIssues(moodleCourseIds, { refresh = false } = {}) {
   return request('/internal/certificate-issues?' + qs.toString());
 }
 
+async function setUserPassword(moodleUserId, newPassword) {
+  return request('/internal/set-password', { method: 'POST', body: { moodleUserId, newPassword } });
+}
+
 module.exports = {
   getCertificateIssues,
   getGroupReport,
@@ -80,4 +84,5 @@ module.exports = {
   getCourseQuizzes,
   getUserQuizBestGrade,
   getActivitiesCompletion,
+  setUserPassword,
 };

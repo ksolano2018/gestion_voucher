@@ -2571,6 +2571,7 @@
                             <option value="paid">Pagado</option>
                             <option value="pending">Pendiente</option>
                             <option value="failed">Fallido</option>
+                            <option value="voided">Anulado</option>
                           </select>
                         </div>
                         <div class="col-md-2">
@@ -2707,6 +2708,22 @@
                             </div>
                             <div id="policy-msg" class="mb-2"></div>
                             <button id="btn-save-policy" class="btn btn-primary btn-sm px-4">Guardar política</button>
+                          </div>
+                        </div>
+                      </div>
+
+                      <!-- Requisitos de complejidad (informativo: ya se exige al crear/cambiar contraseña) -->
+                      <div class="col-12 col-md-6">
+                        <div class="card border-0 shadow-sm h-100">
+                          <div class="card-body p-4">
+                            <h6 class="fw-bold mb-1">Requisitos de la contraseña</h6>
+                            <p class="text-muted small mb-3">Se exigen al crear un usuario y al cambiar la contraseña (incluido el cambio obligatorio del primer inicio). No aplican al escribir la contraseña actual para iniciar sesión, solo a una contraseña nueva.</p>
+                            <ul class="small mb-0" style="line-height:1.9;">
+                              <li>Mínimo 8 caracteres</li>
+                              <li>Al menos una mayúscula y una minúscula</li>
+                              <li>Al menos un número</li>
+                              <li>Al menos un caracter especial (<code>!@#$%^&*</code>)</li>
+                            </ul>
                           </div>
                         </div>
                       </div>
@@ -4700,6 +4717,29 @@
           <div class="modal-footer">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
             <button type="button" class="btn btn-primary" id="modal-adjust-purchase-submit">💾 Guardar Ajuste</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal Anular Compra -->
+    <div class="modal fade" id="modal-void-purchase" tabindex="-1" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title">🛑 Anular Compra <span id="void-purchase-id-display"></span></h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div id="void-purchase-msg"></div>
+            <input type="hidden" id="void-purchase-id">
+            <p class="text-muted small">Esto marca la compra como ANULADA (ya no cuenta en Ingresos/Compras/Vouchers del dashboard) y vence los vouchers de esta compra que aún no se hayan usado. Si alguno ya fue consumido, no se puede anular.</p>
+            <label class="form-label">Motivo de la anulación <span class="text-danger">*</span></label>
+            <textarea id="void-purchase-reason" class="form-control" rows="3" placeholder="Ej: compra duplicada, error de carga, solicitud del cliente..."></textarea>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+            <button type="button" class="btn btn-danger" id="modal-void-purchase-submit">🛑 Anular Compra</button>
           </div>
         </div>
       </div>

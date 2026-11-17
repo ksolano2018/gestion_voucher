@@ -67,6 +67,20 @@ app.get(['/admin','/partner'], (req, res) => {
   });
 });
 
+// Página pública (sin login) donde el estudiante crea su contraseña a partir del
+// link de un solo uso del correo de bienvenida (QA-08).
+app.get('/set-password', (req, res) => {
+  const pagePath = path.join(__dirname, 'public', 'set-password.html');
+  fs.readFile(pagePath, 'utf8', (err, data) => {
+    if (err) return res.status(500).send('Error cargando la página');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    const out = data.replace(/%API_URL%/g, apiUrl);
+    res.send(out);
+  });
+});
+
 app.listen(port, () => {
   console.log(`Frontend escuchando en el puerto ${port}, API_URL=${apiUrl}`);
 });
