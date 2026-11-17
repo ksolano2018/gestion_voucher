@@ -1,10 +1,27 @@
 const express = require('express');
+const helmet = require('helmet');
 const fs = require('fs');
 const path = require('path');
 
 const app = express();
 const port = process.env.PORT || 3000;
 const apiUrl = process.env.REACT_APP_API_URL || 'http://localhost:8080';
+
+// Mismas cabeceras de seguridad (CSP/HSTS/X-Powered-By, etc.) que ya tienen las APIs
+// (servicio-usuarios/servicio-compras) — antes solo estaban ahí, el sitio servido por
+// este contenedor (el que de verdad abre el navegador) no las tenía (QA-27/QA-28).
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "https://cdn.jsdelivr.net"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: process.env.NODE_ENV === 'production' ? ["'self'"] : ["'self'", "http://localhost:*"]
+    }
+  }
+}));
 
 app.use('/static', express.static(path.join(__dirname, 'public'), {
   maxAge: 0,

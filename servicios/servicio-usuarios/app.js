@@ -27,9 +27,13 @@ const CAMPUS_URL = process.env.CAMPUS_URL || (MOODLE_PUBLIC_URL ? `${MOODLE_PUBL
 
 const app = express();
 
-// Detrás del gateway/reverse proxy: confiar en el primer hop para que req.ip,
+// Detrás del gateway/reverse proxy: confiar en N hops de proxy para que req.ip,
 // el rate-limit y los logs de seguridad usen la IP real del cliente y no la del proxy.
-app.set('trust proxy', 1);
+// En QA la cadena tiene 1 solo proxy (el gateway Caddy); en PD son 2 (CloudPanel/nginx
+// → gateway Caddy → este servicio) — con solo 1 configurado, la auditoría terminaba
+// registrando la IP interna de Docker del gateway en vez de la IP real del visitante
+// (QA-13). TRUST_PROXY_HOPS permite ajustar la profundidad real por ambiente sin tocar código.
+app.set('trust proxy', parseInt(process.env.TRUST_PROXY_HOPS, 10) || 1);
 
 // Security middleware - helmet for security headers
 app.use(helmet({
@@ -40,7 +44,9 @@ app.use(helmet({
       styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com", "https://cdn.jsdelivr.net"],
       fontSrc: ["'self'", "https://fonts.gstatic.com"],
       imgSrc: ["'self'", "data:", "https:"],
-      connectSrc: ["'self'", "http://localhost:*"]
+      // 'http://localhost:*' es solo para desarrollo local; en producción se filtraba
+      // igual y quedaba expuesto en la CSP real servida (QA-11).
+      connectSrc: process.env.NODE_ENV === 'production' ? ["'self'"] : ["'self'", "http://localhost:*"]
     }
   }
 }));

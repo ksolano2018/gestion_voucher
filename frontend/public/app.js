@@ -96,13 +96,19 @@ document.addEventListener('DOMContentLoaded', () => {
     return Number.isFinite(n) ? n : 0;
   }
 
+  // A diferencia de parseInt(), que trunca silenciosamente "1.5" o "1abc" a 1 sin avisar
+  // (QA-16), esto exige que el campo sea ÚNICAMENTE dígitos — cualquier otra cosa es NaN.
+  function parseStrictInt(value){
+    const s = String(value == null ? '' : value).trim();
+    return /^\d+$/.test(s) ? parseInt(s, 10) : NaN;
+  }
+
+  // Formato único de moneda para TODA la app (USD, 2 decimales) — antes esta función
+  // formateaba como pesos colombianos (COP, sin decimales), mientras Compras/Reportería/
+  // Excel usaban '$' + número.toFixed(2): dos formatos distintos para el mismo dato
+  // ($5.802 en Dashboard vs $1600.00 en Compras para el mismo monto) (QA-06).
   function formatCurrency(value){
-    return new Intl.NumberFormat('es-CO', {
-      style: 'currency',
-      currency: 'COP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0
-    }).format(toNumber(value));
+    return '$' + toNumber(value).toFixed(2);
   }
 
   function monthLabels(count){
@@ -2794,7 +2800,10 @@ document.addEventListener('DOMContentLoaded', () => {
       if (dateFrom || dateTo) {
         const created = p.created_at ? new Date(p.created_at) : null;
         if (!created) return false;
-        const createdDay = created.toISOString().slice(0, 10);
+        // Día en hora LOCAL del navegador, no UTC: con toISOString() una compra hecha de
+        // noche (hora local) ya cae en el día UTC siguiente y el filtro "Hasta" de ese
+        // mismo día la excluía aunque sí fuera de ese día para el admin (QA-12).
+        const createdDay = `${created.getFullYear()}-${String(created.getMonth() + 1).padStart(2, '0')}-${String(created.getDate()).padStart(2, '0')}`;
         if (dateFrom && createdDay < dateFrom) return false;
         if (dateTo   && createdDay > dateTo)   return false;
       }
@@ -3109,15 +3118,19 @@ document.addEventListener('DOMContentLoaded', () => {
     const partnerSel = el('ext-purchase-partner');
     const partnerId  = (partnerSel || {}).value || '';
     const partnerName = partnerSel ? (partnerSel.options[partnerSel.selectedIndex] || {}).text || partnerId : partnerId;
-    const qty    = parseInt((el('ext-purchase-qty') || {}).value || '0');
+    const qty    = parseStrictInt((el('ext-purchase-qty') || {}).value);
     const price  = parseFloat((el('ext-purchase-price') || {}).value || '0');
     const method = (el('ext-purchase-method') || {}).value || 'bank_transfer';
     const ref    = (el('ext-purchase-ref') || {}).value || '';
     const notes  = (el('ext-purchase-notes') || {}).value || '';
     const msgEl  = el('external-purchase-msg');
     const setMsg = (txt, type='danger') => { if(msgEl) msgEl.innerHTML = `<div class="alert alert-${type} py-1 mb-2">${escapeHTML(txt)}</div>`; };
+    // Limpiar el mensaje de un intento anterior antes de validar de nuevo — si no, un
+    // error viejo ("Cantidad inválida") seguía visible aunque los datos ya fueran
+    // válidos y la compra se registrara bien (QA-21).
+    if (msgEl) msgEl.innerHTML = '';
     if (!partnerId) return setMsg('Selecciona un partner');
-    if (!qty || qty < 1) return setMsg('Cantidad inválida');
+    if (isNaN(qty) || qty < 1) return setMsg('Cantidad inválida: debe ser un número entero mayor a 0');
     if (isNaN(price) || price < 0) return setMsg('Precio inválido');
     const methodLabels = { bank_transfer: '🏦 Transferencia', cash: '💵 Efectivo', invoice: '📄 Factura' };
     showConfirmAction({
@@ -3164,12 +3177,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const partnerSel  = el('comp-partner');
     const partnerId   = (partnerSel || {}).value || '';
     const partnerName = partnerSel ? (partnerSel.options[partnerSel.selectedIndex] || {}).text || partnerId : partnerId;
-    const qty    = parseInt((el('comp-qty') || {}).value || '0');
+    const qty    = parseStrictInt((el('comp-qty') || {}).value);
     const reason = (el('comp-reason') || {}).value.trim();
     const msgEl  = el('complimentary-msg');
     const setMsg = (txt, type='danger') => { if(msgEl) msgEl.innerHTML = `<div class="alert alert-${type} py-1 mb-2">${escapeHTML(txt)}</div>`; };
+    if (msgEl) msgEl.innerHTML = '';
     if (!partnerId) return setMsg('Selecciona un partner');
-    if (!qty || qty < 1) return setMsg('Cantidad inválida');
+    if (isNaN(qty) || qty < 1) return setMsg('Cantidad inválida: debe ser un número entero mayor a 0');
     if (!reason) return setMsg('El motivo es obligatorio');
     showConfirmAction({
       title: 'Emitir Vouchers de Cortesía', icon: '🎁',
@@ -3242,13 +3256,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const purchaseId = (el('adjust-purchase-id') || {}).value || '';
     const msgEl  = el('adjust-purchase-msg');
     const setMsg = (txt, type='danger') => { if(msgEl) msgEl.innerHTML = `<div class="alert alert-${type} py-1 mb-2">${escapeHTML(txt)}</div>`; };
+    if (msgEl) msgEl.innerHTML = '';
     if (!purchaseId) return setMsg('ID de compra inválido');
 
     const purchase = allPurchasesData.find(p => String(p.id) === String(purchaseId));
     const isComp = purchase && purchase.payment_method === 'complimentary';
 
     const partnerId = parseInt((el('adjust-purchase-partner') || {}).value || '', 10);
-    const qty       = parseInt((el('adjust-purchase-qty') || {}).value || '', 10);
+    const qtyRaw    = (el('adjust-purchase-qty') || {}).value || '';
+    if (qtyRaw.trim() && isNaN(parseStrictInt(qtyRaw))) return setMsg('Cantidad inválida: debe ser un número entero mayor a 0');
+    const qty       = parseStrictInt(qtyRaw);
     const body      = {};
     const confirmRows = [{ label: 'Compra ID:', value: '#' + purchaseId }];
 
@@ -3271,6 +3288,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const ref    = (el('adjust-purchase-ref') || {}).value.trim();
       const notes  = (el('adjust-purchase-notes') || {}).value.trim();
       const methodLabels = { bank_transfer: '🏦 Transferencia', cash: '💵 Efectivo', invoice: '📄 Factura' };
+      // El backend ya rechaza precios negativos, pero antes el frontend dejaba
+      // confirmar "$-5.00" sin avisar (QA-24) — se valida acá también.
+      if (!isNaN(price) && price < 0) return setMsg('El precio no puede ser negativo');
       if (!isNaN(price)) { body.total_price = price; confirmRows.push({ label: 'Precio total:', value: `$${price.toFixed(2)}` }); }
       if (method) { body.payment_method = method; confirmRows.push({ label: 'Método pago:', value: methodLabels[method] || method }); }
       if (ref)    { body.external_reference = ref;  confirmRows.push({ label: 'Referencia:', value: ref }); }
@@ -3293,7 +3313,14 @@ document.addEventListener('DOMContentLoaded', () => {
           });
           const data = await resp.json();
           setButtonLoading(btn, false);
-          if (!resp.ok) return setMsg(data.error || 'Error al ajustar compra');
+          if (!resp.ok) {
+            // El backend manda el detalle por campo en `details` (express-validator);
+            // antes solo se mostraba el genérico "Datos inválidos" sin decir cuál (QA-24).
+            const detail = Array.isArray(data.details) && data.details.length
+              ? data.details.map(d => `${d.path || d.param || 'campo'}: ${d.msg}`).join(' · ')
+              : '';
+            return setMsg(detail || data.error || 'Error al ajustar compra');
+          }
           bootstrap.Modal.getInstance(document.getElementById('modal-adjust-purchase')).hide();
           showToast('✅ Compra ajustada correctamente', 'success');
           loadAdminPurchases();
@@ -3381,14 +3408,16 @@ document.addEventListener('DOMContentLoaded', () => {
         if(!rows.length){
           tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-3">Sin resultados para el período seleccionado</td></tr>';
         } else {
-          const statusColors = { COMPLETED:'success', PENDING:'warning', CANCELLED:'danger' };
+          // Los valores reales de purchases.status son PAID/PENDING/FAILED — nunca
+          // COMPLETED/CANCELLED (QA-23), por eso antes siempre caía al gris por defecto.
+          const statusColors = { PAID:'success', PENDING:'warning', FAILED:'danger' };
           tbody.innerHTML = rows.map(r => `<tr>
             <td><small>${r.id}</small></td>
             <td>${escapeHTML(r.partner_name||'-')}</td>
             <td class="text-end">${r.qty||0}</td>
             <td class="text-end fw-semibold">${rptFmtMoney(r.total_price||0)}</td>
             <td><span class="badge bg-${statusColors[r.status]||'secondary'}">${escapeHTML(r.status||'-')}</span></td>
-            <td><small class="text-muted">${escapeHTML(r.stripe_status||'-')}</small></td>
+            <td><small class="text-muted">${(r.payment_method||'stripe') === 'stripe' ? escapeHTML(r.stripe_status||'-') : '-'}</small></td>
             <td class="text-end">${r.vouchers_used||0}</td>
             <td><small>${r.created_at ? new Date(r.created_at).toLocaleDateString('es-ES') : '-'}</small></td>
           </tr>`).join('');
@@ -4175,7 +4204,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const s = sum.summary || sum || {};
       const fmt = n => isNaN(n) ? '—' : Number(n).toLocaleString('es-CL');
-      const fmtMoney = n => isNaN(n) ? '—' : '$' + Number(n).toLocaleString('es-CL');
+      const fmtMoney = n => isNaN(n) ? '—' : formatCurrency(n);
       if(el('dash-kpi-revenue'))       el('dash-kpi-revenue').textContent       = fmtMoney(s.paid_revenue || s.total_revenue || 0);
       if(el('dash-kpi-purchases'))     el('dash-kpi-purchases').textContent     = fmt(s.total_purchases || 0);
       if(el('dash-kpi-vouchers-sold')) el('dash-kpi-vouchers-sold').textContent = fmt(s.total_vouchers_sold || s.total_vouchers || 0);
@@ -4929,8 +4958,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const email     = (el('admin-user-email')    || {}).value || '';
     const password  = (el('admin-user-password') || {}).value || '';
     clearAdminUserMessage();
-    if(!email || !password){ showLoginMessage('Completa email y contraseña', 'danger', 3000); return; }
-    if(role === 'partner' && !linkedPartner && !firstName){ showLoginMessage('Escribe el nombre de la empresa o elige un partner existente', 'danger', 4000); return; }
+    if(!email || !password){ showAdminUserMessage('Completa email y contraseña', 'danger'); return; }
+    if(role === 'partner' && !linkedPartner && !firstName){ showAdminUserMessage('Escribe el nombre de la empresa o elige un partner existente', 'danger'); return; }
     const expirySelect = (el('new-user-expiry-days') || {}).value || '0';
     let passwordExpiresDays = 0;
     if(expirySelect === 'none')        passwordExpiresDays = -1;
@@ -5748,7 +5777,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const resultEl = el('admin-stats-result');
       if(resultEl){
         if(isGlobal){
-          const fmtMoney = n => '$' + Number(n || 0).toLocaleString('es-CL');
+          const fmtMoney = n => formatCurrency(n || 0);
           const gCompleted   = Number(stats.completed_courses || 0);
           const gActivations = Number(stats.total_activations || 0);
           const gEnrolled    = Number(stats.enrolled_courses  || 0);

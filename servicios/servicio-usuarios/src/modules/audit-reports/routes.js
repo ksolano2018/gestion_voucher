@@ -8,6 +8,21 @@ const pool = require('../../db/pool');
 const { authenticate, requirePermission, requireAnyPermission } = require('../../lib/auth');
 const { apiLimiter } = require('../../lib/rateLimit');
 
+// Helper: valida que, si vienen ambas fechas, "Desde" no sea posterior a "Hasta".
+// Antes un rango invertido simplemente devolvía vacío sin explicar por qué (QA-19).
+function rejectInvertedDateRange(req, res) {
+  const { start_date, end_date } = req.query;
+  if (start_date && end_date) {
+    const s = new Date(start_date);
+    const e = new Date(end_date);
+    if (!Number.isNaN(s.getTime()) && !Number.isNaN(e.getTime()) && s > e) {
+      res.status(400).json({ error: 'El rango de fechas es inválido: "Desde" no puede ser posterior a "Hasta"' });
+      return true;
+    }
+  }
+  return false;
+}
+
 // Helper: convierte filas a CSV.
 function convertToCSV(data) {
   if (!data || data.length === 0) return '';
@@ -169,7 +184,13 @@ function buildAuditFilters(req) {
   const purchaseId = req.query.purchase_id ? parseInt(req.query.purchase_id, 10) : null;
   const search = req.query.search ? String(req.query.search).trim().toLowerCase() : '';
   const startDate = req.query.start_date ? new Date(req.query.start_date) : null;
-  const endDate = req.query.end_date ? new Date(req.query.end_date) : null;
+  // "Hasta" es una fecha (sin hora): si se compara tal cual contra un timestamp,
+  // excluye todo el día salvo el instante exacto de medianoche. Se empuja al
+  // inicio del día siguiente para que el día "Hasta" quede incluido completo.
+  let endDate = req.query.end_date ? new Date(req.query.end_date) : null;
+  if (endDate && !Number.isNaN(endDate.getTime())) {
+    endDate = new Date(endDate.getTime() + 24 * 60 * 60 * 1000);
+  }
 
   if (source) addFilter('m.source = ?', source);
   if (status) addFilter('UPPER(m.status) = ?', status);
@@ -179,7 +200,7 @@ function buildAuditFilters(req) {
   if (Number.isInteger(userId)) addFilter('m.user_id = ?', userId);
   if (Number.isInteger(purchaseId)) addFilter('m.purchase_id = ?', purchaseId);
   if (startDate && !Number.isNaN(startDate.getTime())) addFilter('m.occurred_at >= ?', startDate);
-  if (endDate && !Number.isNaN(endDate.getTime())) addFilter('m.occurred_at <= ?', endDate);
+  if (endDate && !Number.isNaN(endDate.getTime())) addFilter('m.occurred_at < ?', endDate);
   if (search) {
     const searchParam = `%${search}%`;
     const base = params.length + 1;
@@ -336,6 +357,7 @@ router.get('/admin/events/stats/dashboard', authenticate, requireAnyPermission([
 
 router.get('/admin/events/export/:format', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const format = req.params.format.toLowerCase();
     const eventType = req.query.event_type;
     const startDate = req.query.start_date;
@@ -354,8 +376,9 @@ router.get('/admin/events/export/:format', authenticate, requirePermission('audi
       params.push(new Date(startDate));
     }
     if (endDate) {
-      query += ` AND created_at <= $${paramNum++}`;
-      params.push(new Date(endDate));
+      // "Hasta" es una fecha sin hora: incluir el día completo hasta el siguiente.
+      query += ` AND created_at < $${paramNum++}`;
+      params.push(new Date(new Date(endDate).getTime() + 24 * 60 * 60 * 1000));
     }
 
     query += ' ORDER BY created_at DESC';
@@ -382,6 +405,7 @@ router.get('/admin/events/export/:format', authenticate, requirePermission('audi
 // ── Auditoría unificada de movimientos ─────────────────────────────────────────
 router.get('/admin/audit/movements', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
     const limit = Math.min(Math.max(parseInt(req.query.limit, 10) || 50, 1), 200);
     const offset = (page - 1) * limit;
@@ -433,6 +457,7 @@ router.get('/admin/audit/movements', authenticate, requirePermission('audit', 'v
 
 router.get('/admin/audit/movements/summary', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const cte = buildAuditMovementsCTE();
     const { whereClause, params } = buildAuditFilters(req);
 
@@ -476,6 +501,7 @@ router.get('/admin/audit/movements/summary', authenticate, requirePermission('au
 
 router.get('/admin/audit/movements/export/csv', authenticate, requirePermission('audit', 'view'), apiLimiter, async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const cte = buildAuditMovementsCTE();
     const { whereClause, params } = buildAuditFilters(req);
 
@@ -514,6 +540,7 @@ router.get('/admin/audit/movements/export/csv', authenticate, requirePermission(
 // ── Reportería ─────────────────────────────────────────────────────────────────
 router.get('/admin/reports/summary', authenticate, requireAnyPermission(['dashboard', 'stats', 'reports'], 'view'), async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const { start_date, end_date, partner_id } = req.query;
     const conditions = [];
     const params = [];
@@ -532,12 +559,15 @@ router.get('/admin/reports/summary', authenticate, requireAnyPermission(['dashbo
     // (bug real confirmado en PD: 2 compras PENDING sumaban $160 y 2 vouchers de más).
     // Nota: 'COMPLETED'/'CANCELLED' nunca se escriben en purchases.status (el webhook real usa
     // 'PAID'/'FAILED') — por eso completed_purchases/cancelled_purchases daban siempre 0.
+    // Las cortesías ($0, payment_method='complimentary') se cuentan aparte en
+    // complimentary_purchases: no deben inflar total_purchases/total_vouchers_sold como si
+    // fueran ventas reales (QA-22).
     const purchasesQ = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE p.status='PAID')::int                                                           AS total_purchases,
-        COALESCE(SUM(p.total_price) FILTER (WHERE p.status='PAID'),0)::numeric                                 AS total_revenue,
-        COALESCE(SUM(p.qty) FILTER (WHERE p.status='PAID'),0)::int                                              AS total_vouchers_sold,
-        COUNT(*) FILTER (WHERE p.status='PAID')::int                                                            AS completed_purchases,
+        COUNT(*) FILTER (WHERE p.status='PAID' AND p.payment_method != 'complimentary')::int             AS total_purchases,
+        COALESCE(SUM(p.total_price) FILTER (WHERE p.status='PAID' AND p.payment_method != 'complimentary'),0)::numeric AS total_revenue,
+        COALESCE(SUM(p.qty) FILTER (WHERE p.status='PAID' AND p.payment_method != 'complimentary'),0)::int AS total_vouchers_sold,
+        COUNT(*) FILTER (WHERE p.status='PAID' AND p.payment_method != 'complimentary')::int             AS completed_purchases,
         COUNT(*) FILTER (WHERE p.status='PENDING')::int                                                        AS pending_purchases,
         COUNT(*) FILTER (WHERE p.status='FAILED')::int                                                         AS cancelled_purchases,
         COUNT(*) FILTER (WHERE p.status='PAID' AND p.payment_method='complimentary')::int                      AS complimentary_purchases,
@@ -559,12 +589,14 @@ router.get('/admin/reports/summary', authenticate, requireAnyPermission(['dashbo
       ${vPartnerFilter}
     `);
 
-    const actWhere = [
-      start_date ? `a.activated_at >= '${start_date}'`                               : null,
-      end_date   ? `a.activated_at <= '${end_date}'::date + INTERVAL '1 day'`        : null,
-      partner_id && /^\d+$/.test(partner_id)
-                 ? `a.voucher_id IN (SELECT id FROM vouchers WHERE partner_id=${parseInt(partner_id,10)})` : null
-    ].filter(Boolean);
+    const actParams = [];
+    const actWhere = [];
+    if (start_date) { actParams.push(start_date); actWhere.push(`a.activated_at >= $${actParams.length}`); }
+    if (end_date)   { actParams.push(end_date);   actWhere.push(`a.activated_at < ($${actParams.length}::date + INTERVAL '1 day')`); }
+    if (partner_id && /^\d+$/.test(partner_id)) {
+      actParams.push(parseInt(partner_id, 10));
+      actWhere.push(`a.voucher_id IN (SELECT id FROM vouchers WHERE partner_id=$${actParams.length})`);
+    }
     const activationsQ = await pool.query(`
       SELECT
         COUNT(*)::int                                                        AS total_activations,
@@ -573,7 +605,7 @@ router.get('/admin/reports/summary', authenticate, requireAnyPermission(['dashbo
         COUNT(DISTINCT a.course_id) FILTER (WHERE a.moodle_status='COMPLETED')::int AS completed_unique_courses
       FROM activations a
       ${actWhere.length ? 'WHERE ' + actWhere.join(' AND ') : ''}
-    `);
+    `, actParams);
 
     const partnersQ = await pool.query(`SELECT COUNT(DISTINCT id)::int AS total_partners FROM partners`);
 
@@ -593,6 +625,7 @@ router.get('/admin/reports/summary', authenticate, requireAnyPermission(['dashbo
 
 router.get('/admin/reports/monthly', authenticate, requireAnyPermission(['dashboard', 'stats', 'reports'], 'view'), async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const { start_date, end_date, partner_id } = req.query;
     const params = [];
 
@@ -615,9 +648,9 @@ router.get('/admin/reports/monthly', authenticate, requireAnyPermission(['dashbo
       WITH purchases_m AS (
         SELECT
           DATE_TRUNC('month', created_at) AS month_date,
-          COUNT(*) FILTER (WHERE status='PAID')::int                   AS purchases,
-          COALESCE(SUM(total_price) FILTER (WHERE status='PAID'),0)::numeric AS revenue,
-          COALESCE(SUM(qty) FILTER (WHERE status='PAID'),0)::int       AS vouchers_sold
+          COUNT(*) FILTER (WHERE status='PAID' AND payment_method != 'complimentary')::int                   AS purchases,
+          COALESCE(SUM(total_price) FILTER (WHERE status='PAID' AND payment_method != 'complimentary'),0)::numeric AS revenue,
+          COALESCE(SUM(qty) FILTER (WHERE status='PAID' AND payment_method != 'complimentary'),0)::int       AS vouchers_sold
         FROM purchases ${pWhere}
         GROUP BY 1
       ),
@@ -651,6 +684,7 @@ router.get('/admin/reports/monthly', authenticate, requireAnyPermission(['dashbo
 
 router.get('/admin/reports/top-partners', authenticate, requireAnyPermission(['dashboard', 'stats', 'reports'], 'view'), async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const { start_date, end_date } = req.query;
     const conditions = [];
     const params = [];
@@ -664,10 +698,10 @@ router.get('/admin/reports/top-partners', authenticate, requireAnyPermission(['d
       SELECT
         pt.id                                  AS partner_id,
         pt.name AS partner_name,
-        COUNT(p.id) FILTER (WHERE p.status='PAID')::int AS total_purchases,
-        COALESCE(SUM(p.total_price) FILTER (WHERE p.status='PAID'),0)::numeric AS total_revenue,
-        COALESCE(SUM(p.qty) FILTER (WHERE p.status='PAID'),0)::int AS vouchers_sold,
-        COUNT(p.id) FILTER (WHERE p.status='PAID')::int AS completed
+        COUNT(p.id) FILTER (WHERE p.status='PAID' AND p.payment_method != 'complimentary')::int AS total_purchases,
+        COALESCE(SUM(p.total_price) FILTER (WHERE p.status='PAID' AND p.payment_method != 'complimentary'),0)::numeric AS total_revenue,
+        COALESCE(SUM(p.qty) FILTER (WHERE p.status='PAID' AND p.payment_method != 'complimentary'),0)::int AS vouchers_sold,
+        COUNT(p.id) FILTER (WHERE p.status='PAID' AND p.payment_method != 'complimentary')::int AS completed
       FROM partners pt
       LEFT JOIN purchases p ON p.partner_id = pt.id ${where.replace('WHERE','AND')}
       GROUP BY pt.id, pt.name
@@ -684,6 +718,7 @@ router.get('/admin/reports/top-partners', authenticate, requireAnyPermission(['d
 
 router.get('/admin/reports/top-courses', authenticate, requireAnyPermission(['dashboard', 'stats', 'reports'], 'view'), async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const { start_date, end_date } = req.query;
     const conditions = [];
     const params = [];
@@ -716,6 +751,7 @@ router.get('/admin/reports/top-courses', authenticate, requireAnyPermission(['da
 
 router.get('/admin/reports/purchases', authenticate, requireAnyPermission(['reports', 'purchases', 'financial_ops'], 'view'), async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const { start_date, end_date, partner_id, status, page = 1, limit = 25 } = req.query;
     const conditions = [];
     const params = [];
@@ -743,6 +779,7 @@ router.get('/admin/reports/purchases', authenticate, requireAnyPermission(['repo
           p.total_price,
           p.status,
           p.stripe_status,
+          p.payment_method,
           p.created_at,
           p.updated_at,
           (SELECT COUNT(*)::int FROM vouchers v WHERE v.purchase_id = p.id AND v.status='CONSUMED') AS vouchers_used
@@ -770,6 +807,7 @@ router.get('/admin/reports/purchases', authenticate, requireAnyPermission(['repo
 
 router.get('/admin/reports/export/csv', authenticate, requirePermission('reports', 'view'), async (req, res) => {
   try {
+    if (rejectInvertedDateRange(req, res)) return;
     const { start_date, end_date, partner_id, status } = req.query;
     const conditions = [];
     const params = [];

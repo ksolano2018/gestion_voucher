@@ -788,7 +788,7 @@ router.get('/admin/purchases', authenticate, requireAnyPermission(['purchases', 
     const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const r = await pool.query(`
-      SELECT p.id, p.partner_id, p.qty, p.total_price, p.stripe_link, p.stripe_status,
+      SELECT p.id, p.partner_id, p.qty, p.total_price, p.stripe_status,
              p.payment_intent_id, p.payment_method, p.external_reference, p.notes,
              p.status, p.expires_at, p.created_at, p.updated_at,
              pt.name AS partner_name, pt.email AS partner_email,

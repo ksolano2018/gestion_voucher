@@ -15,8 +15,13 @@ const { backfillPaidPurchaseVouchers } = require('./src/modules/purchases/servic
 
 const app = express();
 
-// Detrás del gateway: confiar en el primer hop para req.ip / rate-limit / logs.
-app.set('trust proxy', 1);
+// Detrás del gateway: confiar en N hops de proxy para que req.ip / rate-limit / logs
+// usen la IP real del cliente. En QA (un solo proxy, el gateway Caddy) basta con 1.
+// En PD la cadena real es CloudPanel/nginx → gateway Caddy → este servicio (2 hops);
+// con solo 1 configurado, req.ip terminaba quedando con la IP interna de Docker del
+// gateway en vez de la IP real del visitante (QA-13). Configurable por env porque la
+// profundidad real de la cadena de proxies difiere entre QA y PD.
+app.set('trust proxy', parseInt(process.env.TRUST_PROXY_HOPS, 10) || 1);
 
 app.use(helmet({ contentSecurityPolicy: false }));
 
