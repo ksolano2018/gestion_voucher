@@ -157,9 +157,22 @@ async function getPricingProfilesDetailed(profileType = null) {
     rulesByProfile.get(rule.profile_id).push(rule);
   }
 
+  const coursesResult = await pool.query(
+    `SELECT pc.profile_id, c.id, c.name
+     FROM pricing_profile_courses pc
+     JOIN courses c ON c.id = pc.course_id
+     ORDER BY c.name ASC`
+  );
+  const coursesByProfile = new Map();
+  for (const row of coursesResult.rows) {
+    if (!coursesByProfile.has(row.profile_id)) coursesByProfile.set(row.profile_id, []);
+    coursesByProfile.get(row.profile_id).push({ id: row.id, name: row.name });
+  }
+
   return profilesResult.rows.map(profile => ({
     ...profile,
-    rules: rulesByProfile.get(profile.id) || []
+    rules: rulesByProfile.get(profile.id) || [],
+    courses: coursesByProfile.get(profile.id) || []
   }));
 }
 

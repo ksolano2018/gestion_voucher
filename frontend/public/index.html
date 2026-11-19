@@ -2923,12 +2923,13 @@
                             <tr>
                               <th>Nombre</th>
                               <th>Descripción</th>
+                              <th>Certificaciones</th>
                               <th>Tramos</th>
                               <th>Estado</th>
                             </tr>
                           </thead>
                           <tbody id="pricing-special-profiles-tbody">
-                            <tr><td colspan="4" class="text-center text-muted p-3">No hay perfiles especiales todavía</td></tr>
+                            <tr><td colspan="5"class="text-center text-muted p-3">No hay perfiles especiales todavía</td></tr>
                           </tbody>
                         </table>
                       </div>
@@ -3883,7 +3884,7 @@
                           <th>Cliente final</th>
                           <th>Estado Moodle</th>
                           <th>Notificación</th>
-                          <th>Fecha</th>
+                          <th>Últ. actualización</th>
                           <th>Expira</th>
                         </tr>
                       </thead>
@@ -4014,9 +4015,9 @@
                           <input id="activate-email" class="form-control" placeholder="usuario@ejemplo.com">
                         </div>
                         <div class="col-md-4">
-                          <label class="form-label">Cliente Final (destinatario)</label>
+                          <label class="form-label">Cliente Final (destinatario) <small class="text-muted">(opcional)</small></label>
                           <select id="activate-final-client" class="form-control">
-                            <option value="">Selecciona un cliente final</option>
+                            <option value="">Sin cliente final</option>
                           </select>
                           <div class="form-text">Gestiona tus clientes en la sección <strong>Clientes</strong>.</div>
                         </div>
@@ -4339,6 +4340,13 @@
                 <label class="form-label">Descripción</label>
                 <input id="pricing-profile-description" class="form-control" placeholder="Describe cuándo aplica este pricing">
               </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label">Certificaciones del perfil <span class="text-danger">*</span>
+                <small class="text-muted">(selecciona una o más)</small></label>
+              <input id="pricing-profile-course-search" class="form-control form-control-sm mb-2" placeholder="Buscar certificación…" autocomplete="off">
+              <div id="pricing-profile-courses-list" class="border rounded p-2" style="max-height:180px;overflow-y:auto;"></div>
+              <div id="pricing-profile-courses-count" class="small text-muted mt-1">0 seleccionadas</div>
             </div>
             <div class="table-responsive">
               <table class="table table-sm table-hover">

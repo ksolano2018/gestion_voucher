@@ -20,6 +20,20 @@ router.get('/admin/pricing/profiles', authenticate, requireRole('admin'), apiLim
   }
 });
 
+// Normaliza course_ids (array de enteros únicos). Devuelve null si no es un array.
+function parseCourseIds(value) {
+  if (!Array.isArray(value)) return null;
+  const ids = value.map(v => parseInt(v, 10)).filter(n => Number.isInteger(n) && n > 0);
+  return [...new Set(ids)];
+}
+
+// Verifica que todas las certificaciones existan. Devuelve true si todas existen.
+async function allCoursesExist(db, ids) {
+  if (!ids.length) return true;
+  const r = await db.query('SELECT COUNT(*)::int AS n FROM courses WHERE id = ANY($1::int[])', [ids]);
+  return r.rows[0].n === ids.length;
+}
+
 router.post('/admin/pricing/profiles', authenticate, requireRole('admin'), apiLimiter, async (req, res) => {
   const { name, code, description, profile_type } = req.body || {};
 
@@ -33,6 +47,14 @@ router.post('/admin/pricing/profiles', authenticate, requireRole('admin'), apiLi
       return res.status(400).json({ error: 'Tipo de perfil inválido' });
     }
 
+    const courseIds = parseCourseIds(req.body && req.body.course_ids) || [];
+    if (profileType === 'SPECIAL' && courseIds.length === 0) {
+      return res.status(400).json({ error: 'Selecciona al menos una certificación para el perfil especial' });
+    }
+    if (!(await allCoursesExist(pool, courseIds))) {
+      return res.status(400).json({ error: 'Alguna certificación seleccionada no existe' });
+    }
+
     const normalizedCode = normalizePricingProfileCode(code || profileName);
     const created = await pool.query(
       `INSERT INTO pricing_profiles (code, name, profile_type, description, active, is_system, updated_at)
@@ -40,6 +62,13 @@ router.post('/admin/pricing/profiles', authenticate, requireRole('admin'), apiLi
        RETURNING id, code, name, profile_type, description, active, is_system`,
       [normalizedCode, profileName, profileType, description || null]
     );
+    if (profileType === 'SPECIAL' && courseIds.length) {
+      await pool.query(
+        `INSERT INTO pricing_profile_courses (profile_id, course_id)
+         SELECT $1, UNNEST($2::int[]) ON CONFLICT DO NOTHING`,
+        [created.rows[0].id, courseIds]
+      );
+    }
 
     await logSystemEvent('PRICING_PROFILE_CREATED', 'PRICING', req.user.sub, null, null, {
       profile_id: created.rows[0].id,
@@ -83,6 +112,27 @@ router.put('/admin/pricing/profiles/:id', authenticate, requireRole('admin'), ap
       }
 
       const profile = existing.rows[0];
+
+      // Perfil ESPECIAL: si llega course_ids, debe traer al menos una certificación.
+      // Si no llega (p. ej. suspender/reactivar), se conservan las actuales.
+      const courseIds = profile.profile_type === 'SPECIAL' ? parseCourseIds(req.body && req.body.course_ids) : null;
+      if (courseIds !== null) {
+        if (courseIds.length === 0) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Selecciona al menos una certificación para el perfil especial' });
+        }
+        if (!(await allCoursesExist(client, courseIds))) {
+          await client.query('ROLLBACK');
+          return res.status(400).json({ error: 'Alguna certificación seleccionada no existe' });
+        }
+        await client.query('DELETE FROM pricing_profile_courses WHERE profile_id=$1', [profileId]);
+        await client.query(
+          `INSERT INTO pricing_profile_courses (profile_id, course_id)
+           SELECT $1, UNNEST($2::int[])`,
+          [profileId, courseIds]
+        );
+      }
+
       await client.query(
         `UPDATE pricing_profiles
          SET name=$1,

@@ -369,6 +369,14 @@ async function initDb(){
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS expires_at         TIMESTAMP;
     ALTER TABLE activations ADD COLUMN IF NOT EXISTS activation_status  VARCHAR(20) DEFAULT 'ACTIVE';
 
+    -- Certificaciones que identifican a un perfil de precio ESPECIAL (informativo: el precio
+    -- se calcula por cantidad de vouchers, la certificación se elige al activar).
+    CREATE TABLE IF NOT EXISTS pricing_profile_courses (
+      profile_id INTEGER NOT NULL REFERENCES pricing_profiles(id) ON DELETE CASCADE,
+      course_id  INTEGER NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+      PRIMARY KEY (profile_id, course_id)
+    );
+
     CREATE TABLE IF NOT EXISTS partner_final_clients (
       id SERIAL PRIMARY KEY,
       partner_id INTEGER NOT NULL REFERENCES partners(id) ON DELETE CASCADE,

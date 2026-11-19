@@ -55,12 +55,15 @@ router.get('/partner/:id/vouchers', authenticate, async (req,res)=>{
               a.moodle_completed_at, a.expires_at,
               a.id AS activation_id,
               a.email_status, a.email_error, a.email_sent_at,
-              a.email_retry_count, a.email_last_attempt_at
+              a.email_retry_count, a.email_last_attempt_at,
+              GREATEST(v.created_at, v.consumed_at, a.activated_at, a.moodle_enrolled_at,
+                       a.moodle_retried_at, a.moodle_completed_at, a.email_sent_at,
+                       a.email_last_attempt_at) AS last_update_at
        FROM vouchers v
        LEFT JOIN courses c ON c.id = v.course_id
        LEFT JOIN activations a ON a.voucher_id = v.id
        WHERE v.partner_id=$1
-       ORDER BY v.created_at DESC`,
+       ORDER BY last_update_at DESC NULLS LAST, v.id DESC`,
       [pid]
     );
     res.json(r.rows);
@@ -111,12 +114,14 @@ router.post('/partner/:id/activate',
   body('course_id').isInt({ min: 1 }).withMessage('Curso inválido'),
   body('user_name').trim().isLength({ min: 2, max: 100 }).withMessage('Nombre debe tener entre 2 y 100 caracteres'),
   body('user_email').isEmail().normalizeEmail().withMessage('Email inválido'),
-  body('final_client').trim().isLength({ min: 2, max: 200 }).withMessage('Cliente final es obligatorio'),
+  body('final_client').optional({ nullable: true, checkFalsy: true }).trim().isLength({ min: 2, max: 200 }).withMessage('Cliente final debe tener entre 2 y 200 caracteres'),
   body('activation_months').optional().isInt({ min: 1, max: 120 }).withMessage('Meses de activación inválidos'),
   handleValidationErrors,
   async (req, res) => {
     const pid = req.params.id;
-    const { course_id, user_name, user_email, final_client, activation_months } = req.body;
+    const { course_id, user_name, user_email, activation_months } = req.body;
+    // Cliente final opcional: vacío se guarda como NULL.
+    const final_client = (typeof req.body.final_client === 'string' && req.body.final_client.trim()) ? req.body.final_client.trim() : null;
 
     if (!req.user.partner_id || String(req.user.partner_id) !== String(pid)) {
       return res.status(403).json({ error: 'forbidden' });

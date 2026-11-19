@@ -1682,16 +1682,21 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!tbody) return;
     const specials = (pricingState.profiles || []).filter(p => p.profile_type === 'SPECIAL');
     if(!specials.length){
-      tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted p-3">No hay perfiles especiales todavía</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted p-3">No hay perfiles especiales todavía</td></tr>';
       return;
     }
     tbody.innerHTML = specials.map(profile => {
       const isActive = profile.active !== false;
       const status = isActive ? '<span class="badge bg-success">Activo</span>' : '<span class="badge bg-secondary">Suspendido</span>';
       const rulesCount = Array.isArray(profile.rules) ? profile.rules.length : 0;
+      const pcourses = Array.isArray(profile.courses) ? profile.courses : [];
+      const coursesCell = pcourses.length
+        ? `<span title="${escapeHTML(pcourses.map(c => c.name).join(', '))}">${escapeHTML(pcourses[0].name)}${pcourses.length > 1 ? ` <span class="badge bg-secondary">+${pcourses.length - 1}</span>` : ''}</span>`
+        : '<span class="badge bg-warning text-dark" title="Edita el perfil para seleccionar certificaciones">Sin certificación</span>';
       return `<tr data-id="${escapeHTML(String(profile.id))}" style="cursor:pointer;">
         <td>${escapeHTML(profile.name || '')}</td>
         <td class="text-muted">${escapeHTML(profile.description || '—')}</td>
+        <td>${coursesCell}</td>
         <td>${rulesCount}</td>
         <td>${status}</td>
       </tr>`;
@@ -1735,6 +1740,38 @@ document.addEventListener('DOMContentLoaded', () => {
   // Estado del popup de perfil especial: null = modo "crear", id = modo "editar".
   let _pricingModalProfileId = null;
 
+  // Selector de certificaciones del perfil especial (lista con checkboxes + búsqueda).
+  let _pricingModalCourseIds = new Set();
+
+  function renderPricingCoursePicker(){
+    const list = el('pricing-profile-courses-list');
+    if(!list) return;
+    const q = ((el('pricing-profile-course-search') || {}).value || '').trim().toLowerCase();
+    const all = (pricingState.courses || []).filter(c => c.active !== false || _pricingModalCourseIds.has(c.id));
+    const shown = all.filter(c => !q || (c.name || '').toLowerCase().includes(q));
+    list.innerHTML = shown.length ? shown.map(c => `
+      <div class="form-check">
+        <input class="form-check-input pricing-course-cb" type="checkbox" id="pcc-${c.id}" value="${c.id}" ${_pricingModalCourseIds.has(c.id) ? 'checked' : ''}>
+        <label class="form-check-label small" for="pcc-${c.id}">${escapeHTML(c.name || '')}</label>
+      </div>`).join('') : '<div class="text-muted small">Sin resultados</div>';
+    updatePricingCourseCount();
+  }
+
+  function updatePricingCourseCount(){
+    const n = _pricingModalCourseIds.size;
+    const c = el('pricing-profile-courses-count');
+    if(c) c.textContent = `${n} seleccionada${n === 1 ? '' : 's'}`;
+  }
+
+  document.getElementById('pricing-profile-courses-list')?.addEventListener('change', (e) => {
+    const cb = e.target.closest('.pricing-course-cb');
+    if(!cb) return;
+    const id = parseInt(cb.value, 10);
+    if(cb.checked) _pricingModalCourseIds.add(id); else _pricingModalCourseIds.delete(id);
+    updatePricingCourseCount();
+  });
+  document.getElementById('pricing-profile-course-search')?.addEventListener('input', renderPricingCoursePicker);
+
   // Sin profileId → popup en modo "crear": formulario vacío, sin fila de estado.
   // Con profileId → modo "editar": precarga nombre/descripción/reglas + estado
   // (mismo patrón que el popup de Jerarquía de Certificaciones).
@@ -1756,6 +1793,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if(nameEl) nameEl.value = '';
       if(descEl) descEl.value = '';
       renderPricingRulesEditor([]);
+      _pricingModalCourseIds = new Set();
+      if(el('pricing-profile-course-search')) el('pricing-profile-course-search').value = '';
+      renderPricingCoursePicker();
       if(saveBtn) saveBtn.textContent = 'Crear perfil especial';
       // .d-flex de Bootstrap es !important y pisa un style="display:none" inline,
       // así que la visibilidad se maneja intercambiando d-none/d-flex, no con .style.
@@ -1768,6 +1808,9 @@ document.addEventListener('DOMContentLoaded', () => {
       if(nameEl) nameEl.value = profile.name        || '';
       if(descEl) descEl.value = profile.description || '';
       renderPricingRulesEditor(profile.rules || []);
+      _pricingModalCourseIds = new Set((profile.courses || []).map(c => c.id));
+      if(el('pricing-profile-course-search')) el('pricing-profile-course-search').value = '';
+      renderPricingCoursePicker();
       if(saveBtn) saveBtn.textContent = 'Guardar cambios';
 
       const isActive = profile.active !== false;
@@ -1879,10 +1922,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadAdminPricingData(){
     try {
-      const [profiles, partners] = await Promise.all([
+      const [profiles, partners, coursesResp] = await Promise.all([
         fetchPricingProfiles(),
-        fetchAdminPartners()
+        fetchAdminPartners(),
+        safeFetch(apiUrl + '/admin/courses', { headers: authHeaders() }).then(r => r.ok ? r.json() : []).catch(() => [])
       ]);
+      pricingState.courses = Array.isArray(coursesResp) ? coursesResp : [];
       pricingState.profiles = profiles;
       pricingState.partners = partners;
       populatePricingProfileSelectors();
@@ -2067,9 +2112,12 @@ document.addEventListener('DOMContentLoaded', () => {
     const current = pricingState.profiles.find(item => String(item.id) === String(profileId));
     const active = overrideActive !== undefined ? overrideActive : (current ? current.active !== false : true);
 
+    const payload = { name: profileName, description, rules, active };
+    // Suspender/reactivar (overrideActive) no toca las certificaciones del perfil.
+    if(overrideActive === undefined) payload.course_ids = Array.from(_pricingModalCourseIds);
     const resp = await safeFetch(apiUrl + `/admin/pricing/profiles/${profileId}`, {
       method: 'PUT', headers: authHeaders(),
-      body: JSON.stringify({ name: profileName, description, rules, active })
+      body: JSON.stringify(payload)
     });
     const data = await safeJson(resp);
     if(!resp.ok) throw new Error(data.error || 'No se pudo guardar el perfil');
@@ -2088,6 +2136,11 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
+    if(_pricingModalCourseIds.size === 0){
+      showInlineAlert('pricing-profile-modal-message', 'Selecciona al menos una certificación para el perfil especial.', 'danger');
+      return;
+    }
+
     if(!profileId){
       // Modo crear: POST (nombre+descripción) y, si ya cargaron tramos, PUT
       // inmediato con las reglas — un solo click deja el perfil listo para usar.
@@ -2095,7 +2148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const resp = await safeFetch(apiUrl + '/admin/pricing/profiles', {
           method: 'POST',
           headers: authHeaders(),
-          body: JSON.stringify({ name: profileName, description: (el('pricing-profile-description') || {}).value || '', profile_type: 'SPECIAL' })
+          body: JSON.stringify({ name: profileName, description: (el('pricing-profile-description') || {}).value || '', profile_type: 'SPECIAL', course_ids: Array.from(_pricingModalCourseIds) })
         });
         const data = await safeJson(resp);
         if(!resp.ok) throw new Error(data.error || 'No se pudo crear el perfil especial');
@@ -2123,6 +2176,7 @@ document.addEventListener('DOMContentLoaded', () => {
       title: 'Guardar Perfil de Precios', icon: '🏷️',
       rows: [
         { label: 'Perfil:', value: profileName },
+        { label: 'Certificaciones:', value: _pricingModalCourseIds.size },
         { label: 'Tramos configurados:', value: rules.length },
         { label: 'Rango de precios:', value: rules.length ? `$${Math.min(...rules.map(r=>r.unit_price)).toFixed(2)} – $${Math.max(...rules.map(r=>r.unit_price)).toFixed(2)}` : '—' }
       ],
@@ -6226,7 +6280,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const safeCourse     = v.course_name  ? escapeHTML(v.course_name)  : '-';
       const safeConsumedBy = v.consumed_by  ? escapeHTML(v.consumed_by)  : '-';
       const safeFinalClient = v.final_client ? escapeHTML(v.final_client) : '-';
-      const created        = v.created_at   ? new Date(v.created_at).toLocaleDateString('es-ES') : '-';
+      // Fecha de última actualización (alta, consumo, Moodle, correo) con hora:min:seg
+      const lastUpd        = v.last_update_at || v.created_at;
+      const created        = lastUpd ? new Date(lastUpd).toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false }) : '-';
 
       let moodleBadge = '<span class="text-muted">—</span>';
       if(status === 'CONSUMED'){
@@ -6364,7 +6420,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if(courseVal && (v.course_name || '') !== courseVal) return false;
       if(clientVal && (v.final_client || '') !== clientVal) return false;
       if(rangeStart || rangeEnd){
-        const vDate = v.created_at ? new Date(v.created_at) : null;
+        const vDate = (v.last_update_at || v.created_at) ? new Date(v.last_update_at || v.created_at) : null;
         if(!vDate) return false;
         if(rangeStart && vDate < rangeStart) return false;
         if(rangeEnd   && vDate > rangeEnd)   return false;
@@ -6823,14 +6879,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const name = firstname && lastname ? `${firstname} ${lastname}` : (firstname || lastname);
     const email = (el('activate-email') || {}).value || '';
     const finalClient = (el('activate-final-client') || {}).value || '';
-    if(!courseId || !firstname || !lastname || !email || !finalClient){ showToast('Completa todos los campos del formulario', 'warning'); return; }
+    if(!courseId || !firstname || !lastname || !email){ showToast('Completa certificación, nombre, apellido y correo (el cliente final es opcional)', 'warning'); return; }
     const courseName = (el('activate-course-id') || {}).options?.[(el('activate-course-id')||{}).selectedIndex]?.text || courseId;
     const months = parseInt((el('activate-months') || {}).value || '12');
     const endDate = new Date();
     endDate.setMonth(endDate.getMonth() + months);
     const endDateLabel = endDate.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' });
     const infoEl = el('confirm-activate-info');
-    if(infoEl) infoEl.innerHTML = `Certificación: <strong>${escapeHTML(courseName)}</strong><br>Usuario: <strong>${escapeHTML(name)}</strong> — ${escapeHTML(email)}<br>Cliente: <strong>${escapeHTML(finalClient)}</strong><br>Disponibilidad: <strong>${months} mes(es)</strong><br><span style="color:#0d6efd;">⏱️ Acceso al curso en Moodle hasta el <strong>${escapeHTML(endDateLabel)}</strong></span>`;
+    if(infoEl) infoEl.innerHTML = `Certificación: <strong>${escapeHTML(courseName)}</strong><br>Usuario: <strong>${escapeHTML(name)}</strong> — ${escapeHTML(email)}${finalClient ? `<br>Cliente: <strong>${escapeHTML(finalClient)}</strong>` : ''}<br>Disponibilidad: <strong>${months} mes(es)</strong><br><span style="color:#0d6efd;">⏱️ Acceso al curso en Moodle hasta el <strong>${escapeHTML(endDateLabel)}</strong></span>`;
     bootstrap.Modal.getOrCreateInstance(document.getElementById('confirmActivateModal')).show();
   });
 
@@ -7089,7 +7145,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const select = el('activate-final-client');
     if(!select) return;
     const current = select.value;
-    select.innerHTML = '<option value="">Selecciona un cliente final</option>' +
+    select.innerHTML = '<option value="">Sin cliente final</option>' +
       _partnerFinalClients.map(c => `<option value="${escapeHTML(c.name)}"${c.name === current ? ' selected' : ''}>${escapeHTML(c.name)}</option>`).join('');
   }
 
