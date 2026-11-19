@@ -3,6 +3,7 @@ services:
   postgres:
     image: postgres:15-alpine
     container_name: proyecto-db
+    restart: ${RESTART_POLICY:-unless-stopped}
     environment:
       POSTGRES_DB: ${DB_NAME}
       POSTGRES_USER: ${DB_USER}
@@ -32,6 +33,7 @@ services:
   api-gateway:
     build: ./api-gateway
     container_name: proyecto-gateway
+    restart: ${RESTART_POLICY:-unless-stopped}
     # Puerto del host = ingreso único. Default :3000 (igual que QA, donde GATEWAY_PORT
     # se fija explícitamente). El frontend ya no usa :3000, así que el gateway lo toma.
     # En PD detrás de CloudPanel: GATEWAY_BIND=127.0.0.1 (solo localhost; CloudPanel
@@ -62,6 +64,7 @@ services:
   servicio-usuarios:
     build: ./servicios/servicio-usuarios
     container_name: servicio-usuarios
+    restart: ${RESTART_POLICY:-unless-stopped}
     ports:
       # En PD: USUARIOS_BIND=127.0.0.1 (no exponer la API directa; el ingreso es el gateway).
       - "${USUARIOS_BIND:-0.0.0.0}:8081:8081"
@@ -93,6 +96,7 @@ services:
   servicio-notificaciones:
     build: ./servicios/servicio-notificaciones
     container_name: servicio-notificaciones
+    restart: ${RESTART_POLICY:-unless-stopped}
     expose:
       - "8083"
     env_file:
@@ -120,6 +124,7 @@ services:
   servicio-moodle:
     build: ./servicios/servicio-moodle
     container_name: servicio-moodle
+    restart: ${RESTART_POLICY:-unless-stopped}
     expose:
       - "8084"
     env_file:
@@ -138,6 +143,7 @@ services:
   servicio-compras:
     build: ./servicios/servicio-compras
     container_name: servicio-compras
+    restart: ${RESTART_POLICY:-unless-stopped}
     expose:
       - "8085"
     env_file:
@@ -160,6 +166,7 @@ services:
   frontend:
     build: ./frontend
     container_name: proyecto-frontend
+    restart: ${RESTART_POLICY:-unless-stopped}
     # Sin puerto al host: el frontend se sirve SOLO a través del gateway (mismo origen).
     # El gateway lo alcanza por la red interna como frontend:3000.
     environment:
