@@ -86,7 +86,11 @@ function resolveMonths(months, expiresAt) {
  */
 function buildContext(p = {}) {
   const campusUrl = p.campusUrl || process.env.CAMPUS_URL || 'https://campus.certjoin.com/';
-  const logoUrl   = process.env.MAIL_LOGO_URL || '';
+  // Logo: MAIL_LOGO_URL si está definido; si no, el logo oficial servido por el propio frontend
+  // (solo con URL pública https; en local/QA sin https cae al texto de marca).
+  const frontendUrl = (process.env.FRONTEND_URL || '').replace(/\/+$/, '');
+  const logoUrl   = process.env.MAIL_LOGO_URL
+    || (/^https:\/\//i.test(frontendUrl) ? `${frontendUrl}/static/assets/certjoin-logo.png` : '');
   const months    = resolveMonths(p.months, p.expiresAt);
   const expiresLbl = formatDate(p.expiresAt);
   const courseName = p.courseName || '';

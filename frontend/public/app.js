@@ -3828,7 +3828,7 @@ document.addEventListener('DOMContentLoaded', () => {
   async function _loadLogo(){
     if(_logoBase64) return _logoBase64;
     try {
-      const resp = await fetch('/static/assets/certjoin-logo.png');
+      const resp = await fetch('/static/assets/certjoin-logo-light.png');
       if(!resp.ok) return null;
       const blob = await resp.blob();
       return await new Promise(resolve => {
@@ -7431,7 +7431,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Logo
     let textX = 14;
     if(logoData){
-      try { doc.addImage(logoData, 'PNG', 10, 5, 27, 27); textX = 44; } catch(e){}
+      try { doc.addImage(logoData, 'PNG', 10, 12, 45, 12.9); textX = 62; } catch(e){}
     }
 
     // Título
