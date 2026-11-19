@@ -1,5 +1,7 @@
 (function(){
-  var API_URL = document.body.getAttribute('data-api-url') || '';
+  // Ruta relativa (mismo origen), igual que app.js. NO usar REACT_APP_API_URL del contenedor:
+  // en PD vale http://localhost:8080 y el navegador del usuario no puede alcanzarlo.
+  var API_URL = '';
   var params = new URLSearchParams(window.location.search);
   var token = params.get('token') || '';
   var subEl = document.getElementById('sp-sub');
