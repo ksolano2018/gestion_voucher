@@ -1001,6 +1001,19 @@ document.addEventListener('DOMContentLoaded', () => {
     return { courses, filtered: true };
   }
 
+  // Matrículas hechas desde la app a mostrar. En el historial del admin, con filtro aplicado,
+  // solo las activadas dentro del rango (por fecha de activación).
+  function historyAppRowsForView(P, data){
+    const all = data.app || [];
+    if(P !== 'admin-hist') return all;
+    const { fromTs, toTs } = closingRangeTs();
+    if(!fromTs && !toTs) return all;
+    return all.filter(r => {
+      const t = new Date(r.activated_at).getTime();
+      return !isNaN(t) && (!fromTs || t >= fromTs) && (!toTs || t <= toTs);
+    });
+  }
+
   function renderPartnerHistory(P, data){
     const tbM = el(P + '-moodle');
     const tbA = el(P + '-app');
@@ -1038,8 +1051,9 @@ document.addEventListener('DOMContentLoaded', () => {
         : `<tr><td colspan="5" class="text-muted">${view.filtered ? 'Ninguna matrícula de Moodle en el rango de fechas elegido' : 'Sin cursos con este grupo en Moodle'}</td></tr>`;
     }
     if(tbA){
-      tbA.innerHTML = data.app.length
-        ? data.app.map(r => `<tr>
+      const appView = historyAppRowsForView(P, data);
+      tbA.innerHTML = appView.length
+        ? appView.map(r => `<tr>
             <td>${escapeHTML(r.curso || '—')}</td>
             <td>${escapeHTML(r.user_name || '—')}</td>
             <td>${escapeHTML(r.user_email || '—')}</td>
@@ -1050,7 +1064,7 @@ document.addEventListener('DOMContentLoaded', () => {
             <td>${r.curso_suspendido_manual ? 'Suspendido' : (r.curso_activo === false ? 'Inactivo' : 'Activo')}</td>
             <td>${r.obtuvo_certificado ? '✅ ' + escapeHTML(r.codigo_certificado || '') : '—'}</td>
           </tr>`).join('')
-        : '<tr><td colspan="9" class="text-muted">Sin matrículas hechas desde la app</td></tr>';
+        : `<tr><td colspan="9" class="text-muted">${appView.length === 0 && (data.app || []).length ? 'Ninguna matrícula de la app en el rango de fechas elegido' : 'Sin matrículas hechas desde la app'}</td></tr>`;
     }
   }
 
@@ -1068,12 +1082,12 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function exportPartnerHistoryExcel(){
+  function exportPartnerHistoryExcel(P){
     const d = partnerHistoryCache.data;
     if(!d){ showToast('Primero carga el historial', 'warning'); return; }
     const wb = XLSX.utils.book_new();
     const moodleRows = [];
-    for(const c of (d.moodle && d.moodle.courses) || []){
+    for(const c of historyCoursesForView(P, d).courses){
       if(!c.members || !c.members.length){
         moodleRows.push({ 'Curso': c.course_name || '', 'Moodle ID': c.moodle_course_id, 'Visible': c.visible ? 'Sí' : 'No', 'Fin': fmtEndDate(c.enddate), 'Estudiante': '', 'Usuario Moodle': '', 'Correo': '', 'Matriculado': '' });
       }
@@ -1081,7 +1095,7 @@ document.addEventListener('DOMContentLoaded', () => {
         moodleRows.push({ 'Curso': c.course_name || '', 'Moodle ID': c.moodle_course_id, 'Visible': c.visible ? 'Sí' : 'No', 'Fin': fmtEndDate(c.enddate), 'Estudiante': m.fullname || '', 'Usuario Moodle': m.username || '', 'Correo': m.email || '', 'Matriculado': m.enrolled_at ? fmtEndDate(m.enrolled_at) : 'N/A' });
       }
     }
-    const appRows = d.app.map(r => ({
+    const appRows = historyAppRowsForView(P, d).map(r => ({
       'Curso': r.curso || '', 'Alumno': r.user_name || '', 'Correo alumno': r.user_email || '',
       'Cliente final': r.final_client || '', 'Activada': fmtDate(r.activated_at), 'Vence': fmtDate(r.expires_at),
       'Estado Moodle': r.moodle_status || '', 'Estado curso': r.curso_suspendido_manual ? 'Suspendido' : (r.curso_activo === false ? 'Inactivo' : 'Activo'),
@@ -1192,10 +1206,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function closingRows(){
     const d = partnerHistoryCache.data;
     if(!d) return [];
-    const from = (el('admin-hist-from') || {}).value;
-    const to = (el('admin-hist-to') || {}).value;
-    const fromTs = from ? new Date(from + 'T00:00:00').getTime() : null;
-    const toTs = to ? new Date(to + 'T23:59:59').getTime() : null;
+    const { fromTs, toTs } = closingRangeTs();
     const now = new Date();
     return d.app
       .filter(r => {
@@ -1253,19 +1264,15 @@ document.addEventListener('DOMContentLoaded', () => {
   function certKeySet(d){
     return new Set((d.cert || []).map(c => c.moodle_course_id + ':' + c.moodle_user_id));
   }
-  // Fecha de fin (enddate, timestamp Unix en segundos; 0 = sin fecha) de cada curso de Moodle.
-  function moodleCourseEndMap(d){
-    const map = new Map();
-    const courses = (d.moodle && Array.isArray(d.moodle.courses)) ? d.moodle.courses : [];
-    courses.forEach(c => { if(c.moodle_course_id) map.set(String(c.moodle_course_id), c.enddate || 0); });
-    return map;
-  }
   // Rango de fechas del filtro (ms). Para los alumnos de Moodle sin voucher en la app se
   // compara contra su fecha de matrícula en Moodle (enrolled_at, segundos Unix); sin ese
   // dato no se pueden ubicar en un rango y quedan fuera cuando hay filtro.
+  // El rango solo cambia al pulsar "Aplicar" (histApplied); los inputs son un borrador.
+  let histApplied = { from: '', to: '' };
+  function histHasFilter(){ return !!(histApplied.from || histApplied.to); }
   function closingRangeTs(){
-    const from = (el('admin-hist-from') || {}).value;
-    const to = (el('admin-hist-to') || {}).value;
+    const from = histApplied.from;
+    const to = histApplied.to;
     return {
       fromTs: from ? new Date(from + 'T00:00:00').getTime() : null,
       toTs: to ? new Date(to + 'T23:59:59').getTime() : null
@@ -1289,14 +1296,6 @@ document.addEventListener('DOMContentLoaded', () => {
     return new Set((d.app || []).filter(r => r.moodle_course_id && r.moodle_user_id).map(r => r.moodle_course_id + ':' + r.moodle_user_id));
   }
 
-  // Para un alumno histórico de Moodle (sin voucher/activación en la app) no hay dato de
-  // progreso real (no hay completion status confiable vía Web Service). Se infiere por la
-  // fecha de fin del curso: sin fecha o fecha futura -> curso sigue abierto -> probablemente
-  // sigue cursando. Curso ya cerrado -> no se puede saber si completó o abandonó.
-  function isHistoricCourseOpen(courseEndMap, key){
-    const end = courseEndMap.get(String(key).split(':')[0]) || 0;
-    return !end || (end * 1000) > Date.now();
-  }
 
   // Matriculados/Certificados: si no hay filtro de fecha, se suma también el histórico de
   // Moodle (alumnos sin voucher en la app, sin fecha de matrícula conocida). Con filtro de
@@ -1307,7 +1306,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const count = s => dedupedRows.filter(r => r.estado_cierre === s).length;
     let matriculados = dedupedRows.length;
     let certificados = countCertificados(dedupedRows);
-    let cursandoEstimado = 0;
     const cursando = count('Cursando');
     const completados = count('Completado');
     const vencidos = count('Vencido');
@@ -1319,33 +1317,25 @@ document.addEventListener('DOMContentLoaded', () => {
       const certKeys = certKeySet(d);
       matriculados = union.size;
       certificados = [...union].filter(k => certKeys.has(k)).length;
-      const courseEndMap = moodleCourseEndMap(d);
-      [...populationKeys].forEach(k => {
-        if(activationKeys.has(k)) return;
-        if(isHistoricCourseOpen(courseEndMap, k)) cursandoEstimado++;
-      });
     } else {
       // Con filtro: se suman los alumnos históricos de Moodle (sin activación en la app)
       // cuya fecha de matrícula cae en el rango.
       const range = closingRangeTs();
       const appKeys = allAppMoodleKeys(d);
       const certKeys = certKeySet(d);
-      const courseEndMap = moodleCourseEndMap(d);
       moodlePopulationEntries(d).forEach((enrolledAt, key) => {
         if(appKeys.has(key) || !enrolledInRange(enrolledAt, range)) return;
         matriculados++;
         if(certKeys.has(key)) certificados++;
-        if(isHistoricCourseOpen(courseEndMap, key)) cursandoEstimado++;
       });
     }
     // Alumnos del histórico de Moodle que no vinieron por voucher y cuyo curso ya cerró: no
-    // tienen Cursando/Completado/Vencido/Sin matricular ni "Cursando (estimado)" (no sabemos
+    // tienen Cursando/Completado/Vencido/Sin matricular (no sabemos
     // su estado real). Matriculados - (las categorías conocidas) = cuántos quedan sin clasificar.
-    const historicoSinEstado = Math.max(0, matriculados - (cursando + completados + vencidos + sinMatricular + cursandoEstimado));
+    const historicoSinEstado = Math.max(0, matriculados - (cursando + completados + vencidos + sinMatricular));
     return {
       matriculados,
       cursando,
-      cursandoEstimado,
       completados,
       certificados,
       fallaron: countFallaronEstimado(dedupedRows),
@@ -1361,12 +1351,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const d = partnerHistoryCache.data;
     if(!d) return;
     const rows = closingRows();
-    const hasDateFilter = !!((el('admin-hist-from') || {}).value || (el('admin-hist-to') || {}).value);
+    const hasDateFilter = histHasFilter();
     const k = closingKpis(d, rows, hasDateFilter);
     const kpis = [
       ['Matriculados', k.matriculados, 'primary'],
       ['Cursando', k.cursando, 'info'],
-      ['Cursando (estimado)', k.cursandoEstimado, 'info'],
       ['Completados', k.completados, 'success'],
       ['Certificados', k.certificados, 'success'],
       ['Histórico sin estado', k.historicoSinEstado, 'muted'],
@@ -1401,7 +1390,7 @@ document.addEventListener('DOMContentLoaded', () => {
         'Codigo_Certificado': r.codigo_certificado || 'N/A',
       };
     });
-    const hasDateFilter = !!((el('admin-hist-from') || {}).value || (el('admin-hist-to') || {}).value);
+    const hasDateFilter = histHasFilter();
     const k = closingKpis(d, rows, hasDateFilter);
 
     // Sin filtro de fecha, el Resumen suma también el histórico de Moodle (alumnos sin
@@ -1419,7 +1408,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const range = closingRangeTs();
       const certByKey = new Map();
       (d.cert || []).forEach(c => certByKey.set(c.moodle_course_id + ':' + c.moodle_user_id, c));
-      const courseEndMap = moodleCourseEndMap(d);
       const courses = (d.moodle && Array.isArray(d.moodle.courses)) ? d.moodle.courses : [];
       courses.forEach(c => {
         (c.members || []).forEach(m => {
@@ -1439,7 +1427,7 @@ document.addEventListener('DOMContentLoaded', () => {
             'Fecha_Activacion': 'N/A',
             'Fecha_Completado': 'N/A',
             'Vence': 'N/A',
-            'Estado': isHistoricCourseOpen(courseEndMap, key) ? 'Cursando (estimado)' : 'Histórico sin estado',
+            'Estado': 'Histórico sin estado',
             'Cliente_final': '',
             'Obtuvo_Certificado': cert ? 'Sí' : 'No',
             'Fecha_Emision_Certificado': cert ? fmtDate(cert.fecha_emision) : 'N/A',
@@ -1452,7 +1440,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const resumen = [
       { 'Indicador': 'Matriculados', 'Total': k.matriculados },
       { 'Indicador': 'Cursando', 'Total': k.cursando },
-      { 'Indicador': 'Cursando (estimado)', 'Total': k.cursandoEstimado },
       { 'Indicador': 'Completados', 'Total': k.completados },
       { 'Indicador': 'Certificados', 'Total': k.certificados },
       { 'Indicador': 'Fallaron (estimado)', 'Total': k.fallaron },
@@ -1460,8 +1447,8 @@ document.addEventListener('DOMContentLoaded', () => {
       { 'Indicador': 'Sin matricular', 'Total': k.sinMatricular },
       { 'Indicador': 'Histórico sin estado', 'Total': k.historicoSinEstado },
     ];
-    const from = (el('admin-hist-from') || {}).value || 'inicio';
-    const to = (el('admin-hist-to') || {}).value || 'hoy';
+    const from = histApplied.from || 'inicio';
+    const to = histApplied.to || 'hoy';
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(resumen), 'Resumen');
     XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(detail.length ? detail : [{ 'Sin datos': '' }]), 'Detalle');
@@ -1469,13 +1456,33 @@ document.addEventListener('DOMContentLoaded', () => {
     XLSX.writeFile(wb, `cierre_${grupo}_${from}_a_${to}.xlsx`);
   }
 
-  // Al cambiar el rango se actualizan los contadores Y la tabla de cursos/estudiantes de Moodle.
-  function onHistRangeChange(){
+  // "Aplicar" fija el rango y actualiza contadores Y la tabla de cursos/estudiantes de Moodle.
+  function renderHistFilterNote(){
+    const note = el('admin-hist-filter-note'); if(!note) return;
+    const fd = v => v ? new Date(v + 'T00:00:00').toLocaleDateString('es-CO') : '…';
+    const draftFrom = (el('admin-hist-from') || {}).value || '';
+    const draftTo = (el('admin-hist-to') || {}).value || '';
+    const pending = draftFrom !== histApplied.from || draftTo !== histApplied.to;
+    note.innerHTML = histHasFilter()
+      ? `Filtro aplicado: <strong>${fd(histApplied.from)} → ${fd(histApplied.to)}</strong>${pending ? ' · <span class="text-warning">cambiaste las fechas: pulsa Aplicar</span>' : ''}`
+      : (pending ? '<span class="text-warning">Pulsa Aplicar para filtrar por estas fechas.</span>' : 'Sin filtro de fechas: se muestra todo el historial.');
+  }
+  function applyHistRange(){
+    histApplied = { from: (el('admin-hist-from') || {}).value || '', to: (el('admin-hist-to') || {}).value || '' };
     renderClosing();
     if(partnerHistoryCache.data) renderPartnerHistory('admin-hist', partnerHistoryCache.data);
+    renderHistFilterNote();
   }
-  on('admin-hist-from', 'change', onHistRangeChange);
-  on('admin-hist-to', 'change', onHistRangeChange);
+  on('admin-hist-apply', 'click', applyHistRange);
+  on('admin-hist-clear', 'click', () => {
+    const f = el('admin-hist-from'), t = el('admin-hist-to');
+    if(f) f.value = '';
+    if(t) t.value = '';
+    applyHistRange();
+  });
+  on('admin-hist-from', 'change', renderHistFilterNote);
+  on('admin-hist-to', 'change', renderHistFilterNote);
+  renderHistFilterNote();
   on('admin-hist-closing-excel', 'click', exportClosingExcel);
 
   on('partner-hist-refresh', 'click', () => loadPartnerHistory(true));
@@ -1484,8 +1491,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if(pid) loadHistoryFor('admin-hist', pid, true);
     else showToast('Selecciona un partner', 'warning');
   });
-  on('partner-hist-excel', 'click', exportPartnerHistoryExcel);
-  on('admin-hist-excel', 'click', exportPartnerHistoryExcel);
+  on('partner-hist-excel', 'click', () => exportPartnerHistoryExcel('partner-hist'));
+  on('admin-hist-excel', 'click', () => exportPartnerHistoryExcel('admin-hist'));
 
   // Cart
   function loadCart(){
@@ -4345,6 +4352,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
   on('admin-activaciones-refresh',      'click', () => loadAdminActivaciones(1));
   on('admin-act-filter-btn',            'click', () => loadAdminActivaciones(1));
+  on('admin-act-filter-clear',          'click', () => {
+    ['admin-act-filter-partner','admin-act-filter-moodle','admin-act-filter-course'].forEach(id => { const n = el(id); if(n) n.value = ''; });
+    loadAdminActivaciones(1);
+  });
   on('admin-moodle-sync-completions',   'click', async (e) => {
     const btn = e.target;
     btn.disabled = true;
@@ -4368,6 +4379,43 @@ document.addEventListener('DOMContentLoaded', () => {
       btn.innerHTML = orig;
     }
   });
+
+  // Reportes: "Limpiar" borra fechas/partner y oculta la vista previa del reporte.
+  ['compras','vouchers','activaciones','partners','tendencia'].forEach(mod => {
+    on(`rpt-${mod}-clear`, 'click', () => {
+      [`rpt-${mod}-start`, `rpt-${mod}-end`, `rpt-${mod}-partner`].forEach(id => { const n = el(id); if(n) n.value = ''; });
+      const pv = el(`rpt-${mod}-preview`); if(pv) pv.style.display = 'none';
+      rptMsg(`rpt-${mod}-msg`, '');
+      if(typeof _rptData === 'object' && _rptData) _rptData[mod] = [];
+    });
+  });
+
+  // Guardia común de rangos: si "Desde" es posterior a "Hasta" no se ejecuta la consulta.
+  // Va en fase de captura para frenar el clic antes de que llegue al manejador del botón.
+  const RANGE_GUARDS = {
+    'pf-apply': ['pf-date-from', 'pf-date-to'],
+    'admin-audit-apply': ['audit-filter-start-date', 'audit-filter-end-date'],
+    'admin-audit-export-csv': ['audit-filter-start-date', 'audit-filter-end-date'],
+    'voucher-filter-apply': ['voucher-filter-date-from', 'voucher-filter-date-to'],
+    'admin-hist-apply': ['admin-hist-from', 'admin-hist-to'],
+    'admin-hist-closing-excel': ['admin-hist-from', 'admin-hist-to'],
+    'rpt-compras-generate': ['rpt-compras-start', 'rpt-compras-end'],
+    'rpt-vouchers-generate': ['rpt-vouchers-start', 'rpt-vouchers-end'],
+    'rpt-activaciones-generate': ['rpt-activaciones-start', 'rpt-activaciones-end'],
+    'rpt-partners-generate': ['rpt-partners-start', 'rpt-partners-end'],
+    'rpt-tendencia-generate': ['rpt-tendencia-start', 'rpt-tendencia-end']
+  };
+  document.addEventListener('click', (ev) => {
+    const b = ev.target.closest && ev.target.closest('button');
+    const ids = b && RANGE_GUARDS[b.id];
+    if(!ids) return;
+    const f = (el(ids[0]) || {}).value, t = (el(ids[1]) || {}).value;
+    if(f && t && f > t){
+      ev.stopImmediatePropagation();
+      ev.preventDefault();
+      showToast('La fecha "Desde" no puede ser posterior a "Hasta".', 'warning');
+    }
+  }, true);
 
   on('admin-audit-refresh', 'click', () => loadAdminAuditMovements(_adminAuditPage || 1));
   on('admin-audit-apply', 'click', () => loadAdminAuditMovements(1));

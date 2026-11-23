@@ -2679,7 +2679,7 @@
                           </select>
                         </div>
                         <div class="col-md-2 d-flex gap-2 align-items-end">
-                          <button id="pf-apply" class="btn btn-primary btn-sm">🔍 Filtrar</button>
+                          <button id="pf-apply" class="btn btn-primary btn-sm">🔍 Aplicar</button>
                           <button id="pf-clear" class="btn btn-outline-secondary btn-sm">✕ Limpiar</button>
                         </div>
                       </div>
@@ -3143,7 +3143,7 @@
                           <input id="audit-filter-search" class="form-control form-control-sm" placeholder="Texto libre: tipo, estado, resumen, partner o compra">
                         </div>
                         <div class="col-md-4 d-flex gap-2">
-                          <button id="admin-audit-apply" class="btn btn-primary btn-sm">🔍 Filtrar</button>
+                          <button id="admin-audit-apply" class="btn btn-primary btn-sm">🔍 Aplicar</button>
                           <button id="admin-audit-clear" class="btn btn-outline-secondary btn-sm">✕ Limpiar</button>
                         </div>
                       </div>
@@ -3229,7 +3229,7 @@
                           </select>
                         </div>
                         <div class="col-md-3">
-                          <button id="rpt-compras-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                          <div class="d-flex gap-2"><button id="rpt-compras-generate" class="btn btn-primary btn-sm flex-grow-1">⚡ Generar</button><button id="rpt-compras-clear" class="btn btn-outline-secondary btn-sm" title="Borrar criterios de búsqueda">✕ Limpiar</button></div>
                         </div>
                       </div>
                       <div id="rpt-compras-msg" class="text-muted small mb-2"></div>
@@ -3271,7 +3271,7 @@
                           </select>
                         </div>
                         <div class="col-md-3">
-                          <button id="rpt-vouchers-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                          <div class="d-flex gap-2"><button id="rpt-vouchers-generate" class="btn btn-primary btn-sm flex-grow-1">⚡ Generar</button><button id="rpt-vouchers-clear" class="btn btn-outline-secondary btn-sm" title="Borrar criterios de búsqueda">✕ Limpiar</button></div>
                         </div>
                       </div>
                       <div id="rpt-vouchers-msg" class="text-muted small mb-2"></div>
@@ -3303,7 +3303,7 @@
                           <input id="rpt-activaciones-end" type="date" class="form-control form-control-sm">
                         </div>
                         <div class="col-md-4">
-                          <button id="rpt-activaciones-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                          <div class="d-flex gap-2"><button id="rpt-activaciones-generate" class="btn btn-primary btn-sm flex-grow-1">⚡ Generar</button><button id="rpt-activaciones-clear" class="btn btn-outline-secondary btn-sm" title="Borrar criterios de búsqueda">✕ Limpiar</button></div>
                         </div>
                       </div>
                       <div id="rpt-activaciones-msg" class="text-muted small mb-2"></div>
@@ -3335,7 +3335,7 @@
                           <input id="rpt-partners-end" type="date" class="form-control form-control-sm">
                         </div>
                         <div class="col-md-4">
-                          <button id="rpt-partners-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                          <div class="d-flex gap-2"><button id="rpt-partners-generate" class="btn btn-primary btn-sm flex-grow-1">⚡ Generar</button><button id="rpt-partners-clear" class="btn btn-outline-secondary btn-sm" title="Borrar criterios de búsqueda">✕ Limpiar</button></div>
                         </div>
                       </div>
                       <div id="rpt-partners-msg" class="text-muted small mb-2"></div>
@@ -3367,7 +3367,7 @@
                           <input id="rpt-tendencia-end" type="date" class="form-control form-control-sm">
                         </div>
                         <div class="col-md-4">
-                          <button id="rpt-tendencia-generate" class="btn btn-primary btn-sm w-100">⚡ Generar</button>
+                          <div class="d-flex gap-2"><button id="rpt-tendencia-generate" class="btn btn-primary btn-sm flex-grow-1">⚡ Generar</button><button id="rpt-tendencia-clear" class="btn btn-outline-secondary btn-sm" title="Borrar criterios de búsqueda">✕ Limpiar</button></div>
                         </div>
                       </div>
                       <div id="rpt-tendencia-msg" class="text-muted small mb-2"></div>
@@ -3415,12 +3415,14 @@
                     <div class="row g-2 align-items-end mb-2">
                       <div class="col-md-3"><label class="form-label small mb-1">Desde (activación o matrícula)</label><input type="date" id="admin-hist-from" class="form-control form-control-sm"></div>
                       <div class="col-md-3"><label class="form-label small mb-1">Hasta (activación o matrícula)</label><input type="date" id="admin-hist-to" class="form-control form-control-sm"></div>
-                      <div class="col-md-6 text-end"><button type="button" id="admin-hist-closing-excel" class="btn btn-sm btn-success">📥 Excel de cierre</button></div>
+                      <div class="col-md-6 d-flex flex-wrap gap-2 justify-content-md-end">
+                        <button type="button" id="admin-hist-apply" class="btn btn-sm btn-primary">🔍 Aplicar</button>
+                        <button type="button" id="admin-hist-clear" class="btn btn-sm btn-outline-secondary" title="Borrar criterios de búsqueda">✕ Limpiar</button>
+                        <button type="button" id="admin-hist-closing-excel" class="btn btn-sm btn-success">📥 Excel de cierre</button>
+                      </div>
                     </div>
+                    <div id="admin-hist-filter-note" class="small text-muted mb-2"></div>
                     <div id="admin-hist-kpis" class="row g-2"></div>
-                    <div class="small text-muted mt-2">
-                      Histórico sin estado: alumnos de Moodle sin voucher en la app (algunos pueden estar certificados) — no son "Cursando", es que al no haber activación en la app no sabemos su avance real.
-                    </div>
                   </div>
                   <div class="d-flex flex-wrap gap-2 mb-3">
                     <button id="admin-hist-refresh" class="btn btn-sm btn-outline-primary">↻ Actualizar desde Moodle</button>
@@ -3472,7 +3474,7 @@
                       </select>
                     </div>
                     <div class="col-md-3">
-                      <button id="admin-act-filter-btn" class="btn btn-primary btn-sm w-100">🔍 Filtrar</button>
+                      <div class="d-flex gap-2"><button id="admin-act-filter-btn" class="btn btn-primary btn-sm flex-grow-1">🔍 Aplicar</button><button id="admin-act-filter-clear" class="btn btn-outline-secondary btn-sm" title="Borrar criterios de búsqueda">✕ Limpiar</button></div>
                     </div>
                   </div>
 
@@ -3878,9 +3880,9 @@
                           </select>
                         </div>
                         <div class="col-auto d-flex align-items-end gap-2">
-                          <button id="voucher-filter-apply" class="btn btn-sm btn-primary">🔍 Filtrar</button>
+                          <button id="voucher-filter-apply" class="btn btn-sm btn-primary">🔍 Aplicar</button>
                           <button id="voucher-export-excel" class="btn btn-sm btn-success">📊 Descargar Excel</button>
-                          <button id="voucher-filter-clear" class="btn btn-sm btn-outline-secondary">✕</button>
+                          <button id="voucher-filter-clear" class="btn btn-sm btn-outline-secondary" title="Borrar criterios de búsqueda">✕ Limpiar</button>
                         </div>
                       </div>
                       <div id="voucher-filter-custom-dates" class="row g-2 mt-1" style="display:none;">
