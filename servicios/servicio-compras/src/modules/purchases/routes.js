@@ -540,6 +540,17 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
           req
         );
 
+        // La cuenta de Stripe puede cobrar cosas ajenas a esta app: solo se procesa un
+        // checkout que nació aquí (customer reconocido + purchase_id de nuestra compra).
+        if (syncResult.status === 'IGNORED' || !syncResult.partner_id || !metadata.purchase_id) {
+          console.log('↪️ checkout.session.completed ignorado (no es una compra de la app):', session.id);
+          await logSystemEvent('STRIPE_CHECKOUT_IGNORED', 'PAYMENT', null, customer || null, null, {
+            session_id: session.id,
+            reason: syncResult.status === 'IGNORED' ? 'not_an_app_customer' : (!metadata.purchase_id ? 'no_purchase_id' : 'no_partner')
+          });
+          break;
+        }
+
         const partnerId = syncResult.partner_id;
 
         // Step 2: Retrieve line items from Stripe

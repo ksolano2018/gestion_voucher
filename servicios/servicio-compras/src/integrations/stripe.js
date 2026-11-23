@@ -2,18 +2,11 @@
 // Integración con Stripe: cliente, sincronización de customers↔partners/usuarios,
 // y el job de sincronización en background. Usado por purchases/checkout/users/webhooks.
 const Stripe = require('stripe');
-const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const pool = require('../db/pool');
 const { logSystemEvent } = require('../lib/audit');
-const { getDefaultPricingProfileId } = require('../modules/pricing/service');
 
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY || 'sk_test_XXXXXXXXXXXXXXXX');
-
-function generateTemporaryPassword(seed = 'partner') {
-  const normalizedSeed = String(seed).replace(/[^a-zA-Z0-9]/g, '').slice(-8) || 'Partner';
-  return `Tmp!${normalizedSeed}Aa1`;
-}
 
 function isMissingStripeCustomerError(error) {
   return Boolean(
@@ -85,14 +78,26 @@ async function syncUserWithStripe(email, name, userId) {
   }
 }
 
+/**
+ * Vincula un customer de Stripe con un usuario/partner YA EXISTENTE de la app.
+ *
+ * La cuenta de Stripe puede recibir cobros que no tienen nada que ver con esta app,
+ * así que aquí NUNCA se crean usuarios ni partners, ni se cambia el rol de nadie.
+ * Un customer se considera "nuestro" solo si:
+ *   - su metadata.app_user_id (lo pone la app al crear el customer/checkout) apunta a un
+ *     usuario existente, o
+ *   - ya está vinculado (users/partners.stripe_customer_id) a un registro de la app.
+ * El correo NO se usa para reconocerlo (un correo coincidente no prueba que sea nuestro).
+ * Si no es nuestro → { status: 'IGNORED' } y no se toca nada.
+ */
 async function upsertPartnerAndUserFromStripeCustomer(customer, source = 'STRIPE_SYNC', req = null) {
-  if (!customer || !customer.id || !customer.email) {
+  if (!customer || !customer.id) {
     return { status: 'SKIPPED', reason: 'missing_required_customer_fields' };
   }
 
   const stripeCustomerId = customer.id;
-  const email = customer.email.toLowerCase();
-  const name = customer.name || email.split('@')[0] || `Partner ${stripeCustomerId.slice(-6)}`;
+  const email = customer.email ? customer.email.toLowerCase() : null;
+  const name = customer.name || (email ? email.split('@')[0] : null) || `Partner ${stripeCustomerId.slice(-6)}`;
   const metadata = customer.metadata || {};
 
   const client = await pool.connect();
@@ -101,11 +106,10 @@ async function upsertPartnerAndUserFromStripeCustomer(customer, source = 'STRIPE
 
     let userId = null;
     let partnerId = null;
-    let createdUser = false;
-    let createdPartner = false;
 
-    if (metadata.app_user_id) {
-      const byAppUserId = await client.query('SELECT id, partner_id FROM users WHERE id=$1', [metadata.app_user_id]);
+    const appUserId = parseInt(metadata.app_user_id, 10);
+    if (Number.isInteger(appUserId)) {
+      const byAppUserId = await client.query('SELECT id, partner_id FROM users WHERE id=$1', [appUserId]);
       if (byAppUserId.rowCount > 0) {
         userId = byAppUserId.rows[0].id;
         partnerId = byAppUserId.rows[0].partner_id;
@@ -120,64 +124,27 @@ async function upsertPartnerAndUserFromStripeCustomer(customer, source = 'STRIPE
       }
     }
 
-    if (!userId) {
-      const byEmail = await client.query('SELECT id, partner_id FROM users WHERE email=$1', [email]);
-      if (byEmail.rowCount > 0) {
-        userId = byEmail.rows[0].id;
-        partnerId = byEmail.rows[0].partner_id;
-      }
-    }
-
     if (!partnerId) {
       const partnerByStripe = await client.query('SELECT id FROM partners WHERE stripe_customer_id=$1', [stripeCustomerId]);
-      if (partnerByStripe.rowCount > 0) {
-        partnerId = partnerByStripe.rows[0].id;
-      }
+      if (partnerByStripe.rowCount > 0) partnerId = partnerByStripe.rows[0].id;
     }
 
-    if (!partnerId) {
-      const partnerByEmail = await client.query('SELECT id FROM partners WHERE email=$1', [email]);
-      if (partnerByEmail.rowCount > 0) {
-        partnerId = partnerByEmail.rows[0].id;
-      }
+    if (!userId && !partnerId) {
+      await client.query('ROLLBACK');
+      await logSystemEvent(
+        'STRIPE_CUSTOMER_IGNORED', 'STRIPE_SYNC', null, stripeCustomerId, null,
+        { source, customer_email: email, reason: 'not_an_app_customer' },
+        'SUCCESS', null, req
+      );
+      return { status: 'IGNORED', reason: 'not_an_app_customer', stripe_customer_id: stripeCustomerId, email };
     }
 
-    if (!partnerId) {
-      const defaultPricingProfileId = await getDefaultPricingProfileId();
-      // group_name = nombre si está libre; si ya lo usa otro partner, queda NULL
-      // (COALESCE usa el nombre) y no se rompe la compra.
-      const groupTaken = await client.query('SELECT 1 FROM partners WHERE LOWER(group_name)=LOWER($1) LIMIT 1', [name]);
-      const groupName = groupTaken.rowCount > 0 ? null : name;
-      const createdPartnerResult = await client.query(
-        'INSERT INTO partners (name, email, role, stripe_customer_id, pricing_profile_id, group_name) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id',
-        [name, email, 'partner', stripeCustomerId, defaultPricingProfileId, groupName]
-      );
-      partnerId = createdPartnerResult.rows[0].id;
-      createdPartner = true;
-    } else {
-      await client.query(
-        'UPDATE partners SET name=$1, email=$2, stripe_customer_id=$3 WHERE id=$4',
-        [name, email, stripeCustomerId, partnerId]
-      );
+    // Solo se vincula (no se cambia rol, nombre ni correo del usuario/partner).
+    if (partnerId) {
+      await client.query('UPDATE partners SET stripe_customer_id=$1 WHERE id=$2 AND stripe_customer_id IS NULL', [stripeCustomerId, partnerId]);
     }
-
-    let tempPassword = null;
-    if (!userId) {
-      tempPassword = generateTemporaryPassword(stripeCustomerId);
-      const passwordHash = await bcrypt.hash(tempPassword, 10);
-      const createdUserResult = await client.query(
-        `INSERT INTO users (email, password, role, partner_id, stripe_customer_id, must_change_password, updated_at)
-         VALUES ($1, $2, $3, $4, $5, TRUE, NOW())
-         RETURNING id`,
-        [email, passwordHash, 'partner', partnerId, stripeCustomerId]
-      );
-      userId = createdUserResult.rows[0].id;
-      createdUser = true;
-    } else {
-      await client.query(
-        'UPDATE users SET role=$1, partner_id=$2, stripe_customer_id=$3, updated_at=NOW() WHERE id=$4',
-        ['partner', partnerId, stripeCustomerId, userId]
-      );
+    if (userId) {
+      await client.query('UPDATE users SET stripe_customer_id=$1, updated_at=NOW() WHERE id=$2 AND stripe_customer_id IS NULL', [stripeCustomerId, userId]);
     }
 
     await client.query(
@@ -191,43 +158,23 @@ async function upsertPartnerAndUserFromStripeCustomer(customer, source = 'STRIPE
     await client.query('COMMIT');
 
     await logSystemEvent(
-      createdUser ? 'STRIPE_CUSTOMER_SYNC_CREATED_USER' : 'STRIPE_CUSTOMER_SYNC_UPDATED_USER',
-      'STRIPE_SYNC',
-      userId,
-      stripeCustomerId,
-      null,
-      {
-        source,
-        customer_email: email,
-        partner_id: partnerId,
-        created_user: createdUser,
-        created_partner: createdPartner
-      },
-      'SUCCESS',
-      null,
-      req
+      'STRIPE_CUSTOMER_SYNC_UPDATED_USER', 'STRIPE_SYNC', userId, stripeCustomerId, null,
+      { source, customer_email: email, partner_id: partnerId, created_user: false, created_partner: false },
+      'SUCCESS', null, req
     );
 
     return {
-      status: createdUser ? 'CREATED' : 'UPDATED',
+      status: 'UPDATED',
       user_id: userId,
       partner_id: partnerId,
       stripe_customer_id: stripeCustomerId,
-      email,
-      temp_password: tempPassword
+      email
     };
   } catch (e) {
-    await client.query('ROLLBACK');
+    await client.query('ROLLBACK').catch(() => {});
     await logSystemEvent(
-      'STRIPE_CUSTOMER_SYNC_ERROR',
-      'STRIPE_SYNC',
-      null,
-      customer.id,
-      null,
-      { source, customer_email: customer.email },
-      'FAILED',
-      e.message,
-      req
+      'STRIPE_CUSTOMER_SYNC_ERROR', 'STRIPE_SYNC', null, customer.id, null,
+      { source, customer_email: customer.email }, 'FAILED', e.message, req
     );
     throw e;
   } finally {
