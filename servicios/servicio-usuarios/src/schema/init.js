@@ -499,6 +499,21 @@ async function initDb(){
     CREATE INDEX IF NOT EXISTS idx_moodle_pw_tokens_token ON moodle_password_setup_tokens(token);
   `);
 
+  // Recuperación de contraseña de usuarios de la plataforma ("Olvidé mi contraseña").
+  // Se guarda solo el HASH SHA-256 del token (si se filtra la BD no sirven los links).
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id SERIAL PRIMARY KEY,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash VARCHAR(64) UNIQUE NOT NULL,
+      expires_at TIMESTAMP NOT NULL,
+      used_at TIMESTAMP,
+      requested_ip VARCHAR(64),
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_pw_reset_user ON password_reset_tokens(user_id, created_at DESC);
+  `);
+
   // Matrícula de cursos hijo (Content/Simulator) por activación. `activations` es 1:1
   // con un solo curso (el padre); esta tabla registra el detalle N:1 del fan-out de
   // matrícula Moodle hacia cada hijo vinculado a ese padre en el momento de activar.

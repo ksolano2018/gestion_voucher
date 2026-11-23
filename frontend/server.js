@@ -84,6 +84,18 @@ app.get('/set-password', (req, res) => {
   });
 });
 
+// Página pública donde el usuario de la plataforma restablece su contraseña (enlace del correo).
+app.get('/reset-password', (req, res) => {
+  const pagePath = path.join(__dirname, 'public', 'reset-password.html');
+  fs.readFile(pagePath, 'utf8', (err, data) => {
+    if (err) return res.status(500).send('Error cargando la página');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.send(data);
+  });
+});
+
 app.listen(port, () => {
   console.log(`Frontend escuchando en el puerto ${port}, API_URL=${apiUrl}`);
 });

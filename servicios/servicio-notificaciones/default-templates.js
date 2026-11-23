@@ -65,6 +65,8 @@ const TEMPLATE_VARIABLES_USER = [
   { token: '{{loginUrl}}',   desc: 'URL del botón Iniciar sesión (login de la plataforma)' },
   { token: '{{{headerInner}}}', desc: 'Cabecera (logo o marca). HTML ya generado.' },
   { token: '{{{socialsHtml}}}', desc: 'Iconos de redes del footer. HTML ya generado.' },
+  { token: '{{resetUrl}}',  desc: 'Enlace de un solo uso para restablecer la contraseña (solo en la plantilla de recuperación)' },
+  { token: '{{expiresMinutes}}', desc: 'Minutos de vigencia del enlace de recuperación' },
   { token: '{{#isPartner}}…{{/isPartner}}', desc: 'Bloque visible solo si el rol es Partner' },
   { token: '{{#hasLoginUrl}}…{{/hasLoginUrl}}', desc: 'Bloque visible solo si hay URL de login' }
 ];
@@ -73,7 +75,8 @@ const TEMPLATE_VARIABLES_USER = [
 const TEMPLATE_META = {
   student_welcome:        { audience: 'student', variables: TEMPLATE_VARIABLES },
   student_new_enrollment: { audience: 'student', variables: TEMPLATE_VARIABLES },
-  partner_welcome:        { audience: 'partner', variables: TEMPLATE_VARIABLES_USER }
+  partner_welcome:        { audience: 'partner', variables: TEMPLATE_VARIABLES_USER },
+  password_reset:         { audience: 'partner', variables: TEMPLATE_VARIABLES_USER }
 };
 
 function escapeHtml(str) {
@@ -152,7 +155,11 @@ function buildContext(p = {}) {
     roleLabel: roleLabelFor(p.role),
     loginUrl,
     hasLoginUrl: Boolean(loginUrl),
-    isPartner: String(p.role || '').toLowerCase() === 'partner'
+    isPartner: String(p.role || '').toLowerCase() === 'partner',
+    // ── Recuperación de contraseña ──
+    resetUrl: p.resetUrl || '',
+    hasResetUrl: Boolean(p.resetUrl),
+    expiresMinutes: 60
   };
 }
 
@@ -351,6 +358,66 @@ const COPY_PARTNER_WELCOME = {
   introLine: 'Hemos creado tu acceso para que gestiones tus certificaciones desde un solo lugar.'
 };
 
+// ── Recuperación de contraseña (usuarios de la plataforma): enlace de un solo uso. ──
+function layoutResetHtml() {
+  const Y = BRAND.yellow, O = BRAND.orange, I = BRAND.ink, L = BRAND.light, W = BRAND.white;
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:${L};font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${L};">
+    <tr><td align="center" style="padding:0;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="800" style="max-width:800px;width:100%;">
+
+        <tr><td align="center" style="background:${L};padding:24px 16px;">{{{headerInner}}}</td></tr>
+
+        <tr><td style="background:${W};padding:28px 28px 20px;text-align:center;">
+          <h1 style="margin:0 0 12px;font-size:23pt;line-height:1.25;font-weight:700;color:${I};">🔐 Restablece tu contraseña</h1>
+          <p style="margin:0;font-size:11pt;font-weight:700;color:${O};">Recibimos una solicitud para tu cuenta</p>
+          <p style="margin:6px 0 0;font-size:14pt;color:${I};">Hola, {{userName}}. Pulsa el botón para crear una nueva contraseña.</p>
+        </td></tr>
+
+        <tr><td style="background:${Y};padding:26px 28px;text-align:center;">
+          {{#hasResetUrl}}
+          <p style="margin:0 0 14px;">
+            <a href="{{resetUrl}}" target="_blank" style="background:${I};color:${W};text-decoration:none;padding:12px 28px;border-radius:4px;font-size:12pt;font-weight:700;display:inline-block;">🔑 Crear nueva contraseña</a>
+          </p>
+          {{/hasResetUrl}}
+          <p style="margin:0;font-size:13px;color:${I};">Este enlace es de un solo uso y expira en <strong>{{expiresMinutes}} minutos</strong>.</p>
+          <p style="margin:8px 0 0;font-size:13px;color:${I};"><strong>👤 Usuario:</strong> {{email}}</p>
+        </td></tr>
+
+        <tr><td style="background:${L};padding:24px 28px;">
+          <h2 style="margin:0 0 10px;font-size:15pt;font-weight:700;color:${I};">¿No fuiste tú?</h2>
+          <p style="margin:0;font-size:11pt;color:${I};">Si no solicitaste este cambio, ignora este correo: tu contraseña actual sigue siendo la misma y nadie puede entrar sin el enlace. Si te preocupa la seguridad de tu cuenta, contacta a soporte.</p>
+        </td></tr>
+
+        <tr><td align="center" style="background:${Y};padding:18px 28px;">
+          <div style="margin-bottom:6px;">{{{socialsHtml}}}</div>
+          <p style="margin:0;font-size:12pt;color:${I};"><a href="http://www.certjoin.com" target="_blank" style="color:${I};text-decoration:underline;">CertJoin Certifications LLC</a></p>
+          <p style="margin:6px 0 0;font-size:12pt;color:${I};">4300 Biscayne Blvd Suite 203 Miami, Florida 33137</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+function layoutResetText() {
+  return [
+    'Restablece tu contraseña', '',
+    'Hola, {{userName}}. Recibimos una solicitud para restablecer la contraseña de tu cuenta.',
+    '{{#hasResetUrl}}Crea tu nueva contraseña aquí: {{{resetUrl}}}{{/hasResetUrl}}',
+    'El enlace es de un solo uso y expira en {{expiresMinutes}} minutos.',
+    'Usuario: {{email}}', '',
+    'Si no fuiste tú, ignora este correo: tu contraseña actual no cambia.',
+    'CertJoin Certifications LLC — http://www.certjoin.com',
+    '4300 Biscayne Blvd Suite 203 Miami, Florida 33137'
+  ].join('\n');
+}
+
 const COPY_WELCOME = {
   heading: '🧡 ¡Bienvenido/a a tu Certificación Oficial con CertJoin!',
   subtitle: '¡Qué alegría tenerte aquí!',
@@ -383,11 +450,24 @@ const DEFAULT_TEMPLATES = {
     subject: '¡Bienvenido/a a la plataforma de CertJoin!',
     body_html: layoutPartnerHtml(COPY_PARTNER_WELCOME),
     body_text: layoutPartnerText(COPY_PARTNER_WELCOME)
+  },
+  password_reset: {
+    key: 'password_reset',
+    label: 'Recuperación de contraseña (usuarios de la plataforma)',
+    subject: 'Restablece tu contraseña de CertJoin',
+    body_html: layoutResetHtml(),
+    body_text: layoutResetText()
   }
 };
 
 // Datos de ejemplo para la vista previa / correo de prueba del editor.
 function sampleContext(key) {
+  if (key === 'password_reset') {
+    return buildContext({
+      userName: 'Ana Pérez', email: 'ana.perez@example.com', role: 'partner',
+      resetUrl: (process.env.FRONTEND_URL || 'https://vouchers.certjoin.com') + '/reset-password?token=ejemplo'
+    });
+  }
   if (key === 'partner_welcome') {
     return buildContext({
       userName: 'Ana Pérez', email: 'ana.perez@example.com', role: 'partner',

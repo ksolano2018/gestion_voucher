@@ -8,14 +8,16 @@ const pool = require('../../db/pool');
 const KNOWN_KEYS = {
   student_welcome: 'Bienvenida al estudiante (cuenta nueva)',
   student_new_enrollment: 'Nueva certificación (cuenta existente)',
-  partner_welcome: 'Bienvenida a usuario de la plataforma (Partner y demás roles)'
+  partner_welcome: 'Bienvenida a usuario de la plataforma (Partner y demás roles)',
+  password_reset: 'Recuperación de contraseña (usuarios de la plataforma)'
 };
 
 // Audiencia de cada plantilla (el editor las agrupa: Estudiante / Partner).
 const AUDIENCE = {
   student_welcome: 'student',
   student_new_enrollment: 'student',
-  partner_welcome: 'partner'
+  partner_welcome: 'partner',
+  password_reset: 'partner'
 };
 
 function isKnownKey(key) {

@@ -2366,6 +2366,18 @@
               </div>
               <div id="login-message"></div>
               <button id="login-btn" class="btn btn-login">Iniciar sesión</button>
+              <div class="text-center mt-3"><button type="button" id="forgot-link" class="btn btn-link p-0" style="font-size:0.85rem;color:#94a3b8;text-decoration:underline;">¿Olvidaste tu contraseña?</button></div>
+            </div>
+
+            <!-- Panel recuperar contraseña -->
+            <div id="forgot-panel" class="login-form" style="display:none;">
+              <p class="text-center mb-3" style="font-size:0.85rem;color:#94a3b8;">Escribe tu correo y te enviaremos un enlace para crear una nueva contraseña.</p>
+              <div class="form-group">
+                <input id="forgot-email" type="email" class="form-control" placeholder="Tu correo electrónico" autocomplete="email" />
+              </div>
+              <div id="forgot-message"></div>
+              <button id="forgot-send-btn" class="btn btn-login">Enviar enlace</button>
+              <div class="text-center mt-3"><button type="button" id="forgot-back" class="btn btn-link p-0" style="font-size:0.85rem;color:#94a3b8;text-decoration:underline;">← Volver a iniciar sesión</button></div>
             </div>
 
             <!-- Panel cambio de contraseña (primer acceso) -->

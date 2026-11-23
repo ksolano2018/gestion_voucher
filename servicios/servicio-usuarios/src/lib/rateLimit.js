@@ -16,6 +16,17 @@ const authLimiter = rateLimit({
   },
 });
 
+// "Olvidé mi contraseña": SIEMPRE responde 200 (no revela si el correo existe), así que
+// authLimiter (skipSuccessfulRequests) no aplicaría. Límite por IP contando todo intento.
+const passwordResetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: parseInt(process.env.MAX_PASSWORD_RESET_REQUESTS) || 10,
+  message: { error: 'Demasiadas solicitudes. Intenta de nuevo en unos minutos.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+});
+
 // Endpoints de API: cupo mayor para usuarios autenticados; clave por usuario o IP.
 const apiLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -34,4 +45,4 @@ const apiLimiter = rateLimit({
   legacyHeaders: false
 });
 
-module.exports = { authLimiter, apiLimiter };
+module.exports = { authLimiter, apiLimiter, passwordResetLimiter };

@@ -130,6 +130,35 @@ async function sendUserWelcomeEmail({ to, userName, role, loginUrl, userId = nul
   }
 }
 
+/**
+ * Correo de recuperación de contraseña (enlace de un solo uso generado por servicio-usuarios).
+ * No bloqueante. Devuelve 'SENT' | 'FAILED' | 'SKIPPED' | null.
+ */
+async function sendPasswordResetEmail({ to, userName, resetUrl, userId = null }) {
+  try {
+    if (!to || !resetUrl) return null;
+    const { subject, html, text } = await renderEmail(pool, 'password_reset', {
+      userName, email: to, resetUrl, role: 'user'
+    });
+    const result = await mailer.sendMail({ to, subject, html, text });
+
+    let status, err = null;
+    if (result.sent)         status = 'SENT';
+    else if (result.skipped) status = 'SKIPPED';
+    else                     { status = 'FAILED'; err = result.error || 'error desconocido'; }
+
+    // Nunca se registra el enlace/token en la auditoría.
+    await logSystemEvent(
+      `PASSWORD_RESET_EMAIL_${status}`, 'EMAIL', userId, null, null,
+      { to, reason: result.reason || null }, status === 'FAILED' ? 'FAILED' : 'SUCCESS', err
+    );
+    return status;
+  } catch (e) {
+    console.error(`❌ Error enviando correo de recuperación (${to}):`, e.message);
+    return 'FAILED';
+  }
+}
+
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'servicio-notificaciones', mail_enabled: mailer.isEnabled() });
 });
@@ -146,6 +175,11 @@ function requireInternalToken(req, res, next) {
 app.post('/internal/send', requireInternalToken, async (req, res) => {
   const emailStatus = await sendStudentWelcomeEmail(req.body || {});
   res.json({ email_status: emailStatus });
+});
+
+app.post('/internal/send-password-reset', requireInternalToken, async (req, res) => {
+  const status = await sendPasswordResetEmail(req.body || {});
+  res.json({ email_status: status });
 });
 
 app.post('/internal/send-user-welcome', requireInternalToken, async (req, res) => {

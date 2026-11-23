@@ -439,6 +439,9 @@ app.post('/oauth/set-moodle-password',
   }
 );
 
+// "Olvidé mi contraseña" (forgot/reset) para usuarios de la plataforma.
+app.use(require('./src/modules/password-reset/routes'));
+
 // Refresh access token using refresh_token cookie with rate limiting
 app.post('/oauth/refresh', authLimiter, async (req,res)=>{
   const rt = req.cookies['refresh_token'];

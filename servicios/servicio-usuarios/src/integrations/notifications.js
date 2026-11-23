@@ -47,6 +47,24 @@ async function sendUserWelcomeEmail({ to, userName, role, userId }) {
   }
 }
 
+// Correo de recuperación de contraseña (enlace de un solo uso). Nunca lanza.
+async function sendPasswordResetEmail({ to, userName, resetUrl, userId }) {
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (INTERNAL_API_TOKEN) headers['x-internal-token'] = INTERNAL_API_TOKEN;
+    const resp = await fetch(`${NOTIFICATIONS_URL}/internal/send-password-reset`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ to, userName, resetUrl, userId })
+    });
+    if (!resp.ok) { console.error(`❌ servicio-notificaciones respondió ${resp.status}`); return 'FAILED'; }
+    const data = await resp.json().catch(() => ({}));
+    return data.email_status ?? null;
+  } catch (e) {
+    console.error('❌ Error llamando a servicio-notificaciones:', e.message);
+    return 'FAILED';
+  }
+}
+
 // ── Soporte al editor de plantillas: proxys al microservicio de notificaciones ──
 function authHeaders() {
   const headers = { 'Content-Type': 'application/json' };
@@ -88,6 +106,6 @@ async function invalidateTemplateCache(key) {
 }
 
 module.exports = {
-  sendStudentWelcomeEmail, sendUserWelcomeEmail,
+  sendStudentWelcomeEmail, sendUserWelcomeEmail, sendPasswordResetEmail,
   getTemplateDefault, previewTemplate, testTemplate, invalidateTemplateCache
 };

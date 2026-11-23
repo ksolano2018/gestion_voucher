@@ -693,6 +693,37 @@ document.addEventListener('DOMContentLoaded', () => {
     catch(e) { throw new Error('Respuesta inesperada del servidor. Verifica que el servicio esté activo.'); }
   }
 
+  // ── Olvidé mi contraseña ──
+  function showForgotPanel(show){
+    const auth = el('auth'), fp = el('forgot-panel');
+    if(auth) auth.style.display = show ? 'none' : '';
+    if(fp)   fp.style.display   = show ? '' : 'none';
+    if(show){
+      const fe = el('forgot-email'); if(fe){ fe.value = (el('login-username')||{}).value || ''; fe.focus(); }
+      if(el('forgot-message')) el('forgot-message').innerHTML = '';
+    }
+  }
+  on('forgot-link', 'click', () => showForgotPanel(true));
+  on('forgot-back', 'click', () => showForgotPanel(false));
+  on('forgot-send-btn', 'click', async () => {
+    const btn = el('forgot-send-btn'), msg = el('forgot-message');
+    const email = ((el('forgot-email')||{}).value || '').trim();
+    if(!email || !/^\S+@\S+\.\S+$/.test(email)){
+      if(msg) msg.innerHTML = '<div class="alert alert-warning py-2 small">Escribe un correo válido.</div>';
+      return;
+    }
+    setButtonLoading(btn, true);
+    try {
+      const resp = await fetch(apiUrl + '/oauth/forgot-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
+      const data = await resp.json().catch(() => ({}));
+      const ok = resp.ok;
+      const text = ok ? (data.message || 'Revisa tu correo.') : (data.error || 'No se pudo procesar la solicitud.');
+      if(msg) msg.innerHTML = `<div class="alert alert-${ok ? 'success' : 'danger'} py-2 small">${escapeHTML(text)}</div>`;
+    } catch(e){
+      if(msg) msg.innerHTML = '<div class="alert alert-danger py-2 small">Error de conexión. Intenta de nuevo.</div>';
+    } finally { setButtonLoading(btn, false); }
+  });
+
   // Login handler
   document.addEventListener('click', async (ev) => {
     if(ev.target.id !== 'login-btn') return;
@@ -4565,7 +4596,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const ET_HINTS = {
     student_welcome: 'Se envía al activar un voucher para un estudiante que aún no tiene cuenta.',
     student_new_enrollment: 'Se envía cuando un estudiante con cuenta recibe una certificación adicional.',
-    partner_welcome: 'Se envía al crear un usuario en la plataforma (Partner u otro rol).'
+    partner_welcome: 'Se envía al crear un usuario en la plataforma (Partner u otro rol).',
+    password_reset: 'Se envía cuando un usuario pulsa «¿Olvidaste tu contraseña?» (enlace de un solo uso, 60 min).'
   };
 
   // Pestañas de audiencia + tarjetas de plantilla (reflejan el estado de los selects ocultos).
