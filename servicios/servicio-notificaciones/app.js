@@ -19,7 +19,7 @@ const express = require('express');
 const { Pool } = require('pg');
 const mailer = require('./mailer');
 const { renderEmail, renderProvided, invalidateCache } = require('./template-store');
-const { DEFAULT_TEMPLATES, TEMPLATE_VARIABLES, sampleContext, keyFor } = require('./default-templates');
+const { DEFAULT_TEMPLATES, TEMPLATE_VARIABLES, TEMPLATE_META, sampleContext, keyFor } = require('./default-templates');
 
 const app = express();
 app.use(express.json({ limit: '1mb' }));
@@ -100,6 +100,36 @@ async function sendStudentWelcomeEmail({ activationId, to, studentName, courseNa
   }
 }
 
+/**
+ * Correo de bienvenida a un usuario de la plataforma (Partner u otro rol): lleva al
+ * LOGIN, no al campus. No toca `activations`; deja rastro en system_events.
+ * No bloqueante (nunca lanza). Devuelve 'SENT' | 'FAILED' | 'SKIPPED' | null.
+ */
+async function sendUserWelcomeEmail({ to, userName, role, loginUrl, userId = null }) {
+  try {
+    if (!to) return null;
+    const { subject, html, text } = await renderEmail(pool, 'partner_welcome', {
+      userName, email: to, role, loginUrl
+    });
+    const result = await mailer.sendMail({ to, subject, html, text });
+
+    let status, err = null;
+    if (result.sent)         status = 'SENT';
+    else if (result.skipped) status = 'SKIPPED';
+    else                     { status = 'FAILED'; err = result.error || 'error desconocido'; }
+
+    await logSystemEvent(
+      `USER_WELCOME_EMAIL_${status}`, 'EMAIL', userId, null, null,
+      { to, role: role || null, reason: result.reason || null },
+      status === 'FAILED' ? 'FAILED' : 'SUCCESS', err
+    );
+    return status;
+  } catch (e) {
+    console.error(`❌ Error enviando correo de bienvenida a usuario (${to}):`, e.message);
+    return 'FAILED';
+  }
+}
+
 app.get('/health', (req, res) => {
   res.json({ status: 'healthy', service: 'servicio-notificaciones', mail_enabled: mailer.isEnabled() });
 });
@@ -118,12 +148,18 @@ app.post('/internal/send', requireInternalToken, async (req, res) => {
   res.json({ email_status: emailStatus });
 });
 
+app.post('/internal/send-user-welcome', requireInternalToken, async (req, res) => {
+  const status = await sendUserWelcomeEmail(req.body || {});
+  res.json({ email_status: status });
+});
+
 // ── Soporte al editor de plantillas (panel admin de servicio-usuarios) ──
 // Devuelve la plantilla por defecto (diseño oficial) + variables disponibles.
 app.get('/internal/template-default/:key', requireInternalToken, (req, res) => {
   const def = DEFAULT_TEMPLATES[req.params.key];
   if (!def) return res.status(404).json({ error: 'unknown_template_key' });
-  res.json({ template: def, variables: TEMPLATE_VARIABLES });
+  const meta = TEMPLATE_META[req.params.key];
+  res.json({ template: def, variables: meta ? meta.variables : TEMPLATE_VARIABLES });
 });
 
 // Render de un cuerpo (posiblemente sin guardar) con datos de ejemplo → vista previa.
@@ -164,4 +200,4 @@ if (require.main === module) {
   });
 }
 
-module.exports = { app, pool };
+module.exports = { app, pool, sendUserWelcomeEmail };

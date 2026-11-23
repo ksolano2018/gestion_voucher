@@ -14,6 +14,7 @@ const { normalizeRoleName } = require('../../lib/rbac');
 const { getDefaultPricingProfileId } = require('../pricing/service');
 const { isGroupNameTaken } = require('../../lib/partnerGroup');
 const { syncUserWithStripe } = require('../../integrations/stripe');
+const { sendUserWelcomeEmail } = require('../../integrations/notifications');
 
 router.post('/admin/users',
   authenticate,
@@ -141,6 +142,11 @@ router.post('/admin/users',
     }
 
     logSecurityEvent('USER_CREATED', { userId, email, role, adminId: req.user.sub });
+
+    // Correo de bienvenida (login de la plataforma). No bloqueante: ya se respondió
+    // al admin y sendUserWelcomeEmail nunca lanza; un fallo SMTP no afecta la creación.
+    const welcomeName = [first_name, last_name].filter(Boolean).join(' ').trim();
+    sendUserWelcomeEmail({ to: email, userName: welcomeName, role, userId }).catch(() => {});
   }catch(e){
     await logSystemEvent('USER_CREATE_ERROR', 'USER_MANAGEMENT', req.user.sub, null, null, { email, role }, 'FAILED', e.message, req);
     logSecurityEvent('USER_CREATE_ERROR', { error: e.message, adminId: req.user.sub });

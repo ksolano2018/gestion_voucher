@@ -28,6 +28,25 @@ async function sendStudentWelcomeEmail(args = {}) {
   }
 }
 
+// Bienvenida a un usuario de la plataforma (Partner u otro rol). Nunca lanza.
+async function sendUserWelcomeEmail({ to, userName, role, userId }) {
+  try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (INTERNAL_API_TOKEN) headers['x-internal-token'] = INTERNAL_API_TOKEN;
+    const loginUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+    const resp = await fetch(`${NOTIFICATIONS_URL}/internal/send-user-welcome`, {
+      method: 'POST', headers,
+      body: JSON.stringify({ to, userName, role, userId, loginUrl })
+    });
+    if (!resp.ok) { console.error(`❌ servicio-notificaciones respondió ${resp.status}`); return 'FAILED'; }
+    const data = await resp.json().catch(() => ({}));
+    return data.email_status ?? null;
+  } catch (e) {
+    console.error('❌ Error llamando a servicio-notificaciones:', e.message);
+    return 'FAILED';
+  }
+}
+
 // ── Soporte al editor de plantillas: proxys al microservicio de notificaciones ──
 function authHeaders() {
   const headers = { 'Content-Type': 'application/json' };
@@ -69,6 +88,6 @@ async function invalidateTemplateCache(key) {
 }
 
 module.exports = {
-  sendStudentWelcomeEmail,
+  sendStudentWelcomeEmail, sendUserWelcomeEmail,
   getTemplateDefault, previewTemplate, testTemplate, invalidateTemplateCache
 };

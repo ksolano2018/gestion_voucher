@@ -7,7 +7,15 @@ const pool = require('../../db/pool');
 // Claves soportadas (deben coincidir con DEFAULT_TEMPLATES del microservicio).
 const KNOWN_KEYS = {
   student_welcome: 'Bienvenida al estudiante (cuenta nueva)',
-  student_new_enrollment: 'Nueva certificación (cuenta existente)'
+  student_new_enrollment: 'Nueva certificación (cuenta existente)',
+  partner_welcome: 'Bienvenida a usuario de la plataforma (Partner y demás roles)'
+};
+
+// Audiencia de cada plantilla (el editor las agrupa: Estudiante / Partner).
+const AUDIENCE = {
+  student_welcome: 'student',
+  student_new_enrollment: 'student',
+  partner_welcome: 'partner'
 };
 
 function isKnownKey(key) {
@@ -25,7 +33,7 @@ async function listTemplates() {
   return Object.entries(KNOWN_KEYS).map(([key, label]) => {
     const a = activeByKey.get(key);
     return {
-      key, label,
+      key, label, audience: AUDIENCE[key] || 'student',
       has_active: !!a,
       active_version: a ? a.version : null,
       updated_at: a ? a.updated_at : null,
@@ -104,6 +112,6 @@ async function activateVersion(key, version) {
 }
 
 module.exports = {
-  KNOWN_KEYS, isKnownKey,
+  KNOWN_KEYS, AUDIENCE, isKnownKey,
   listTemplates, getActive, getHistory, getVersion, saveNewVersion, activateVersion
 };

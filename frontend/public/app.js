@@ -4550,6 +4550,45 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── PLANTILLAS DE CORREO ────────────────────────────────
   let _etCurrent = null; // { key, label, active, default, history, variables, using_default }
   let _etKeysLoaded = false;
+  let _etTemplates = []; // [{ key, label, audience, ... }]
+
+  // Llena el selector de plantilla con las de la audiencia elegida (Estudiante / Partner).
+  function etFillKeySelect(){
+    const sel = el('et-key-select'); if(!sel) return;
+    const aud = (el('et-audience-select') || {}).value || 'student';
+    sel.innerHTML = _etTemplates.filter(t => (t.audience || 'student') === aud).map(t =>
+      `<option value="${escapeHTML(t.key)}">${escapeHTML(t.label)}</option>`).join('');
+    etRenderPicker();
+  }
+
+  // Descripción corta de cuándo se envía cada correo (para las tarjetas).
+  const ET_HINTS = {
+    student_welcome: 'Se envía al activar un voucher para un estudiante que aún no tiene cuenta.',
+    student_new_enrollment: 'Se envía cuando un estudiante con cuenta recibe una certificación adicional.',
+    partner_welcome: 'Se envía al crear un usuario en la plataforma (Partner u otro rol).'
+  };
+
+  // Pestañas de audiencia + tarjetas de plantilla (reflejan el estado de los selects ocultos).
+  function etRenderPicker(){
+    const aud = (el('et-audience-select') || {}).value || 'student';
+    const cur = (el('et-key-select') || {}).value || '';
+    document.querySelectorAll('.et-aud-btn').forEach(b => b.classList.toggle('active', b.dataset.aud === aud));
+    const box = el('et-template-cards'); if(!box) return;
+    box.innerHTML = _etTemplates.filter(t => (t.audience || 'student') === aud).map(t => {
+      const sel = t.key === cur;
+      const state = t.has_active
+        ? `<span class="badge bg-success">Personalizada v${t.active_version}</span>`
+        : '<span class="badge bg-secondary">Diseño oficial</span>';
+      return `<div class="col-12 col-md-6 col-xl-4">
+        <button type="button" class="et-card w-100 text-start p-3 rounded-3 ${sel ? 'border-primary' : ''}" data-key="${escapeHTML(t.key)}"
+          style="background:#fff;border:2px solid ${sel ? '#0d6efd' : '#dee2e6'};cursor:pointer;${sel ? 'box-shadow:0 0 0 3px rgba(13,110,253,.15);' : ''}">
+          <div class="d-flex justify-content-between align-items-start gap-2 mb-1">
+            <strong style="font-size:.95rem;">${sel ? '✔ ' : ''}${escapeHTML(t.label)}</strong>${state}
+          </div>
+          <div class="text-muted small">${escapeHTML(ET_HINTS[t.key] || '')}</div>
+        </button></div>`;
+    }).join('') || '<div class="text-muted small">No hay plantillas para este destinatario.</div>';
+  }
 
   async function loadEmailTemplates(){
     try {
@@ -4558,8 +4597,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const resp = await safeFetch(apiUrl + '/admin/email-templates', { headers: authHeaders() });
         const data = await safeJson(resp);
         if(!resp.ok) throw new Error((data && data.error) || 'No se pudieron cargar las plantillas');
-        sel.innerHTML = (data.templates || []).map(t =>
-          `<option value="${escapeHTML(t.key)}">${escapeHTML(t.label)}</option>`).join('');
+        _etTemplates = data.templates || [];
+        etFillKeySelect();
         _etKeysLoaded = true;
       }
       const key = sel ? sel.value : 'student_welcome';
@@ -4574,6 +4613,9 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await safeJson(resp);
       if(!resp.ok) throw new Error((data && data.error) || 'No se pudo cargar la plantilla');
       _etCurrent = data;
+      const tIdx = _etTemplates.findIndex(t => t.key === key);
+      if(tIdx >= 0){ _etTemplates[tIdx].has_active = !!data.active; _etTemplates[tIdx].active_version = data.active ? data.active.version : null; }
+      etRenderPicker();
       const src = data.active || data.default || { subject:'', body_html:'', body_text:'' };
       if(el('et-subject')) el('et-subject').value = src.subject || '';
       if(el('et-html'))    el('et-html').value    = src.body_html || '';
@@ -4645,6 +4687,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   on('btn-et-preview', 'click', etPreview);
+
+  on('et-audience-tabs', 'click', (e) => {
+    const b = e.target.closest('.et-aud-btn'); if(!b) return;
+    const s = el('et-audience-select'); if(!s || s.value === b.dataset.aud) return;
+    s.value = b.dataset.aud; s.dispatchEvent(new Event('change'));
+  });
+
+  on('et-template-cards', 'click', (e) => {
+    const c = e.target.closest('.et-card'); if(!c) return;
+    const s = el('et-key-select'); if(!s || s.value === c.dataset.key) return;
+    s.value = c.dataset.key; s.dispatchEvent(new Event('change'));
+  });
+
+  on('et-audience-select', 'change', () => {
+    etFillKeySelect();
+    const k = (el('et-key-select') || {}).value; if(k) loadEmailTemplate(k);
+  });
 
   on('et-key-select', 'change', () => { const k = el('et-key-select').value; if(k) loadEmailTemplate(k); });
 

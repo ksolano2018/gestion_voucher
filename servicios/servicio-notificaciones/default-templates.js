@@ -57,6 +57,25 @@ const TEMPLATE_VARIABLES = [
   { token: '{{#hasExpires}}…{{/hasExpires}}',           desc: 'Bloque visible solo si hay fecha de expiración' }
 ];
 
+// Variables de la plantilla de bienvenida a usuarios de la plataforma (Partner y demás roles).
+const TEMPLATE_VARIABLES_USER = [
+  { token: '{{userName}}',   desc: 'Nombre de la persona (o parte local del correo si no hay nombre)' },
+  { token: '{{email}}',      desc: 'Correo / usuario de acceso' },
+  { token: '{{roleLabel}}',  desc: 'Rol asignado (p. ej. "Partner")' },
+  { token: '{{loginUrl}}',   desc: 'URL del botón Iniciar sesión (login de la plataforma)' },
+  { token: '{{{headerInner}}}', desc: 'Cabecera (logo o marca). HTML ya generado.' },
+  { token: '{{{socialsHtml}}}', desc: 'Iconos de redes del footer. HTML ya generado.' },
+  { token: '{{#isPartner}}…{{/isPartner}}', desc: 'Bloque visible solo si el rol es Partner' },
+  { token: '{{#hasLoginUrl}}…{{/hasLoginUrl}}', desc: 'Bloque visible solo si hay URL de login' }
+];
+
+// Cada clave pertenece a una audiencia (se usa para agrupar en el selector del editor).
+const TEMPLATE_META = {
+  student_welcome:        { audience: 'student', variables: TEMPLATE_VARIABLES },
+  student_new_enrollment: { audience: 'student', variables: TEMPLATE_VARIABLES },
+  partner_welcome:        { audience: 'partner', variables: TEMPLATE_VARIABLES_USER }
+};
+
 function escapeHtml(str) {
   return String(str == null ? '' : str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
@@ -96,6 +115,8 @@ function buildContext(p = {}) {
   const courseName = p.courseName || '';
   const tempPassword = p.tempPassword || '';
   const setPasswordUrl = p.setPasswordUrl || '';
+  // Login de la plataforma (no el campus): el que indique quien llama, o FRONTEND_URL.
+  const loginUrl = p.loginUrl || frontendUrl || '';
 
   const headerInner = logoUrl
     ? `<img src="${escapeHtml(logoUrl)}" alt="CertJoin" width="239" style="display:block;border:0;height:auto;max-width:239px;">`
@@ -125,8 +146,21 @@ function buildContext(p = {}) {
     hasSetPasswordUrl: Boolean(setPasswordUrl),
     hasTempPassword: Boolean(tempPassword) && !setPasswordUrl,
     hasExpires: Boolean(expiresLbl),
-    isNewEnrollment: Boolean(p.isNewEnrollment)
+    isNewEnrollment: Boolean(p.isNewEnrollment),
+    // ── Usuarios de la plataforma (Partner y demás roles) ──
+    userName: (p.userName && p.userName.trim()) ? p.userName.trim() : ((p.email || '').split('@')[0] || 'Usuario'),
+    roleLabel: roleLabelFor(p.role),
+    loginUrl,
+    hasLoginUrl: Boolean(loginUrl),
+    isPartner: String(p.role || '').toLowerCase() === 'partner'
   };
+}
+
+function roleLabelFor(role) {
+  const r = String(role || '').trim();
+  if (!r) return 'Usuario';
+  const known = { partner: 'Partner', admin: 'Administrador', soporte: 'Soporte' };
+  return known[r.toLowerCase()] || (r.charAt(0).toUpperCase() + r.slice(1));
 }
 
 // ── Layout compartido (Mustache). `copy` se hornea literal (editable); las
@@ -216,12 +250,12 @@ function layoutText(copy) {
     copy.heading, '', copy.subtitle, copy.introLine,
     '{{#hasCourse}}Certificación: {{courseName}}{{/hasCourse}}',
     '', '¿Cómo ingresar a tu portal de certificación?',
-    '1. Ingresa aquí: {{campusUrl}}', 'Inicia sesión con tus datos.',
+    '1. Ingresa aquí: {{{campusUrl}}}', 'Inicia sesión con tus datos.',
     '', 'Explora todos tus recursos disponibles:',
     '- Material de autoestudio', '- Simulador web', '- Recursos complementarios',
     '- Ruta de preparación hacia tu examen oficial',
     '', 'Tus accesos', 'Usuario: {{email}}',
-    '{{#hasSetPasswordUrl}}Crea tu contraseña (enlace de un solo uso, expira en 7 días): {{setPasswordUrl}}{{/hasSetPasswordUrl}}',
+    '{{#hasSetPasswordUrl}}Crea tu contraseña (enlace de un solo uso, expira en 7 días): {{{setPasswordUrl}}}{{/hasSetPasswordUrl}}',
     '{{#hasTempPassword}}Contraseña: {{tempPassword}}{{/hasTempPassword}}',
     '', 'Duración del acceso',
     'Tendrás acceso completo a todos los recursos durante {{durationStr}}.',
@@ -231,6 +265,91 @@ function layoutText(copy) {
     '4300 Biscayne Blvd Suite 203 Miami, Florida 33137'
   ].join('\n');
 }
+
+// ── Bienvenida a usuarios de la plataforma (Partner y demás roles): mismo estilo
+//    que el del estudiante, pero el botón lleva al LOGIN de la plataforma. ──
+function layoutPartnerHtml(copy) {
+  const Y = BRAND.yellow, O = BRAND.orange, I = BRAND.ink, L = BRAND.light, W = BRAND.white;
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:${L};font-family:Arial,Helvetica,sans-serif;">
+  <table role="presentation" cellpadding="0" cellspacing="0" width="100%" style="background:${L};">
+    <tr><td align="center" style="padding:0;">
+      <table role="presentation" cellpadding="0" cellspacing="0" width="800" style="max-width:800px;width:100%;">
+
+        <tr><td align="center" style="background:${L};padding:24px 16px;">{{{headerInner}}}</td></tr>
+
+        <tr><td style="background:${W};padding:28px 28px 20px;text-align:center;">
+          <h1 style="margin:0 0 12px;font-size:23pt;line-height:1.25;font-weight:700;color:${I};">${copy.heading}</h1>
+          <p style="margin:0;font-size:11pt;font-weight:700;color:${O};">${copy.subtitle}</p>
+          <p style="margin:6px 0 0;font-size:14pt;color:${I};">Hola, {{userName}}. ${copy.introLine}</p>
+          <p style="margin:14px 0 0;font-size:14px;color:${I};">Rol: <strong>{{roleLabel}}</strong></p>
+        </td></tr>
+
+        <tr><td style="background:${L};padding:24px 28px;">
+          <h2 style="margin:0 0 10px;font-size:17pt;font-weight:700;color:${I};text-align:center;">🧭 ¿Cómo ingresar a la plataforma?</h2>
+          <p style="margin:0 0 4px;font-size:11pt;color:${I};">1. Ingresa aquí 👇</p>
+          {{#hasLoginUrl}}
+          <p style="text-align:center;margin:14px 0;">
+            <a href="{{loginUrl}}" target="_blank" style="background:${Y};color:${I};text-decoration:none;padding:10px 28px;border-radius:4px;font-size:12pt;font-weight:700;display:inline-block;">Iniciar sesión</a>
+          </p>
+          {{/hasLoginUrl}}
+          <p style="text-align:center;margin:0 0 12px;font-size:12pt;font-weight:700;color:${I};">Inicia sesión con tus datos.</p>
+          {{#isPartner}}
+          <p style="text-align:center;margin:0 0 8px;font-size:11pt;font-weight:700;color:${O};">Desde tu panel podrás:</p>
+          <ul style="list-style-type:square;margin:6px auto;padding-left:20px;max-width:360px;font-size:11pt;color:${I};">
+            <li style="margin:4px 0;">🛒 Comprar vouchers de certificación</li>
+            <li style="margin:4px 0;">🎯 Activar vouchers para tus estudiantes</li>
+            <li style="margin:4px 0;">📊 Consultar el historial y los reportes de tu grupo</li>
+          </ul>
+          {{/isPartner}}
+        </td></tr>
+
+        <tr><td style="background:${Y};padding:22px 28px;text-align:center;">
+          <h2 style="margin:0 0 8px;font-size:17pt;font-weight:700;color:${I};">🔐 Tus accesos</h2>
+          <p style="margin:0;font-size:14px;color:${I};"><strong>👤 Usuario:</strong> {{email}}</p>
+          <p style="margin:8px 0 0;font-size:13px;color:${I};">Tu contraseña inicial te la comparte el administrador por un canal seguro. Por seguridad, al ingresar por primera vez se te pedirá cambiarla.</p>
+        </td></tr>
+
+        <tr><td style="background:${L};padding:24px 28px;">
+          <h2 style="margin:0 0 10px;font-size:17pt;font-weight:700;color:${I};">🤝 Estamos contigo</h2>
+          <p style="margin:0 0 14px;font-size:11pt;color:${I};">Si en cualquier momento necesitas soporte técnico o información adicional, estamos aquí para ayudarte.</p>
+          <h2 style="margin:0 0 8px;font-size:17pt;font-weight:700;color:${I};text-align:center;">🎉 Tu éxito es nuestra prioridad. 🧡</h2>
+        </td></tr>
+
+        <tr><td align="center" style="background:${Y};padding:18px 28px;">
+          <div style="margin-bottom:6px;">{{{socialsHtml}}}</div>
+          <p style="margin:0;font-size:12pt;color:${I};"><a href="http://www.certjoin.com" target="_blank" style="color:${I};text-decoration:underline;">CertJoin Certifications LLC</a></p>
+          <p style="margin:6px 0 0;font-size:12pt;color:${I};">4300 Biscayne Blvd Suite 203 Miami, Florida 33137</p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>`;
+}
+
+function layoutPartnerText(copy) {
+  return [
+    copy.heading, '', copy.subtitle, 'Hola, {{userName}}. ' + copy.introLine,
+    'Rol: {{roleLabel}}',
+    '', '¿Cómo ingresar a la plataforma?',
+    '{{#hasLoginUrl}}1. Ingresa aquí: {{{loginUrl}}}{{/hasLoginUrl}}', 'Inicia sesión con tus datos.',
+    '', 'Tus accesos', 'Usuario: {{email}}',
+    'Tu contraseña inicial te la comparte el administrador por un canal seguro; al ingresar por primera vez se te pedirá cambiarla.',
+    '', 'Tu éxito es nuestra prioridad.',
+    'CertJoin Certifications LLC — http://www.certjoin.com',
+    '4300 Biscayne Blvd Suite 203 Miami, Florida 33137'
+  ].join('\n');
+}
+
+const COPY_PARTNER_WELCOME = {
+  heading: '🧡 ¡Bienvenido/a a la plataforma de CertJoin!',
+  subtitle: '¡Tu cuenta ya está lista!',
+  introLine: 'Hemos creado tu acceso para que gestiones tus certificaciones desde un solo lugar.'
+};
 
 const COPY_WELCOME = {
   heading: '🧡 ¡Bienvenido/a a tu Certificación Oficial con CertJoin!',
@@ -257,11 +376,24 @@ const DEFAULT_TEMPLATES = {
     subject: '¡Tienes una nueva certificación disponible en CertJoin!',
     body_html: layoutHtml(COPY_NEW_ENROLLMENT),
     body_text: layoutText(COPY_NEW_ENROLLMENT)
+  },
+  partner_welcome: {
+    key: 'partner_welcome',
+    label: 'Bienvenida a usuario de la plataforma (Partner y demás roles)',
+    subject: '¡Bienvenido/a a la plataforma de CertJoin!',
+    body_html: layoutPartnerHtml(COPY_PARTNER_WELCOME),
+    body_text: layoutPartnerText(COPY_PARTNER_WELCOME)
   }
 };
 
 // Datos de ejemplo para la vista previa / correo de prueba del editor.
 function sampleContext(key) {
+  if (key === 'partner_welcome') {
+    return buildContext({
+      userName: 'Ana Pérez', email: 'ana.perez@example.com', role: 'partner',
+      loginUrl: process.env.FRONTEND_URL || 'https://vouchers.certjoin.com'
+    });
+  }
   return buildContext({
     studentName: 'Ana Pérez',
     email: 'ana.perez@example.com',
@@ -279,6 +411,6 @@ function keyFor(isNewEnrollment) {
 }
 
 module.exports = {
-  DEFAULT_TEMPLATES, TEMPLATE_VARIABLES,
+  DEFAULT_TEMPLATES, TEMPLATE_VARIABLES, TEMPLATE_VARIABLES_USER, TEMPLATE_META,
   buildContext, sampleContext, keyFor
 };
