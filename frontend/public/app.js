@@ -1355,10 +1355,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const k = closingKpis(d, rows, hasDateFilter);
     const kpis = [
       ['Matriculados', k.matriculados, 'primary'],
-      ['Cursando', k.cursando, 'info'],
       ['Completados', k.completados, 'success'],
       ['Certificados', k.certificados, 'success'],
-      ['Histórico sin estado', k.historicoSinEstado, 'muted'],
     ];
     box.innerHTML = kpis.map(([label, n, color]) =>
       `<div class="col-6 col-md"><div class="border rounded p-2 text-center"><div class="fs-4 fw-bold text-${color}">${n}</div><div class="small text-muted">${label}</div></div></div>`
@@ -1439,13 +1437,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const resumen = [
       { 'Indicador': 'Matriculados', 'Total': k.matriculados },
-      { 'Indicador': 'Cursando', 'Total': k.cursando },
       { 'Indicador': 'Completados', 'Total': k.completados },
       { 'Indicador': 'Certificados', 'Total': k.certificados },
       { 'Indicador': 'Fallaron (estimado)', 'Total': k.fallaron },
       { 'Indicador': 'Vencidos', 'Total': k.vencidos },
       { 'Indicador': 'Sin matricular', 'Total': k.sinMatricular },
-      { 'Indicador': 'Histórico sin estado', 'Total': k.historicoSinEstado },
     ];
     const from = histApplied.from || 'inicio';
     const to = histApplied.to || 'hoy';
