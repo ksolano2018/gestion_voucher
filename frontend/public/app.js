@@ -7184,7 +7184,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const templateData = [
       ['course_name', 'user_name', 'user_email', 'final_client', 'activation_months'],
       [sampleNames[0] || '', 'Juan Perez', 'juan@ejemplo.com', 'Empresa ABC', _maxActivationMonths],
-      [sampleNames[1] || sampleNames[0] || '', 'Maria Lopez', 'maria@ejemplo.com', 'Empresa XYZ', _maxActivationMonths],
+      [sampleNames[1] || sampleNames[0] || '', 'Maria Lopez', 'maria@ejemplo.com', '', _maxActivationMonths], // final_client opcional: puede ir vacío
     ];
     const wsTemplate = window.XLSX.utils.aoa_to_sheet(templateData);
     wsTemplate['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 30 }, { wch: 25 }, { wch: 20 }];
@@ -7245,7 +7245,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const hasCourseCol = ('course_name' in rows[0]) || ('course_id' in rows[0]);
-      const requiredCols = ['user_name', 'user_email', 'final_client'];
+      const requiredCols = ['user_name', 'user_email']; // final_client es opcional (puede faltar la columna o ir vacía)
       const missing = requiredCols.filter(c => !(c in rows[0]));
       if(!hasCourseCol) missing.unshift('course_name');
       if(missing.length){
@@ -7311,7 +7311,7 @@ document.addEventListener('DOMContentLoaded', () => {
           courseId = parseInt(row.course_id, 10) || null;
         }
 
-        if(!courseId || !userName || !userEmail || !finalClient){
+        if(!courseId || !userName || !userEmail){
           results.push({ row: i + 2, ok: false, error: 'Fila incompleta o datos inválidos', userName, userEmail });
           continue;
         }
@@ -7319,7 +7319,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, {
             method: 'POST', headers: authHeaders(),
-            body: JSON.stringify({ course_id: courseId, user_name: userName, user_email: userEmail, final_client: finalClient, activation_months: actMonths })
+            body: JSON.stringify({ course_id: courseId, user_name: userName, user_email: userEmail, final_client: finalClient || undefined, activation_months: actMonths })
           });
           const data = await resp.json();
           if(resp.ok){
