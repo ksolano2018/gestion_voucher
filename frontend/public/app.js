@@ -987,18 +987,36 @@ document.addEventListener('DOMContentLoaded', () => {
     return { moodle, app: appRows, cert: Array.isArray(cert) ? cert : [] };
   }
 
+  // Cursos de Moodle a mostrar. En el historial del admin, si hay filtro de fechas, se dejan
+  // solo los estudiantes cuya fecha de matrícula en Moodle cae en el rango (y los cursos que
+  // se quedan sin estudiantes se ocultan). Sin filtro, todo.
+  function historyCoursesForView(P, data){
+    const all = (data.moodle && data.moodle.courses) || [];
+    if(P !== 'admin-hist') return { courses: all, filtered: false };
+    const range = closingRangeTs();
+    if(!range.fromTs && !range.toTs) return { courses: all, filtered: false };
+    const courses = all
+      .map(c => ({ ...c, members: (c.members || []).filter(m => enrolledInRange(m.enrolled_at, range)) }))
+      .filter(c => c.members.length);
+    return { courses, filtered: true };
+  }
+
   function renderPartnerHistory(P, data){
     const tbM = el(P + '-moodle');
     const tbA = el(P + '-app');
     const status = el(P + '-status');
+    const view = historyCoursesForView(P, data);
     if(data.moodle && data.moodle.error){
       if(status) status.textContent = 'No se pudo leer Moodle: ' + data.moodle.error;
     } else if(data.moodle){
-      const n = (data.moodle.courses || []).length;
-      if(status) status.textContent = `Grupo "${data.moodle.grupo_moodle || ''}" · ${n} curso(s) en Moodle`;
+      const n = view.courses.length;
+      const nAlumnos = view.courses.reduce((s, c) => s + (c.members || []).length, 0);
+      if(status) status.textContent = view.filtered
+        ? `Grupo "${data.moodle.grupo_moodle || ''}" · ${n} curso(s) y ${nAlumnos} matrícula(s) en el rango de fechas`
+        : `Grupo "${data.moodle.grupo_moodle || ''}" · ${n} curso(s) en Moodle`;
     }
     if(tbM){
-      const rows = (data.moodle && data.moodle.courses) || [];
+      const rows = view.courses;
       tbM.innerHTML = rows.length
         ? rows.map(c => {
             const courseName = escapeHTML(c.course_name || ('Curso ' + c.moodle_course_id));
@@ -1017,7 +1035,7 @@ document.addEventListener('DOMContentLoaded', () => {
               return `<tr><td>${nombre}</td><td>${correo}</td><td>${matriculado}</td></tr>`;
             }).join('');
           }).join('')
-        : '<tr><td colspan="5" class="text-muted">Sin cursos con este grupo en Moodle</td></tr>';
+        : `<tr><td colspan="5" class="text-muted">${view.filtered ? 'Ninguna matrícula de Moodle en el rango de fechas elegido' : 'Sin cursos con este grupo en Moodle'}</td></tr>`;
     }
     if(tbA){
       tbA.innerHTML = data.app.length
@@ -1242,6 +1260,35 @@ document.addEventListener('DOMContentLoaded', () => {
     courses.forEach(c => { if(c.moodle_course_id) map.set(String(c.moodle_course_id), c.enddate || 0); });
     return map;
   }
+  // Rango de fechas del filtro (ms). Para los alumnos de Moodle sin voucher en la app se
+  // compara contra su fecha de matrícula en Moodle (enrolled_at, segundos Unix); sin ese
+  // dato no se pueden ubicar en un rango y quedan fuera cuando hay filtro.
+  function closingRangeTs(){
+    const from = (el('admin-hist-from') || {}).value;
+    const to = (el('admin-hist-to') || {}).value;
+    return {
+      fromTs: from ? new Date(from + 'T00:00:00').getTime() : null,
+      toTs: to ? new Date(to + 'T23:59:59').getTime() : null
+    };
+  }
+  function enrolledInRange(enrolledAt, range){
+    if(!range.fromTs && !range.toTs) return true;
+    if(!enrolledAt) return false;
+    const t = enrolledAt * 1000;
+    return (!range.fromTs || t >= range.fromTs) && (!range.toTs || t <= range.toTs);
+  }
+  // curso+usuario de Moodle -> fecha de matrícula (segundos).
+  function moodlePopulationEntries(d){
+    const entries = new Map();
+    const courses = (d.moodle && Array.isArray(d.moodle.courses)) ? d.moodle.courses : [];
+    courses.forEach(c => (c.members || []).forEach(m => { if(m && m.id) entries.set(c.moodle_course_id + ':' + m.id, m.enrolled_at || 0); }));
+    return entries;
+  }
+  // Claves curso+usuario de TODAS las activaciones de la app (sin filtrar por fecha).
+  function allAppMoodleKeys(d){
+    return new Set((d.app || []).filter(r => r.moodle_course_id && r.moodle_user_id).map(r => r.moodle_course_id + ':' + r.moodle_user_id));
+  }
+
   // Para un alumno histórico de Moodle (sin voucher/activación en la app) no hay dato de
   // progreso real (no hay completion status confiable vía Web Service). Se infiere por la
   // fecha de fin del curso: sin fecha o fecha futura -> curso sigue abierto -> probablemente
@@ -1276,6 +1323,19 @@ document.addEventListener('DOMContentLoaded', () => {
       [...populationKeys].forEach(k => {
         if(activationKeys.has(k)) return;
         if(isHistoricCourseOpen(courseEndMap, k)) cursandoEstimado++;
+      });
+    } else {
+      // Con filtro: se suman los alumnos históricos de Moodle (sin activación en la app)
+      // cuya fecha de matrícula cae en el rango.
+      const range = closingRangeTs();
+      const appKeys = allAppMoodleKeys(d);
+      const certKeys = certKeySet(d);
+      const courseEndMap = moodleCourseEndMap(d);
+      moodlePopulationEntries(d).forEach((enrolledAt, key) => {
+        if(appKeys.has(key) || !enrolledInRange(enrolledAt, range)) return;
+        matriculados++;
+        if(certKeys.has(key)) certificados++;
+        if(isHistoricCourseOpen(courseEndMap, key)) cursandoEstimado++;
       });
     }
     // Alumnos del histórico de Moodle que no vinieron por voucher y cuyo curso ya cerró: no
@@ -1349,8 +1409,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // filas al Detalle para que no quede vacío cuando un partner no tiene activaciones
     // por la app (antes el Detalle solo traía closingRows() y podía no tener nada que
     // mostrar aunque el Resumen ya mostrara Matriculados/Certificados reales).
-    if(!hasDateFilter){
-      const activationKeys = new Set(rows.filter(r => r.moodle_course_id && r.moodle_user_id).map(r => r.moodle_course_id + ':' + r.moodle_user_id));
+    {
+      // Sin filtro, las activaciones ya van en `rows`; con filtro, `rows` solo trae las del
+      // rango, así que se excluyen TODAS las activaciones de la app y el histórico se ubica
+      // por su fecha de matrícula en Moodle.
+      const activationKeys = hasDateFilter
+        ? allAppMoodleKeys(d)
+        : new Set(rows.filter(r => r.moodle_course_id && r.moodle_user_id).map(r => r.moodle_course_id + ':' + r.moodle_user_id));
+      const range = closingRangeTs();
       const certByKey = new Map();
       (d.cert || []).forEach(c => certByKey.set(c.moodle_course_id + ':' + c.moodle_user_id, c));
       const courseEndMap = moodleCourseEndMap(d);
@@ -1360,6 +1426,7 @@ document.addEventListener('DOMContentLoaded', () => {
           if(!m || !m.id) return;
           const key = c.moodle_course_id + ':' + m.id;
           if(activationKeys.has(key)) return; // ya está en detail vía rows
+          if(hasDateFilter && !enrolledInRange(m.enrolled_at, range)) return;
           const partes = (m.fullname || m.username || '').trim().split(/\s+/);
           const cert = certByKey.get(key);
           detail.push({
@@ -1402,8 +1469,13 @@ document.addEventListener('DOMContentLoaded', () => {
     XLSX.writeFile(wb, `cierre_${grupo}_${from}_a_${to}.xlsx`);
   }
 
-  on('admin-hist-from', 'change', renderClosing);
-  on('admin-hist-to', 'change', renderClosing);
+  // Al cambiar el rango se actualizan los contadores Y la tabla de cursos/estudiantes de Moodle.
+  function onHistRangeChange(){
+    renderClosing();
+    if(partnerHistoryCache.data) renderPartnerHistory('admin-hist', partnerHistoryCache.data);
+  }
+  on('admin-hist-from', 'change', onHistRangeChange);
+  on('admin-hist-to', 'change', onHistRangeChange);
   on('admin-hist-closing-excel', 'click', exportClosingExcel);
 
   on('partner-hist-refresh', 'click', () => loadPartnerHistory(true));
