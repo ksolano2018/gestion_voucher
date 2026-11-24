@@ -4096,31 +4096,73 @@
                   <!-- Activación masiva por Excel -->
                   <div class="card shadow-sm mb-4">
                     <div class="card-body">
-                      <h6 class="mb-3">Activación Masiva por Excel / CSV</h6>
+                      <h6 class="mb-3">Activación Masiva</h6>
                       <div id="bulk-stepper" class="d-flex align-items-center gap-2 mb-4 flex-wrap">
-                        <span class="act-step-pill" data-step="1"><span class="act-step-num">1</span> Plantilla</span>
+                        <span class="act-step-pill" data-step="1"><span class="act-step-num">1</span> Certificaciones</span>
                         <span class="text-muted">›</span>
-                        <span class="act-step-pill" data-step="2"><span class="act-step-num">2</span> Archivo</span>
+                        <span class="act-step-pill" data-step="2"><span class="act-step-num">2</span> Alumnos</span>
                         <span class="text-muted">›</span>
-                        <span class="act-step-pill" data-step="3"><span class="act-step-num">3</span> Revisar y activar</span>
+                        <span class="act-step-pill" data-step="3"><span class="act-step-num">3</span> Confirmar</span>
                       </div>
 
                       <div class="bulk-step" data-step="1">
-                        <p class="text-muted small mb-3">Descarga la plantilla, llénala con una fila por alumno y vuelve aquí. Columnas requeridas: <code>course_name</code> (nombre exacto de la certificación, copiado de la hoja "Certificaciones disponibles"), <code>user_name</code> y <code>user_email</code>. Opcionales: <code>final_client</code> y <code>activation_months</code> (3, 6 o 12).</p>
-                        <button id="download-activation-template" class="btn btn-outline-secondary btn-sm">⬇ Descargar plantilla Excel</button>
+                        <label class="form-label">¿Qué certificaciones vas a activar? <span class="text-muted small">(puedes elegir varias; cada alumno se activa en todas)</span></label>
+                        <div class="position-relative" style="max-width:620px;">
+                          <div class="input-group">
+                            <input type="text" id="bulk-course-search" class="form-control" placeholder="Busca y agrega certificaciones..." autocomplete="off">
+                            <button type="button" id="bulk-course-addall" class="btn btn-outline-primary" title="Agregar todas las que coinciden con la búsqueda">＋ Agregar todas</button>
+                            <button type="button" id="bulk-course-clear" class="btn btn-outline-secondary" title="Limpiar búsqueda">✕</button>
+                          </div>
+                          <div id="bulk-course-dropdown" class="list-group w-100 shadow-sm mt-1" style="max-height:260px; overflow-y:auto; display:none;"></div>
+                        </div>
+                        <div class="mt-3">
+                          <div class="small text-muted mb-1">Seleccionadas: <strong id="bulk-course-count">0</strong> <button type="button" id="bulk-course-removeall" class="btn btn-link btn-sm p-0 ms-2">Quitar todas</button></div>
+                          <div id="bulk-course-chips" class="d-flex flex-wrap gap-2" style="max-height:200px; overflow-y:auto;"></div>
+                        </div>
                       </div>
 
                       <div class="bulk-step" data-step="2" style="display:none;">
-                        <label class="form-label">Archivo Excel (.xlsx, .xls) o CSV con las activaciones</label>
-                        <div class="input-group" style="max-width:620px;">
-                          <input id="activate-excel-file" type="file" class="form-control" accept=".xlsx,.xls,.csv">
-                          <button type="button" id="bulk-file-clear" class="btn btn-outline-secondary" title="Quitar archivo">✕</button>
+                        <div class="row g-3">
+                          <div class="col-lg-6">
+                            <div class="fw-semibold mb-1">Opción A: subir un archivo</div>
+                            <p class="text-muted small mb-2">Solo con los alumnos: <code>user_name</code> y <code>user_email</code> (opcional <code>final_client</code>). Las certificaciones las defines en el paso 1, así el catálogo siempre está al día.</p>
+                            <button id="download-activation-template" class="btn btn-outline-secondary btn-sm mb-2">⬇ Descargar plantilla</button>
+                            <div class="input-group">
+                              <input id="activate-excel-file" type="file" class="form-control" accept=".xlsx,.xls,.csv">
+                              <button type="button" id="bulk-file-load" class="btn btn-primary">Cargar</button>
+                            </div>
+                          </div>
+                          <div class="col-lg-6">
+                            <div class="fw-semibold mb-1">Opción B: agregar a mano</div>
+                            <div class="row g-2">
+                              <div class="col-5"><input id="bulk-man-name" class="form-control form-control-sm" placeholder="Nombre completo"></div>
+                              <div class="col-5"><input id="bulk-man-email" class="form-control form-control-sm" placeholder="correo@ejemplo.com"></div>
+                              <div class="col-2"><button type="button" id="bulk-man-add" class="btn btn-sm btn-outline-primary w-100">＋</button></div>
+                            </div>
+                          </div>
                         </div>
-                        <div class="form-text">Al continuar se revisa el archivo sin activar nada todavía.</div>
+                        <div class="d-flex align-items-center justify-content-between mt-3 mb-1">
+                          <div class="small text-muted">Alumnos en la lista: <strong id="bulk-students-count">0</strong></div>
+                          <button type="button" id="bulk-students-clear" class="btn btn-link btn-sm p-0">Vaciar lista</button>
+                        </div>
+                        <div class="table-responsive" style="max-height:300px;overflow:auto;"><table class="table table-sm table-bordered mb-0">
+                          <thead class="table-light"><tr><th>Alumno</th><th>Correo</th><th>Cliente final</th><th>Estado</th><th></th></tr></thead>
+                          <tbody id="bulk-students-body"><tr><td colspan="5" class="text-muted text-center">Aún no hay alumnos</td></tr></tbody>
+                        </table></div>
                       </div>
 
                       <div class="bulk-step" data-step="3" style="display:none;">
-                        <div id="bulk-preview"></div>
+                        <div class="row g-3 mb-3">
+                          <div class="col-md-4">
+                            <label class="form-label">Disponibilidad (meses)</label>
+                            <select id="bulk-months" class="form-control"></select>
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label">Cliente final <small class="text-muted">(opcional, para los que no lo traen)</small></label>
+                            <select id="bulk-client" class="form-control"></select>
+                          </div>
+                        </div>
+                        <div id="bulk-summary"></div>
                       </div>
 
                       <div class="d-flex gap-2 mt-3">

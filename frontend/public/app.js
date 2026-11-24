@@ -7123,6 +7123,7 @@ document.addEventListener('DOMContentLoaded', () => {
     .forEach(enhanceSelectWithSearch);
 
   let _maxActivationMonths = 12;
+  let _availableVouchers = null; // vouchers pagados disponibles (de la elegibilidad)
 
   async function loadActivationMonthsSelect(){
     const select = el('activate-months');
@@ -7174,10 +7175,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
       if(data.can_activate){
         if(countNum)    countNum.textContent = data.available_paid_vouchers;
+        _availableVouchers = Number(data.available_paid_vouchers) || 0;
         if(countBadge)  countBadge.style.display = 'inline-block';
         if(noBadge)     noBadge.style.display = 'none';
         if(activateBtn) activateBtn.disabled = false;
       } else {
+        _availableVouchers = 0;
         if(countBadge)  countBadge.style.display = 'none';
         if(noBadge)     noBadge.style.display = 'inline-block';
         if(activateBtn) activateBtn.disabled = true;
@@ -7537,47 +7540,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  on('download-activation-template', 'click', () => {
-    if(!window.XLSX){ showLoginMessage('Librería Excel no cargada. Recarga la página.', 'danger', 4000); return; }
-
-    const wb = window.XLSX.utils.book_new();
-
-    // Sheet 1: plantilla de activaciones. course_name debe coincidir (tal cual)
-    // con un nombre de la hoja "Certificaciones disponibles" — copiar/pegar desde ahí.
-    const sampleNames = _availableCourses.length
-      ? _availableCourses.slice(0, 2).map(c => c.name)
-      : ['(copia un nombre de la hoja "Certificaciones disponibles")', ''];
-    const templateData = [
-      ['course_name', 'user_name', 'user_email', 'final_client', 'activation_months'],
-      [sampleNames[0] || '', 'Juan Perez', 'juan@ejemplo.com', 'Empresa ABC', bulkDefaultMonths()],
-      [sampleNames[1] || sampleNames[0] || '', 'Maria Lopez', 'maria@ejemplo.com', '', bulkDefaultMonths()], // final_client opcional: puede ir vacío
-    ];
-    const wsTemplate = window.XLSX.utils.aoa_to_sheet(templateData);
-    wsTemplate['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 30 }, { wch: 25 }, { wch: 20 }];
-    window.XLSX.utils.book_append_sheet(wb, wsTemplate, 'Activaciones');
-
-    // Sheet 2: catálogo de cursos disponibles (referencia para copiar el nombre exacto)
-    const catalogHeader = [['course_name', 'course_id']];
-    const catalogRows = _availableCourses.length
-      ? _availableCourses.map(c => [c.name, c.id])
-      : [['(carga la sección primero para ver cursos reales)', '']];
-    const wsCatalog = window.XLSX.utils.aoa_to_sheet(catalogHeader.concat(catalogRows));
-    wsCatalog['!cols'] = [{ wch: 50 }, { wch: 12 }];
-    window.XLSX.utils.book_append_sheet(wb, wsCatalog, 'Certificaciones disponibles');
-
-    window.XLSX.writeFile(wb, 'plantilla_activacion_vouchers.xlsx');
-  });
-
-  // ── Wizard de activación masiva (3 pasos) ──────────────────────────────────
+  // ── Activación masiva: wizard de 3 pasos ────────────────────────────────────
+  // El catálogo de certificaciones lo da la aplicación (no el archivo): el archivo solo trae
+  // alumnos, y cada alumno se activa en todas las certificaciones elegidas.
   let _bulkStep = 1;
-  let _bulkRows = [];
-  let _bulkFileName = '';
+  let _bulkCourseIds = [];
+  let _bulkStudents = []; // { name, email, client }
 
   function bulkAllowedMonths(){
     const a = [3, 6, 12].filter(m => m <= _maxActivationMonths);
     return a.length ? a : [_maxActivationMonths];
   }
-  function bulkDefaultMonths(){ const a = bulkAllowedMonths(); return a[a.length - 1]; }
+  const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
   function bulkWizardGo(n){
     _bulkStep = n;
@@ -7592,209 +7566,290 @@ document.addEventListener('DOMContentLoaded', () => {
     if(next) next.style.display = n < 3 ? '' : 'none';
     if(go)   go.style.display   = n === 3 ? '' : 'none';
     if(rs)   rs.style.display   = 'none';
+    if(n === 3) renderBulkStep3();
   }
 
-  // Lee el archivo y valida las columnas. Devuelve las filas o null (ya avisó del problema).
-  async function bulkParseFile(file){
+  // ── Paso 1: certificaciones ──
+  function bulkCourseById(id){ return _availableCourses.find(c => String(c.id) === String(id)); }
+
+  function bulkCourseMatches(term){
+    const q = (term || '').trim().toLowerCase();
+    return _availableCourses.filter(c => !_bulkCourseIds.includes(c.id) && (!q || c.name.toLowerCase().includes(q) || String(c.id).includes(q)));
+  }
+
+  function renderBulkCourseDropdown(){
+    const dd = el('bulk-course-dropdown');
+    if(!dd) return;
+    const term = (el('bulk-course-search') || {}).value || '';
+    const q = term.trim().toLowerCase();
+    const matches = bulkCourseMatches(term);
+    if(!_availableCourses.length){ dd.style.display = 'none'; return; }
+    if(!matches.length){
+      dd.innerHTML = '<div class="list-group-item text-muted small">Sin resultados (o ya las agregaste todas)</div>';
+      dd.style.display = '';
+      return;
+    }
+    const hl = (txt) => {
+      const t = String(txt);
+      const i = q ? t.toLowerCase().indexOf(q) : -1;
+      return i < 0 ? escapeHTML(t) : escapeHTML(t.slice(0, i)) + '<mark class="px-0">' + escapeHTML(t.slice(i, i + q.length)) + '</mark>' + escapeHTML(t.slice(i + q.length));
+    };
+    const shown = matches.slice(0, MAX_COURSE_SUGGESTIONS);
+    dd.innerHTML = shown.map(c => {
+      const kind = courseKind(c.name);
+      const title = c.name.replace(/\s*-\s*(Content|Simulator)\s*$/i, '');
+      return `<button type="button" class="list-group-item list-group-item-action course-opt course-opt-${kind.key}" data-bulk-course="${escapeHTML(String(c.id))}">
+        <div class="d-flex justify-content-between align-items-center gap-2"><span class="fw-semibold">${hl(title)}</span><span class="badge ${kind.cls}">${kind.label}</span></div>
+        <div class="small text-muted">ID ${hl(c.id)}</div></button>`;
+    }).join('') + (matches.length > shown.length ? `<div class="list-group-item text-muted small">Hay ${matches.length} coincidencias: sigue escribiendo o usa “Agregar todas”.</div>` : '');
+    dd.style.display = '';
+  }
+
+  function renderBulkChips(){
+    const box = el('bulk-course-chips');
+    if(!box) return;
+    box.innerHTML = _bulkCourseIds.length
+      ? _bulkCourseIds.map(id => {
+          const c = bulkCourseById(id); if(!c) return '';
+          const kind = courseKind(c.name);
+          const title = c.name.replace(/\s*-\s*(Content|Simulator)\s*$/i, '');
+          return `<span class="badge ${kind.cls} d-inline-flex align-items-center gap-2 py-2 px-3 fs-6 fw-normal">${escapeHTML(title)} <small class="opacity-75">${kind.label}</small>
+            <button type="button" class="btn-close btn-close-sm" style="font-size:.6rem;" data-bulk-remove="${escapeHTML(String(c.id))}" aria-label="Quitar"></button></span>`;
+        }).join('')
+      : '<span class="text-muted small">Aún no has elegido ninguna certificación.</span>';
+    const n = el('bulk-course-count'); if(n) n.textContent = _bulkCourseIds.length;
+  }
+
+  function bulkAddCourses(ids){
+    ids.forEach(id => { if(!_bulkCourseIds.includes(id)) _bulkCourseIds.push(id); });
+    renderBulkChips(); renderBulkCourseDropdown();
+  }
+
+  on('bulk-course-search', 'input', renderBulkCourseDropdown);
+  on('bulk-course-search', 'focus', renderBulkCourseDropdown);
+  on('bulk-course-search', 'keydown', (e) => { if(e.key === 'Escape'){ const dd = el('bulk-course-dropdown'); if(dd) dd.style.display = 'none'; } });
+  on('bulk-course-clear', 'click', () => { const i = el('bulk-course-search'); if(i){ i.value = ''; i.focus(); } const dd = el('bulk-course-dropdown'); if(dd) dd.style.display = 'none'; });
+  on('bulk-course-addall', 'click', () => {
+    const term = (el('bulk-course-search') || {}).value || '';
+    const m = bulkCourseMatches(term);
+    if(!m.length){ showToast('No hay certificaciones para agregar con esa búsqueda', 'warning'); return; }
+    if(!term.trim() && !confirm(`¿Agregar las ${m.length} certificaciones disponibles?`)) return;
+    bulkAddCourses(m.map(c => c.id));
+    // Tras agregar en bloque se cierra la lista y se limpia la búsqueda para no tapar los chips.
+    const si = el('bulk-course-search'); if(si) si.value = '';
+    const dd = el('bulk-course-dropdown'); if(dd) dd.style.display = 'none';
+  });
+  on('bulk-course-removeall', 'click', () => { _bulkCourseIds = []; renderBulkChips(); renderBulkCourseDropdown(); });
+  document.addEventListener('click', (e) => {
+    const add = e.target.closest && e.target.closest('[data-bulk-course]');
+    if(add){ const c = bulkCourseById(add.dataset.bulkCourse); if(c) bulkAddCourses([c.id]); return; }
+    const rm = e.target.closest && e.target.closest('[data-bulk-remove]');
+    if(rm){ _bulkCourseIds = _bulkCourseIds.filter(id => String(id) !== rm.dataset.bulkRemove); renderBulkChips(); return; }
+    if(!e.target.closest('#bulk-course-search, #bulk-course-dropdown, #bulk-course-addall, #bulk-course-clear')){
+      const dd = el('bulk-course-dropdown'); if(dd) dd.style.display = 'none';
+    }
+  });
+
+  // ── Paso 2: alumnos ──
+  function bulkStudentState(st, idx){
+    if(!st.name) return { ok: false, msg: 'Falta el nombre' };
+    if(!st.email) return { ok: false, msg: 'Falta el correo' };
+    if(!EMAIL_RE.test(st.email)) return { ok: false, msg: 'Correo inválido' };
+    const first = _bulkStudents.findIndex(x => x.email.toLowerCase() === st.email.toLowerCase());
+    if(first !== idx) return { ok: false, msg: 'Correo repetido' };
+    return { ok: true };
+  }
+  const bulkValidStudents = () => _bulkStudents.filter((st, i) => bulkStudentState(st, i).ok);
+
+  function renderBulkStudents(){
+    const tb = el('bulk-students-body'); if(!tb) return;
+    tb.innerHTML = _bulkStudents.length
+      ? _bulkStudents.map((st, i) => {
+          const s = bulkStudentState(st, i);
+          return `<tr class="${s.ok ? '' : 'table-danger'}"><td>${escapeHTML(st.name)}</td><td>${escapeHTML(st.email)}</td><td>${escapeHTML(st.client || '—')}</td>
+            <td>${s.ok ? '<span class="badge bg-success">✓ Listo</span>' : `<span class="badge bg-danger">✗ ${s.msg}</span>`}</td>
+            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-bulk-student-del="${i}" title="Quitar">✕</button></td></tr>`;
+        }).join('')
+      : '<tr><td colspan="5" class="text-muted text-center">Aún no hay alumnos</td></tr>';
+    const n = el('bulk-students-count');
+    if(n){ const v = bulkValidStudents().length; n.textContent = `${_bulkStudents.length}${v !== _bulkStudents.length ? ` (${v} válidos)` : ''}`; }
+  }
+
+  async function bulkReadStudentsFile(file){
     const ext = file.name.split('.').pop().toLowerCase();
     let rows = [];
-    if(ext === 'csv'){
-      rows = parseCSVRows(await file.text());
-    } else if(ext === 'xlsx' || ext === 'xls'){
-      if(!window.XLSX){ showLoginMessage('Librería Excel no cargada. Recarga la página.', 'danger', 4000); return null; }
+    if(ext === 'csv') rows = parseCSVRows(await file.text());
+    else if(ext === 'xlsx' || ext === 'xls'){
+      if(!window.XLSX){ showToast('Librería Excel no cargada. Recarga la página.', 'danger'); return null; }
       const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
       rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
-    } else {
-      showLoginMessage('Formato no soportado. Usa .xlsx, .xls o .csv', 'warning', 3000);
-      return null;
+    } else { showToast('Formato no soportado. Usa .xlsx, .xls o .csv', 'warning'); return null; }
+    if(!rows.length){ showToast('El archivo está vacío o no contiene datos', 'warning'); return null; }
+    const missing = ['user_name', 'user_email'].filter(c => !(c in rows[0]));
+    if(missing.length){ showToast(`Columnas faltantes: ${missing.join(', ')}`, 'danger', 6000); return null; }
+    return rows.map(r => ({ name: String(r.user_name || '').trim(), email: String(r.user_email || '').trim(), client: String(r.final_client || '').trim() }))
+      .filter(r => r.name || r.email);
+  }
+
+  on('bulk-file-load', 'click', async () => {
+    const fi = el('activate-excel-file'); const file = fi && fi.files[0];
+    if(!file){ showToast('Selecciona un archivo primero', 'warning'); return; }
+    try {
+      const list = await bulkReadStudentsFile(file);
+      if(!list) return;
+      _bulkStudents = _bulkStudents.concat(list);
+      fi.value = '';
+      renderBulkStudents();
+      showToast(`${list.length} alumno(s) cargados del archivo`, 'success');
+    } catch(e){ showToast('No se pudo leer el archivo: ' + e.message, 'danger'); }
+  });
+  on('bulk-man-add', 'click', () => {
+    const n = el('bulk-man-name'), m = el('bulk-man-email');
+    const name = (n.value || '').trim(), email = (m.value || '').trim();
+    if(!name || !EMAIL_RE.test(email)){ showToast('Escribe el nombre y un correo válido', 'warning'); return; }
+    _bulkStudents.push({ name, email, client: '' });
+    n.value = ''; m.value = ''; n.focus();
+    renderBulkStudents();
+  });
+  on('bulk-man-email', 'keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); el('bulk-man-add').click(); } });
+  on('bulk-students-clear', 'click', () => { _bulkStudents = []; renderBulkStudents(); });
+  document.addEventListener('click', (e) => {
+    const d = e.target.closest && e.target.closest('[data-bulk-student-del]');
+    if(d){ _bulkStudents.splice(Number(d.dataset.bulkStudentDel), 1); renderBulkStudents(); }
+  });
+
+  on('download-activation-template', 'click', () => {
+    if(!window.XLSX){ showLoginMessage('Librería Excel no cargada. Recarga la página.', 'danger', 4000); return; }
+    const wb = window.XLSX.utils.book_new();
+    const ws = window.XLSX.utils.aoa_to_sheet([
+      ['user_name', 'user_email', 'final_client'],
+      ['Juan Perez', 'juan@ejemplo.com', 'Empresa ABC'],
+      ['Maria Lopez', 'maria@ejemplo.com', ''], // final_client opcional
+    ]);
+    ws['!cols'] = [{ wch: 28 }, { wch: 32 }, { wch: 26 }];
+    window.XLSX.utils.book_append_sheet(wb, ws, 'Alumnos');
+    window.XLSX.writeFile(wb, 'plantilla_alumnos_activacion.xlsx');
+  });
+
+  // ── Paso 3: condiciones y confirmación ──
+  function renderBulkStep3(){
+    const ms = el('bulk-months');
+    if(ms){
+      const prev = ms.value;
+      const allowed = bulkAllowedMonths();
+      ms.innerHTML = allowed.map(m => `<option value="${m}">${m === 12 ? '12 meses (1 año)' : m + ' meses'}</option>`).join('');
+      ms.value = allowed.includes(Number(prev)) ? prev : String(allowed[allowed.length - 1]);
     }
-    if(!rows.length){ showLoginMessage('El archivo está vacío o no contiene datos', 'warning', 3000); return null; }
-    const hasCourseCol = ('course_name' in rows[0]) || ('course_id' in rows[0]);
-    const missing = ['user_name', 'user_email'].filter(c => !(c in rows[0])); // final_client es opcional
-    if(!hasCourseCol) missing.unshift('course_name');
-    if(missing.length){ showLoginMessage(`Columnas faltantes: ${missing.join(', ')}`, 'danger', 6000); return null; }
-    return rows;
-  }
-
-  // Resuelve la certificación de una fila (por nombre, o por course_id de plantillas antiguas).
-  function bulkResolveCourse(row, courseByName){
-    const courseName = String(row.course_name || '').trim();
-    if(courseName){
-      const matches = courseByName.get(courseName.toLowerCase());
-      if(!matches) return { error: `Certificación no encontrada: "${courseName}"` };
-      if(matches.length > 1) return { error: `Nombre de certificación ambiguo: "${courseName}" (usa course_id)` };
-      return { courseId: matches[0] };
+    const cs = el('bulk-client');
+    if(cs){
+      const prev = cs.value;
+      cs.innerHTML = '<option value="">Sin cliente final</option>' + _partnerFinalClients.map(c => `<option value="${escapeHTML(c.name)}">${escapeHTML(c.name)}</option>`).join('');
+      cs.value = prev;
     }
-    const id = row.course_id ? (parseInt(row.course_id, 10) || null) : null;
-    return id ? { courseId: id } : { error: 'Falta la certificación' };
+    renderBulkSummary();
   }
 
-  function bulkCourseMap(){
-    const m = new Map();
-    _availableCourses.forEach(c => {
-      const key = c.name.trim().toLowerCase();
-      if(!m.has(key)) m.set(key, []);
-      m.get(key).push(c.id);
-    });
-    return m;
-  }
-
-  // Revisa una fila sin activar nada. Devuelve { courseId, months, error }.
-  function bulkCheckRow(row, courseByName){
-    const userName = String(row.user_name || '').trim();
-    const userEmail = String(row.user_email || '').trim();
-    const rc = bulkResolveCourse(row, courseByName);
-    if(rc.error) return { error: rc.error };
-    if(!userName || !userEmail) return { error: 'Falta nombre o correo del alumno' };
-    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(userEmail)) return { error: 'Correo inválido' };
-    const raw = String(row.activation_months === undefined ? '' : row.activation_months).trim();
-    const months = raw ? parseInt(raw, 10) : bulkDefaultMonths();
-    if(!bulkAllowedMonths().includes(months)) return { error: `Disponibilidad inválida (${raw}): usa ${bulkAllowedMonths().join(', ')} meses` };
-    return { courseId: rc.courseId, months };
-  }
-
-  function renderBulkPreview(){
-    const box = el('bulk-preview');
-    if(!box) return;
-    const map = bulkCourseMap();
-    const checks = _bulkRows.map(r => bulkCheckRow(r, map));
-    const okN = checks.filter(c => !c.error).length;
-    const badN = checks.length - okN;
-    const rowsHtml = _bulkRows.slice(0, 50).map((r, i) => {
-      const c = checks[i];
-      return `<tr class="${c.error ? 'table-danger' : ''}">
-        <td class="text-center">${i + 2}</td>
-        <td>${escapeHTML(String(r.course_name || r.course_id || ''))}</td>
-        <td>${escapeHTML(String(r.user_name || ''))}</td>
-        <td>${escapeHTML(String(r.user_email || ''))}</td>
-        <td>${c.error ? `<span class="badge bg-danger">✗ ${escapeHTML(c.error)}</span>` : `<span class="badge bg-success">✓ Listo · ${c.months} meses</span>`}</td>
-      </tr>`;
-    }).join('');
-    box.innerHTML = `<div class="alert ${badN ? 'alert-warning' : 'alert-success'} py-2 mb-2">
-        Archivo <strong>${escapeHTML(_bulkFileName)}</strong>: <strong>${okN}</strong> fila(s) lista(s) para activar${badN ? `, <strong>${badN}</strong> con errores que se omitirán` : ''}.
-        ${okN ? `Se consumirán <strong>${okN}</strong> voucher(s).` : ''}
-      </div>
-      <div class="table-responsive" style="max-height:320px;overflow:auto;"><table class="table table-sm table-bordered mb-1">
-        <thead class="table-light"><tr><th>Fila</th><th>Certificación</th><th>Alumno</th><th>Correo</th><th>Estado</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
-      ${_bulkRows.length > 50 ? `<div class="small text-muted">Se muestran las primeras 50 de ${_bulkRows.length} filas.</div>` : ''}`;
+  function renderBulkSummary(){
+    const box = el('bulk-summary'); if(!box) return;
+    const students = bulkValidStudents();
+    const skipped = _bulkStudents.length - students.length;
+    const total = students.length * _bulkCourseIds.length;
+    const months = Number((el('bulk-months') || {}).value || 12);
+    const end = new Date(); end.setMonth(end.getMonth() + months);
+    const enough = _availableVouchers === null || total <= _availableVouchers;
+    const courseList = _bulkCourseIds.map(id => { const c = bulkCourseById(id); return c ? `<li>${escapeHTML(c.name)}</li>` : ''; }).join('');
+    box.innerHTML = `<div class="border rounded p-3">
+        <div><strong>${students.length}</strong> alumno(s) × <strong>${_bulkCourseIds.length}</strong> certificación(es) = <strong>${total}</strong> voucher(s) a consumir${_availableVouchers !== null ? ` <span class="text-muted">(disponibles: ${_availableVouchers})</span>` : ''}</div>
+        <div class="small text-muted">Acceso hasta el ${escapeHTML(end.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }))} (${months} meses)</div>
+        ${skipped ? `<div class="small text-danger mt-1">${skipped} fila(s) con errores se omitirán.</div>` : ''}
+        ${enough ? '' : `<div class="alert alert-danger py-2 mt-2 mb-0">No tienes vouchers suficientes: necesitas ${total} y tienes ${_availableVouchers}. Quita certificaciones o alumnos.</div>`}
+        <details class="mt-2"><summary class="small">Certificaciones elegidas</summary><ul class="small mb-0">${courseList}</ul></details>
+      </div>`;
     const go = el('activate-bulk-btn');
-    if(go){ go.disabled = okN === 0; go.textContent = okN ? `📤 Activar ${okN} voucher${okN === 1 ? '' : 's'}` : 'Nada que activar'; }
+    if(go){ go.disabled = !total || !enough; go.textContent = total ? `📤 Activar ${total} voucher${total === 1 ? '' : 's'}` : 'Nada que activar'; }
   }
+  on('bulk-months', 'change', renderBulkSummary);
 
-  on('bulk-next', 'click', async () => {
-    if(_bulkStep === 1){ bulkWizardGo(2); return; }
-    if(_bulkStep === 2){
-      const fileInput = el('activate-excel-file');
-      const file = fileInput && fileInput.files[0];
-      if(!file){ showLoginMessage('Selecciona un archivo primero', 'warning', 3000); return; }
-      try {
-        const rows = await bulkParseFile(file);
-        if(!rows) return;
-        _bulkRows = rows; _bulkFileName = file.name;
-        renderBulkPreview();
-        bulkWizardGo(3);
-      } catch(e){ showLoginMessage('No se pudo leer el archivo: ' + escapeHTML(e.message), 'danger', 5000); }
+  on('bulk-next', 'click', () => {
+    if(_bulkStep === 1){
+      if(!_bulkCourseIds.length){ showToast('Elige al menos una certificación', 'warning'); return; }
+      bulkWizardGo(2);
+    } else if(_bulkStep === 2){
+      if(!bulkValidStudents().length){ showToast('Agrega al menos un alumno válido', 'warning'); return; }
+      bulkWizardGo(3);
     }
   });
   on('bulk-back', 'click', () => bulkWizardGo(Math.max(1, _bulkStep - 1)));
-  on('bulk-file-clear', 'click', () => { const f = el('activate-excel-file'); if(f) f.value = ''; });
   on('bulk-restart', 'click', () => {
-    _bulkRows = []; _bulkFileName = '';
-    const f = el('activate-excel-file'); if(f) f.value = '';
+    _bulkCourseIds = []; _bulkStudents = [];
+    renderBulkChips(); renderBulkStudents();
     const r = el('bulk-activate-results'); if(r) r.innerHTML = '';
     const pr = el('bulk-activate-progress'); if(pr) pr.style.display = 'none';
     bulkWizardGo(1);
   });
-  bulkWizardGo(1);
+  renderBulkChips(); renderBulkStudents(); bulkWizardGo(1);
 
   on('activate-bulk-btn', 'click', async () => {
     const pid = getPartnerIdFromJwt();
-    if(!pid){ showLoginMessage('No se pudo obtener Partner ID', 'danger', 3000); return; }
-    if(!_bulkRows.length){ showLoginMessage('Sube un archivo primero', 'warning', 3000); return; }
+    if(!pid){ showToast('No se pudo obtener Partner ID', 'danger'); return; }
+    const students = bulkValidStudents();
+    const courseIds = _bulkCourseIds.slice();
+    if(!students.length || !courseIds.length){ showToast('Elige certificaciones y alumnos primero', 'warning'); return; }
+    const months = Number((el('bulk-months') || {}).value || 12);
+    const batchClient = (el('bulk-client') || {}).value || '';
 
-    const rows         = _bulkRows;
-    const resultsEl    = el('bulk-activate-results');
-    const progressEl   = el('bulk-activate-progress');
-    const progressBar  = el('bulk-progress-bar');
-    const progressText = el('bulk-progress-text');
-    const btn          = el('activate-bulk-btn');
-
-    if(resultsEl)  resultsEl.innerHTML = '';
-    if(progressEl) { progressEl.style.display = ''; }
+    const resultsEl = el('bulk-activate-results'), progressEl = el('bulk-activate-progress');
+    const progressBar = el('bulk-progress-bar'), progressText = el('bulk-progress-text');
+    const btn = el('activate-bulk-btn'), backBtn = el('bulk-back');
+    if(resultsEl) resultsEl.innerHTML = '';
+    if(progressEl) progressEl.style.display = '';
     if(progressBar){ progressBar.style.width = '0%'; progressBar.textContent = '0%'; progressBar.classList.add('progress-bar-animated'); }
     if(btn) btn.disabled = true;
-    const backBtn = el('bulk-back'); if(backBtn) backBtn.style.display = 'none';
+    if(backBtn) backBtn.style.display = 'none';
 
+    const total = students.length * courseIds.length;
+    const results = [];
+    let done = 0;
     try {
-      const courseByName = bulkCourseMap();
-      const results = [];
-      for(let i = 0; i < rows.length; i++){
-        const row = rows[i];
-        const userName   = String(row.user_name   || '').trim();
-        const userEmail  = String(row.user_email  || '').trim();
-        const finalClient = String(row.final_client || '').trim();
-
-        const pct = Math.round((i / rows.length) * 100);
-        if(progressBar){ progressBar.style.width = pct + '%'; progressBar.textContent = pct + '%'; }
-        if(progressText) progressText.textContent = `Procesando fila ${i + 1} de ${rows.length}…`;
-
-        const chk = bulkCheckRow(row, courseByName);
-        if(chk.error){
-          results.push({ row: i + 2, ok: false, error: chk.error, userName, userEmail });
-          continue;
-        }
-
-        try {
-          const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, {
-            method: 'POST', headers: authHeaders(),
-            body: JSON.stringify({ course_id: chk.courseId, user_name: userName, user_email: userEmail, final_client: finalClient || undefined, activation_months: chk.months })
-          });
-          const data = await resp.json();
-          if(resp.ok){
-            results.push({ row: i + 2, ok: true, voucher: data.voucher_code, course: data.course_name, userName, userEmail });
-          } else {
-            results.push({ row: i + 2, ok: false, error: data.error || 'Error desconocido', userName, userEmail });
+      for(const st of students){
+        for(const cid of courseIds){
+          const pct = Math.round((done / total) * 100);
+          if(progressBar){ progressBar.style.width = pct + '%'; progressBar.textContent = pct + '%'; }
+          if(progressText) progressText.textContent = `Procesando ${done + 1} de ${total}…`;
+          const course = bulkCourseById(cid);
+          try {
+            const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, {
+              method: 'POST', headers: authHeaders(),
+              body: JSON.stringify({ course_id: cid, user_name: st.name, user_email: st.email, final_client: (st.client || batchClient) || undefined, activation_months: months })
+            });
+            const data = await resp.json();
+            results.push(resp.ok
+              ? { ok: true, voucher: data.voucher_code, course: course ? course.name : '', st }
+              : { ok: false, error: data.error || 'Error desconocido', course: course ? course.name : '', st });
+          } catch(e){
+            results.push({ ok: false, error: e.message, course: course ? course.name : '', st });
           }
-        } catch(e){
-          results.push({ row: i + 2, ok: false, error: e.message, userName, userEmail });
+          done++;
         }
       }
-
       if(progressBar){ progressBar.style.width = '100%'; progressBar.textContent = '100%'; progressBar.classList.remove('progress-bar-animated'); }
-      const okCount   = results.filter(r => r.ok).length;
-      const failCount = results.filter(r => !r.ok).length;
-      if(progressText) progressText.textContent = `Completado: ${okCount} exitosos, ${failCount} fallidos de ${rows.length} filas.`;
-
+      const okCount = results.filter(r => r.ok).length, failCount = results.length - okCount;
+      if(progressText) progressText.textContent = `Completado: ${okCount} exitosos, ${failCount} fallidos de ${total}.`;
       let html = `<div class="alert ${failCount === 0 ? 'alert-success' : (okCount === 0 ? 'alert-danger' : 'alert-warning')} mb-3">
-        <strong>${okCount} activaciones exitosas</strong>${failCount > 0 ? `, <strong>${failCount} fallidas</strong>` : ''} de ${rows.length} filas procesadas.
-      </div>
-      <div class="table-responsive"><table class="table table-sm table-bordered">
-        <thead class="table-light"><tr><th>Fila</th><th>Usuario</th><th>Email</th><th>Resultado</th></tr></thead><tbody>`;
+        <strong>${okCount} activaciones exitosas</strong>${failCount ? `, <strong>${failCount} fallidas</strong>` : ''} de ${total}.</div>
+        <div class="table-responsive"><table class="table table-sm table-bordered">
+        <thead class="table-light"><tr><th>Alumno</th><th>Correo</th><th>Certificación</th><th>Resultado</th></tr></thead><tbody>`;
       results.forEach(r => {
-        const badge = r.ok
-          ? `<span class="badge bg-success">✓ Voucher: ${escapeHTML(r.voucher || '')}</span>`
-          : `<span class="badge bg-danger">✗ ${escapeHTML(r.error || '')}</span>`;
-        html += `<tr>
-          <td class="text-center">${r.row}</td>
-          <td>${escapeHTML(r.userName || '')}</td>
-          <td>${escapeHTML(r.userEmail || '')}</td>
-          <td>${badge}</td>
-        </tr>`;
+        const badge = r.ok ? `<span class="badge bg-success">✓ Voucher: ${escapeHTML(r.voucher || '')}</span>` : `<span class="badge bg-danger">✗ ${escapeHTML(r.error || '')}</span>`;
+        html += `<tr><td>${escapeHTML(r.st.name)}</td><td>${escapeHTML(r.st.email)}</td><td>${escapeHTML(r.course)}</td><td>${badge}</td></tr>`;
       });
       html += '</tbody></table></div>';
       if(resultsEl) resultsEl.innerHTML = html;
-
-      if(okCount > 0){
-        loadPartnerVouchers();
-        loadPartnerStats(false);
-        loadActivationEligibility();
-      }
-      // Terminado: se oculta el botón de activar para no repetir la carga; queda "Nueva carga".
+      if(okCount > 0){ loadPartnerVouchers(); loadPartnerStats(false); loadActivationEligibility(); }
       if(btn) btn.style.display = 'none';
       const rs = el('bulk-restart'); if(rs) rs.style.display = '';
-      _bulkRows = [];
     } catch(e){
-      showLoginMessage('Error procesando archivo: ' + escapeHTML(e.message), 'danger', 5000);
+      showToast('Error procesando la activación: ' + e.message, 'danger', 5000);
       if(btn) btn.disabled = false;
       if(backBtn) backBtn.style.display = '';
     }
