@@ -3427,6 +3427,10 @@
                     <button id="admin-hist-refresh" class="btn btn-sm btn-outline-primary">↻ Actualizar desde Moodle</button>
                     <span id="admin-hist-status" class="small text-muted align-self-center"></span>
                   </div>
+                  <div class="input-group input-group-sm mb-2" style="max-width:420px;">
+                    <input id="admin-hist-text-filter" class="form-control" placeholder="Buscar por curso, alumno o correo…" autocomplete="off">
+                    <button type="button" id="admin-hist-text-clear" class="btn btn-outline-secondary" title="Borrar búsqueda">✕</button>
+                  </div>
                   <h6 class="mt-2">Cursos y estudiantes en Moodle</h6>
                   <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th>Curso</th><th>Nombre</th><th>Correo</th><th>Matriculado</th><th>Vence</th></tr></thead><tbody id="admin-hist-moodle"></tbody></table></div>
                   <div id="admin-hist-moodle-pager" class="d-flex align-items-center justify-content-center mb-4"></div>
@@ -3451,11 +3455,13 @@
                   <!-- Filtros -->
                   <div class="row g-2 mb-3">
                     <div class="col-md-3">
+                      <label class="form-label small mb-1">Partner</label>
                       <select id="admin-act-filter-partner" class="form-select form-select-sm">
                         <option value="">Todos los partners</option>
                       </select>
                     </div>
                     <div class="col-md-3">
+                      <label class="form-label small mb-1">Estado Moodle</label>
                       <select id="admin-act-filter-moodle" class="form-select form-select-sm">
                         <option value="">Todos los estados Moodle</option>
                         <option value="COMPLETED">🎓 Completado</option>
@@ -3466,12 +3472,13 @@
                       </select>
                     </div>
                     <div class="col-md-3">
+                      <label class="form-label small mb-1">Certificación</label>
                       <select id="admin-act-filter-course" class="form-select form-select-sm">
                         <option value="">Todas las certificaciones</option>
                       </select>
                     </div>
-                    <div class="col-md-3">
-                      <div class="d-flex gap-2"><button id="admin-act-filter-btn" class="btn btn-primary btn-sm flex-grow-1">🔍 Aplicar</button><button id="admin-act-filter-clear" class="btn btn-outline-secondary btn-sm" title="Borrar criterios de búsqueda">✕ Limpiar</button></div>
+                    <div class="col-md-3 d-flex align-items-end">
+                      <div class="d-flex gap-2 w-100"><button id="admin-act-filter-btn" class="btn btn-primary btn-sm flex-grow-1">🔍 Aplicar</button><button id="admin-act-filter-clear" class="btn btn-outline-secondary btn-sm" title="Borrar criterios de búsqueda">✕ Limpiar</button></div>
                     </div>
                   </div>
 
@@ -3987,6 +3994,10 @@
                   <div class="d-flex flex-wrap gap-2 mb-3">
                     <button id="partner-hist-refresh" class="btn btn-sm btn-outline-primary">↻ Actualizar desde Moodle</button>
                     <span id="partner-hist-status" class="small text-muted align-self-center"></span>
+                  </div>
+                  <div class="input-group input-group-sm mb-2" style="max-width:420px;">
+                    <input id="partner-hist-text-filter" class="form-control" placeholder="Buscar por curso, alumno o correo…" autocomplete="off">
+                    <button type="button" id="partner-hist-text-clear" class="btn btn-outline-secondary" title="Borrar búsqueda">✕</button>
                   </div>
                   <h6 class="mt-2">Cursos y estudiantes en Moodle</h6>
                   <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th>Curso</th><th>Nombre</th><th>Correo</th><th>Matriculado</th><th>Vence</th></tr></thead><tbody id="partner-hist-moodle"></tbody></table></div>

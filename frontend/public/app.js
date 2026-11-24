@@ -1022,11 +1022,26 @@ document.addEventListener('DOMContentLoaded', () => {
     renderPartnerHistory(b.dataset.p, partnerHistoryCache.data);
   });
 
+  ['admin-hist', 'partner-hist'].forEach(P => {
+    on(P + '-text-filter', 'input', () => { histMoodlePage[P] = 1; if(partnerHistoryCache.data) renderPartnerHistory(P, partnerHistoryCache.data); });
+    on(P + '-text-clear', 'click', () => {
+      const i = el(P + '-text-filter'); if(i) i.value = '';
+      histMoodlePage[P] = 1; if(partnerHistoryCache.data) renderPartnerHistory(P, partnerHistoryCache.data);
+    });
+  });
+
   function renderPartnerHistory(P, data){
     const tbM = el(P + '-moodle');
     const tbA = el(P + '-app');
     const status = el(P + '-status');
     const view = historyCoursesForView(P, data);
+    const q = normTxt((el(P + '-text-filter') || {}).value || '').trim();
+    if(q){
+      view.courses = view.courses
+        .map(c => normTxt(c.course_name).includes(q) ? c : { ...c, members: (c.members || []).filter(m => [m.fullname, m.username, m.email].some(v => normTxt(v).includes(q))) })
+        .filter(c => (c.members || []).length || normTxt(c.course_name).includes(q));
+      view.filtered = true;
+    }
     if(data.moodle && data.moodle.error){
       if(status) status.textContent = 'No se pudo leer Moodle: ' + data.moodle.error;
     } else if(data.moodle){
@@ -1068,7 +1083,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     if(tbA){
-      const appView = historyAppRowsForView(P, data);
+      const appView = historyAppRowsForView(P, data).filter(r => !q || [r.curso, r.user_name, r.user_email, r.final_client].some(v => normTxt(v).includes(q)));
       tbA.innerHTML = appView.length
         ? appView.map(r => `<tr>
             <td>${escapeHTML(r.curso || '—')}</td>
@@ -7026,6 +7041,58 @@ document.addEventListener('DOMContentLoaded', () => {
     if(item) selectCourse(item.dataset.courseId);
   });
 
+  // ── Autocompletado en filtros ───────────────────────────────────────────────
+  // Convierte un <select> (con opciones que se cargan dinámicamente) en un campo con
+  // autocompletado nativo (datalist). El <select> sigue siendo la fuente de verdad: los
+  // manejadores existentes (Aplicar, Limpiar, exportar) siguen leyendo select.value.
+  function enhanceSelectWithSearch(id){
+    const select = el(id);
+    if(!select || select.dataset.searchEnhanced) return;
+    select.dataset.searchEnhanced = '1';
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = select.className.replace('form-select', 'form-control');
+    input.setAttribute('autocomplete', 'off');
+    input.setAttribute('list', id + '-datalist');
+    const dl = document.createElement('datalist');
+    dl.id = id + '-datalist';
+    const optText = o => (o.textContent || '').trim();
+    const placeholder = () => { const o = select.options[0]; return o && !o.value ? optText(o) : 'Buscar…'; };
+    const rebuild = () => {
+      dl.innerHTML = Array.from(select.options).filter(o => o.value).map(o => `<option value="${escapeHTML(optText(o))}"></option>`).join('');
+      input.placeholder = placeholder();
+    };
+    const valueDesc = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, 'value');
+    const syncInput = () => {
+      const o = select.selectedOptions && select.selectedOptions[0];
+      input.value = o && o.value ? optText(o) : '';
+    };
+    Object.defineProperty(select, 'value', {
+      configurable: true,
+      get(){ return valueDesc.get.call(this); },
+      set(v){ valueDesc.set.call(this, v); syncInput(); }
+    });
+    const match = () => {
+      const q = normTxt(input.value).trim();
+      if(!q) return '';
+      const hit = Array.from(select.options).find(o => o.value && normTxt(optText(o)) === q);
+      return hit ? hit.value : null;
+    };
+    input.addEventListener('input', () => {
+      const v = match();
+      if(v !== null && valueDesc.get.call(select) !== v){ valueDesc.set.call(select, v); select.dispatchEvent(new Event('change', { bubbles: true })); }
+    });
+    input.addEventListener('blur', () => { if(match() === null){ valueDesc.set.call(select, ''); select.dispatchEvent(new Event('change', { bubbles: true })); input.value = ''; } });
+    select.classList.add('d-none');
+    select.insertAdjacentElement('afterend', dl);
+    select.insertAdjacentElement('afterend', input);
+    new MutationObserver(() => { rebuild(); syncInput(); }).observe(select, { childList: true });
+    rebuild();
+  }
+  ['pf-partner', 'audit-filter-partner-id', 'rpt-compras-partner', 'rpt-vouchers-partner',
+   'admin-act-filter-partner', 'admin-act-filter-course', 'voucher-filter-course', 'voucher-filter-client']
+    .forEach(enhanceSelectWithSearch);
+
   let _maxActivationMonths = 12;
 
   async function loadActivationMonthsSelect(){
@@ -7042,13 +7109,17 @@ document.addEventListener('DOMContentLoaded', () => {
     if(maxLabel) maxLabel.textContent = `(máx. ${_maxActivationMonths} meses)`;
     const prevVal = parseInt(select.value) || _maxActivationMonths;
     select.innerHTML = '';
-    for(let i = 1; i <= _maxActivationMonths; i++){
+    // Solo plazos de 3, 6, 9 y 12 meses, sin pasar del máximo del partner.
+    let allowed = [3, 6, 9, 12].filter(m => m <= _maxActivationMonths);
+    if(!allowed.length) allowed = [_maxActivationMonths];
+    const pick = allowed.includes(prevVal) ? prevVal : allowed[allowed.length - 1];
+    allowed.forEach(i => {
       const opt = document.createElement('option');
       opt.value = i;
-      opt.textContent = i === 12 ? '12 meses (1 año)' : i === 1 ? '1 mes' : `${i} meses`;
-      if(i === Math.min(prevVal, _maxActivationMonths)) opt.selected = true;
+      opt.textContent = i === 12 ? '12 meses (1 año)' : `${i} meses`;
+      if(i === pick) opt.selected = true;
       select.appendChild(opt);
-    }
+    });
     if(!select.value) select.value = String(_maxActivationMonths);
   }
 
