@@ -7661,12 +7661,23 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   const bulkValidStudents = () => _bulkStudents.filter((st, i) => bulkStudentState(st, i).ok);
 
+  // Opciones de cliente final (opcional). Si el archivo trae un cliente que no está en la lista, se conserva.
+  function bulkClientOptions(selected){
+    const names = _partnerFinalClients.map(c => c.name);
+    if(selected && !names.includes(selected)) names.push(selected);
+    return '<option value="">Sin cliente final</option>' + names.map(n => `<option value="${escapeHTML(n)}"${n === selected ? ' selected' : ''}>${escapeHTML(n)}</option>`).join('');
+  }
+  function bulkClientSelectHtml(selected, idx){
+    return `<select class="form-select form-select-sm" data-bulk-student-client="${idx}">${bulkClientOptions(selected)}</select>`;
+  }
+
   function renderBulkStudents(){
+    const man = el('bulk-man-client'); if(man){ const v = man.value; man.innerHTML = bulkClientOptions(v); }
     const tb = el('bulk-students-body'); if(!tb) return;
     tb.innerHTML = _bulkStudents.length
       ? _bulkStudents.map((st, i) => {
           const s = bulkStudentState(st, i);
-          return `<tr class="${s.ok ? '' : 'table-danger'}"><td>${escapeHTML(st.name)}</td><td>${escapeHTML(st.email)}</td><td>${escapeHTML(st.client || '—')}</td>
+          return `<tr class="${s.ok ? '' : 'table-danger'}"><td>${escapeHTML(st.name)}</td><td>${escapeHTML(st.email)}</td><td>${bulkClientSelectHtml(st.client, i)}</td>
             <td>${s.ok ? '<span class="badge bg-success">✓ Listo</span>' : `<span class="badge bg-danger">✗ ${s.msg}</span>`}</td>
             <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-bulk-student-del="${i}" title="Quitar">✕</button></td></tr>`;
         }).join('')
@@ -7707,12 +7718,16 @@ document.addEventListener('DOMContentLoaded', () => {
     const n = el('bulk-man-name'), m = el('bulk-man-email');
     const name = (n.value || '').trim(), email = (m.value || '').trim();
     if(!name || !EMAIL_RE.test(email)){ showToast('Escribe el nombre y un correo válido', 'warning'); return; }
-    _bulkStudents.push({ name, email, client: '' });
+    _bulkStudents.push({ name, email, client: (el('bulk-man-client') || {}).value || '' });
     n.value = ''; m.value = ''; n.focus();
     renderBulkStudents();
   });
   on('bulk-man-email', 'keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); el('bulk-man-add').click(); } });
   on('bulk-students-clear', 'click', () => { _bulkStudents = []; renderBulkStudents(); });
+  document.addEventListener('change', (e) => {
+    const sel = e.target.closest && e.target.closest('[data-bulk-student-client]');
+    if(sel && _bulkStudents[Number(sel.dataset.bulkStudentClient)]) _bulkStudents[Number(sel.dataset.bulkStudentClient)].client = sel.value;
+  });
   document.addEventListener('click', (e) => {
     const d = e.target.closest && e.target.closest('[data-bulk-student-del]');
     if(d){ _bulkStudents.splice(Number(d.dataset.bulkStudentDel), 1); renderBulkStudents(); }
@@ -7758,7 +7773,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const end = new Date(); end.setMonth(end.getMonth() + months);
     const enough = _availableVouchers === null || total <= _availableVouchers;
     const courseList = _bulkCourseIds.map(id => { const c = bulkCourseById(id); return c ? `<li>${escapeHTML(c.name)}</li>` : ''; }).join('');
+    const batchClient = (el('bulk-client') || {}).value || '';
+    const withOwn = students.filter(st => st.client).length;
     box.innerHTML = `<div class="border rounded p-3">
+        <div class="small text-muted mb-1">Cliente final: ${withOwn ? `${withOwn} alumno(s) con cliente propio` : 'ninguno propio'}${batchClient ? `; el resto: <strong>${escapeHTML(batchClient)}</strong>` : '; el resto sin cliente final'}</div>
         <div><strong>${students.length}</strong> alumno(s) × <strong>${_bulkCourseIds.length}</strong> certificación(es) = <strong>${total}</strong> voucher(s) a consumir${_availableVouchers !== null ? ` <span class="text-muted">(disponibles: ${_availableVouchers})</span>` : ''}</div>
         <div class="small text-muted">Acceso hasta el ${escapeHTML(end.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }))} (${months} meses)</div>
         ${skipped ? `<div class="small text-danger mt-1">${skipped} fila(s) con errores se omitirán.</div>` : ''}
@@ -7769,6 +7787,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(go){ go.disabled = !total || !enough; go.textContent = total ? `📤 Activar ${total} voucher${total === 1 ? '' : 's'}` : 'Nada que activar'; }
   }
   on('bulk-months', 'change', renderBulkSummary);
+  on('bulk-client', 'change', renderBulkSummary);
 
   on('bulk-next', 'click', () => {
     if(_bulkStep === 1){
