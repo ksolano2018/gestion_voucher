@@ -6988,6 +6988,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // (activate-btn/btn-do-activate ya leen .value / .options[selectedIndex].text de él).
   const MAX_COURSE_SUGGESTIONS = 30;
 
+  // Tipo de certificación según el nombre, para distinguirlas con color en la lista.
+  function courseKind(name){
+    const n = String(name || '');
+    if(/simulator/i.test(n)) return { key: 'sim', label: 'Simulador', cls: 'bg-warning text-dark' };
+    if(/content\s*$/i.test(n)) return { key: 'content', label: 'Contenido', cls: 'bg-info text-dark' };
+    if(/(^|[\s.])free\b/i.test(n)) return { key: 'free', label: 'Gratis', cls: 'bg-success' };
+    return { key: 'cert', label: 'Certificación', cls: 'bg-primary' };
+  }
+
   function renderCourseSuggestions(term){
     const dropdown = el('activate-course-dropdown');
     if(!dropdown) return;
@@ -7003,9 +7012,23 @@ document.addEventListener('DOMContentLoaded', () => {
       return;
     }
 
-    dropdown.innerHTML = matches.map(c =>
-      `<button type="button" class="list-group-item list-group-item-action py-1 px-2 small" data-course-id="${escapeHTML(String(c.id))}">${escapeHTML(c.id + ' - ' + c.name)}</button>`
-    ).join('') + (_availableCourses.length > matches.length
+    const hl = (txt) => {
+      const t = String(txt);
+      if(!q) return escapeHTML(t);
+      const i = t.toLowerCase().indexOf(q);
+      return i < 0 ? escapeHTML(t) : escapeHTML(t.slice(0, i)) + '<mark class="px-0">' + escapeHTML(t.slice(i, i + q.length)) + '</mark>' + escapeHTML(t.slice(i + q.length));
+    };
+    dropdown.innerHTML = matches.map(c => {
+      const kind = courseKind(c.name);
+      const title = c.name.replace(/\s*-\s*(Content|Simulator)\s*$/i, '');
+      return `<button type="button" class="list-group-item list-group-item-action course-opt course-opt-${kind.key}" data-course-id="${escapeHTML(String(c.id))}">
+        <div class="d-flex justify-content-between align-items-center gap-2">
+          <span class="fw-semibold">${hl(title)}</span>
+          <span class="badge ${kind.cls}">${kind.label}</span>
+        </div>
+        <div class="small text-muted">ID ${hl(c.id)}</div>
+      </button>`;
+    }).join('') + (_availableCourses.length > matches.length
       ? `<div class="list-group-item text-muted small">Sigue escribiendo para acotar (${_availableCourses.length} en total)…</div>`
       : '');
     dropdown.style.display = '';
@@ -7028,9 +7051,15 @@ document.addEventListener('DOMContentLoaded', () => {
     renderCourseSuggestions(e.target.value);
   });
   on('activate-course-search', 'focus', (e) => renderCourseSuggestions(e.target.value));
+  on('activate-course-clear', 'click', () => {
+    const select = el('activate-course-id'), search = el('activate-course-search'), dropdown = el('activate-course-dropdown');
+    if(select) select.value = '';
+    if(search){ search.value = ''; search.focus(); }
+    if(dropdown) dropdown.style.display = 'none';
+  });
 
   document.addEventListener('click', (e) => {
-    if(!e.target.closest('#activate-course-search') && !e.target.closest('#activate-course-dropdown')){
+    if(!e.target.closest('#activate-course-search') && !e.target.closest('#activate-course-dropdown') && !e.target.closest('#activate-course-clear')){
       const dropdown = el('activate-course-dropdown');
       if(dropdown) dropdown.style.display = 'none';
     }
