@@ -4096,19 +4096,38 @@
                   <!-- Activación masiva por Excel -->
                   <div class="card shadow-sm mb-4">
                     <div class="card-body">
-                      <h6 class="mb-1">Activación Masiva por Excel / CSV</h6>
-                      <p class="text-muted small mb-3">Sube un archivo con múltiples activaciones. Columnas requeridas: <code>course_name</code> (nombre exacto de la certificación), <code>user_name</code>, <code>user_email</code>, <code>final_client</code>. Columna opcional: <code>activation_months</code>.</p>
-                      <div class="mb-3">
-                        <button id="download-activation-template" class="btn btn-outline-secondary btn-sm">⬇ Descargar plantilla CSV</button>
+                      <h6 class="mb-3">Activación Masiva por Excel / CSV</h6>
+                      <div id="bulk-stepper" class="d-flex align-items-center gap-2 mb-4 flex-wrap">
+                        <span class="act-step-pill" data-step="1"><span class="act-step-num">1</span> Plantilla</span>
+                        <span class="text-muted">›</span>
+                        <span class="act-step-pill" data-step="2"><span class="act-step-num">2</span> Archivo</span>
+                        <span class="text-muted">›</span>
+                        <span class="act-step-pill" data-step="3"><span class="act-step-num">3</span> Revisar y activar</span>
                       </div>
-                      <div class="row g-3 align-items-end">
-                        <div class="col-md-8">
-                          <label class="form-label">Archivo Excel (.xlsx, .xls) o CSV</label>
+
+                      <div class="bulk-step" data-step="1">
+                        <p class="text-muted small mb-3">Descarga la plantilla, llénala con una fila por alumno y vuelve aquí. Columnas requeridas: <code>course_name</code> (nombre exacto de la certificación, copiado de la hoja "Certificaciones disponibles"), <code>user_name</code> y <code>user_email</code>. Opcionales: <code>final_client</code> y <code>activation_months</code> (3, 6 o 12).</p>
+                        <button id="download-activation-template" class="btn btn-outline-secondary btn-sm">⬇ Descargar plantilla Excel</button>
+                      </div>
+
+                      <div class="bulk-step" data-step="2" style="display:none;">
+                        <label class="form-label">Archivo Excel (.xlsx, .xls) o CSV con las activaciones</label>
+                        <div class="input-group" style="max-width:620px;">
                           <input id="activate-excel-file" type="file" class="form-control" accept=".xlsx,.xls,.csv">
+                          <button type="button" id="bulk-file-clear" class="btn btn-outline-secondary" title="Quitar archivo">✕</button>
                         </div>
-                        <div class="col-md-4">
-                          <button id="activate-bulk-btn" class="btn btn-success w-100">📤 Procesar archivo</button>
-                        </div>
+                        <div class="form-text">Al continuar se revisa el archivo sin activar nada todavía.</div>
+                      </div>
+
+                      <div class="bulk-step" data-step="3" style="display:none;">
+                        <div id="bulk-preview"></div>
+                      </div>
+
+                      <div class="d-flex gap-2 mt-3">
+                        <button type="button" id="bulk-back" class="btn btn-outline-secondary" style="display:none;">‹ Atrás</button>
+                        <button type="button" id="bulk-next" class="btn btn-primary">Siguiente ›</button>
+                        <button id="activate-bulk-btn" class="btn btn-success" style="display:none;">📤 Activar vouchers</button>
+                        <button type="button" id="bulk-restart" class="btn btn-outline-primary" style="display:none;">↻ Nueva carga</button>
                       </div>
                       <div id="bulk-activate-progress" class="mt-3" style="display:none;">
                         <div class="progress mb-1" style="height:20px;">

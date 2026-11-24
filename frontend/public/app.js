@@ -7549,8 +7549,8 @@ document.addEventListener('DOMContentLoaded', () => {
       : ['(copia un nombre de la hoja "Certificaciones disponibles")', ''];
     const templateData = [
       ['course_name', 'user_name', 'user_email', 'final_client', 'activation_months'],
-      [sampleNames[0] || '', 'Juan Perez', 'juan@ejemplo.com', 'Empresa ABC', _maxActivationMonths],
-      [sampleNames[1] || sampleNames[0] || '', 'Maria Lopez', 'maria@ejemplo.com', '', _maxActivationMonths], // final_client opcional: puede ir vacío
+      [sampleNames[0] || '', 'Juan Perez', 'juan@ejemplo.com', 'Empresa ABC', bulkDefaultMonths()],
+      [sampleNames[1] || sampleNames[0] || '', 'Maria Lopez', 'maria@ejemplo.com', '', bulkDefaultMonths()], // final_client opcional: puede ir vacío
     ];
     const wsTemplate = window.XLSX.utils.aoa_to_sheet(templateData);
     wsTemplate['!cols'] = [{ wch: 40 }, { wch: 25 }, { wch: 30 }, { wch: 25 }, { wch: 20 }];
@@ -7568,14 +7568,151 @@ document.addEventListener('DOMContentLoaded', () => {
     window.XLSX.writeFile(wb, 'plantilla_activacion_vouchers.xlsx');
   });
 
+  // ── Wizard de activación masiva (3 pasos) ──────────────────────────────────
+  let _bulkStep = 1;
+  let _bulkRows = [];
+  let _bulkFileName = '';
+
+  function bulkAllowedMonths(){
+    const a = [3, 6, 12].filter(m => m <= _maxActivationMonths);
+    return a.length ? a : [_maxActivationMonths];
+  }
+  function bulkDefaultMonths(){ const a = bulkAllowedMonths(); return a[a.length - 1]; }
+
+  function bulkWizardGo(n){
+    _bulkStep = n;
+    document.querySelectorAll('#partner-activate .bulk-step').forEach(d => { d.style.display = Number(d.dataset.step) === n ? '' : 'none'; });
+    document.querySelectorAll('#bulk-stepper .act-step-pill').forEach(p => {
+      const k = Number(p.dataset.step);
+      p.classList.toggle('active', k === n);
+      p.classList.toggle('done', k < n);
+    });
+    const back = el('bulk-back'), next = el('bulk-next'), go = el('activate-bulk-btn'), rs = el('bulk-restart');
+    if(back) back.style.display = n > 1 ? '' : 'none';
+    if(next) next.style.display = n < 3 ? '' : 'none';
+    if(go)   go.style.display   = n === 3 ? '' : 'none';
+    if(rs)   rs.style.display   = 'none';
+  }
+
+  // Lee el archivo y valida las columnas. Devuelve las filas o null (ya avisó del problema).
+  async function bulkParseFile(file){
+    const ext = file.name.split('.').pop().toLowerCase();
+    let rows = [];
+    if(ext === 'csv'){
+      rows = parseCSVRows(await file.text());
+    } else if(ext === 'xlsx' || ext === 'xls'){
+      if(!window.XLSX){ showLoginMessage('Librería Excel no cargada. Recarga la página.', 'danger', 4000); return null; }
+      const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
+      rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
+    } else {
+      showLoginMessage('Formato no soportado. Usa .xlsx, .xls o .csv', 'warning', 3000);
+      return null;
+    }
+    if(!rows.length){ showLoginMessage('El archivo está vacío o no contiene datos', 'warning', 3000); return null; }
+    const hasCourseCol = ('course_name' in rows[0]) || ('course_id' in rows[0]);
+    const missing = ['user_name', 'user_email'].filter(c => !(c in rows[0])); // final_client es opcional
+    if(!hasCourseCol) missing.unshift('course_name');
+    if(missing.length){ showLoginMessage(`Columnas faltantes: ${missing.join(', ')}`, 'danger', 6000); return null; }
+    return rows;
+  }
+
+  // Resuelve la certificación de una fila (por nombre, o por course_id de plantillas antiguas).
+  function bulkResolveCourse(row, courseByName){
+    const courseName = String(row.course_name || '').trim();
+    if(courseName){
+      const matches = courseByName.get(courseName.toLowerCase());
+      if(!matches) return { error: `Certificación no encontrada: "${courseName}"` };
+      if(matches.length > 1) return { error: `Nombre de certificación ambiguo: "${courseName}" (usa course_id)` };
+      return { courseId: matches[0] };
+    }
+    const id = row.course_id ? (parseInt(row.course_id, 10) || null) : null;
+    return id ? { courseId: id } : { error: 'Falta la certificación' };
+  }
+
+  function bulkCourseMap(){
+    const m = new Map();
+    _availableCourses.forEach(c => {
+      const key = c.name.trim().toLowerCase();
+      if(!m.has(key)) m.set(key, []);
+      m.get(key).push(c.id);
+    });
+    return m;
+  }
+
+  // Revisa una fila sin activar nada. Devuelve { courseId, months, error }.
+  function bulkCheckRow(row, courseByName){
+    const userName = String(row.user_name || '').trim();
+    const userEmail = String(row.user_email || '').trim();
+    const rc = bulkResolveCourse(row, courseByName);
+    if(rc.error) return { error: rc.error };
+    if(!userName || !userEmail) return { error: 'Falta nombre o correo del alumno' };
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(userEmail)) return { error: 'Correo inválido' };
+    const raw = String(row.activation_months === undefined ? '' : row.activation_months).trim();
+    const months = raw ? parseInt(raw, 10) : bulkDefaultMonths();
+    if(!bulkAllowedMonths().includes(months)) return { error: `Disponibilidad inválida (${raw}): usa ${bulkAllowedMonths().join(', ')} meses` };
+    return { courseId: rc.courseId, months };
+  }
+
+  function renderBulkPreview(){
+    const box = el('bulk-preview');
+    if(!box) return;
+    const map = bulkCourseMap();
+    const checks = _bulkRows.map(r => bulkCheckRow(r, map));
+    const okN = checks.filter(c => !c.error).length;
+    const badN = checks.length - okN;
+    const rowsHtml = _bulkRows.slice(0, 50).map((r, i) => {
+      const c = checks[i];
+      return `<tr class="${c.error ? 'table-danger' : ''}">
+        <td class="text-center">${i + 2}</td>
+        <td>${escapeHTML(String(r.course_name || r.course_id || ''))}</td>
+        <td>${escapeHTML(String(r.user_name || ''))}</td>
+        <td>${escapeHTML(String(r.user_email || ''))}</td>
+        <td>${c.error ? `<span class="badge bg-danger">✗ ${escapeHTML(c.error)}</span>` : `<span class="badge bg-success">✓ Listo · ${c.months} meses</span>`}</td>
+      </tr>`;
+    }).join('');
+    box.innerHTML = `<div class="alert ${badN ? 'alert-warning' : 'alert-success'} py-2 mb-2">
+        Archivo <strong>${escapeHTML(_bulkFileName)}</strong>: <strong>${okN}</strong> fila(s) lista(s) para activar${badN ? `, <strong>${badN}</strong> con errores que se omitirán` : ''}.
+        ${okN ? `Se consumirán <strong>${okN}</strong> voucher(s).` : ''}
+      </div>
+      <div class="table-responsive" style="max-height:320px;overflow:auto;"><table class="table table-sm table-bordered mb-1">
+        <thead class="table-light"><tr><th>Fila</th><th>Certificación</th><th>Alumno</th><th>Correo</th><th>Estado</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>
+      ${_bulkRows.length > 50 ? `<div class="small text-muted">Se muestran las primeras 50 de ${_bulkRows.length} filas.</div>` : ''}`;
+    const go = el('activate-bulk-btn');
+    if(go){ go.disabled = okN === 0; go.textContent = okN ? `📤 Activar ${okN} voucher${okN === 1 ? '' : 's'}` : 'Nada que activar'; }
+  }
+
+  on('bulk-next', 'click', async () => {
+    if(_bulkStep === 1){ bulkWizardGo(2); return; }
+    if(_bulkStep === 2){
+      const fileInput = el('activate-excel-file');
+      const file = fileInput && fileInput.files[0];
+      if(!file){ showLoginMessage('Selecciona un archivo primero', 'warning', 3000); return; }
+      try {
+        const rows = await bulkParseFile(file);
+        if(!rows) return;
+        _bulkRows = rows; _bulkFileName = file.name;
+        renderBulkPreview();
+        bulkWizardGo(3);
+      } catch(e){ showLoginMessage('No se pudo leer el archivo: ' + escapeHTML(e.message), 'danger', 5000); }
+    }
+  });
+  on('bulk-back', 'click', () => bulkWizardGo(Math.max(1, _bulkStep - 1)));
+  on('bulk-file-clear', 'click', () => { const f = el('activate-excel-file'); if(f) f.value = ''; });
+  on('bulk-restart', 'click', () => {
+    _bulkRows = []; _bulkFileName = '';
+    const f = el('activate-excel-file'); if(f) f.value = '';
+    const r = el('bulk-activate-results'); if(r) r.innerHTML = '';
+    const pr = el('bulk-activate-progress'); if(pr) pr.style.display = 'none';
+    bulkWizardGo(1);
+  });
+  bulkWizardGo(1);
+
   on('activate-bulk-btn', 'click', async () => {
     const pid = getPartnerIdFromJwt();
     if(!pid){ showLoginMessage('No se pudo obtener Partner ID', 'danger', 3000); return; }
+    if(!_bulkRows.length){ showLoginMessage('Sube un archivo primero', 'warning', 3000); return; }
 
-    const fileInput = el('activate-excel-file');
-    const file = fileInput && fileInput.files[0];
-    if(!file){ showLoginMessage('Selecciona un archivo primero', 'warning', 3000); return; }
-
+    const rows         = _bulkRows;
     const resultsEl    = el('bulk-activate-results');
     const progressEl   = el('bulk-activate-progress');
     const progressBar  = el('bulk-progress-bar');
@@ -7584,108 +7721,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if(resultsEl)  resultsEl.innerHTML = '';
     if(progressEl) { progressEl.style.display = ''; }
-    if(progressBar){ progressBar.style.width = '0%'; progressBar.textContent = '0%'; }
+    if(progressBar){ progressBar.style.width = '0%'; progressBar.textContent = '0%'; progressBar.classList.add('progress-bar-animated'); }
     if(btn) btn.disabled = true;
+    const backBtn = el('bulk-back'); if(backBtn) backBtn.style.display = 'none';
 
     try {
-      let rows = [];
-      const ext = file.name.split('.').pop().toLowerCase();
-
-      if(ext === 'csv'){
-        const text = await file.text();
-        rows = parseCSVRows(text);
-      } else if(ext === 'xlsx' || ext === 'xls'){
-        if(!window.XLSX){ showLoginMessage('Librería Excel no cargada. Recarga la página.', 'danger', 4000); if(btn) btn.disabled = false; return; }
-        const buffer = await file.arrayBuffer();
-        const wb = window.XLSX.read(buffer, { type: 'array' });
-        const ws = wb.Sheets[wb.SheetNames[0]];
-        rows = window.XLSX.utils.sheet_to_json(ws, { defval: '' });
-      } else {
-        showLoginMessage('Formato no soportado. Usa .xlsx, .xls o .csv', 'warning', 3000);
-        if(btn) btn.disabled = false; return;
-      }
-
-      if(!rows.length){
-        showLoginMessage('El archivo está vacío o no contiene datos', 'warning', 3000);
-        if(btn) btn.disabled = false; return;
-      }
-
-      const hasCourseCol = ('course_name' in rows[0]) || ('course_id' in rows[0]);
-      const requiredCols = ['user_name', 'user_email']; // final_client es opcional (puede faltar la columna o ir vacía)
-      const missing = requiredCols.filter(c => !(c in rows[0]));
-      if(!hasCourseCol) missing.unshift('course_name');
-      if(missing.length){
-        showLoginMessage(`Columnas faltantes: ${missing.join(', ')}`, 'danger', 6000);
-        if(btn) btn.disabled = false; return;
-      }
-
-      // Nombre de certificación -> id, usando el mismo catálogo que ve el partner
-      // en el buscador de "Activar Voucher" (/partner/:id/courses).
-      const courseByName = new Map();
-      _availableCourses.forEach(c => {
-        const key = c.name.trim().toLowerCase();
-        if(!courseByName.has(key)) courseByName.set(key, []);
-        courseByName.get(key).push(c.id);
-      });
-
-      // Confirmación antes de procesar
-      if(btn) btn.disabled = false;
-      await new Promise((resolve, reject) => {
-        showConfirmAction({
-          title: 'Confirmar Activación Masiva', icon: '📋',
-          alert: 'Esta acción activará vouchers de forma masiva e irreversible.',
-          rows: [
-            { label: 'Archivo:', value: file.name },
-            { label: 'Registros a procesar:', value: rows.length },
-            { label: 'Primera fila:', value: `${rows[0].user_name || '—'} — ${rows[0].user_email || '—'}` }
-          ],
-          confirmLabel: `▶ Activar ${rows.length} vouchers`, confirmClass: 'btn-warning',
-          onConfirm: () => { if(btn) btn.disabled = true; resolve(); }
-        });
-        // Si se cancela el modal, no continuamos
-        document.getElementById('modal-generic-confirm').addEventListener('hidden.bs.modal', () => reject(new Error('cancelled')), { once: true });
-      }).catch(() => { return; });
-
+      const courseByName = bulkCourseMap();
       const results = [];
       for(let i = 0; i < rows.length; i++){
         const row = rows[i];
-        const courseName = String(row.course_name || '').trim();
         const userName   = String(row.user_name   || '').trim();
         const userEmail  = String(row.user_email  || '').trim();
         const finalClient = String(row.final_client || '').trim();
-        const actMonths  = parseInt(row.activation_months || _maxActivationMonths, 10) || _maxActivationMonths;
 
         const pct = Math.round((i / rows.length) * 100);
         if(progressBar){ progressBar.style.width = pct + '%'; progressBar.textContent = pct + '%'; }
         if(progressText) progressText.textContent = `Procesando fila ${i + 1} de ${rows.length}…`;
 
-        // Resolución de la certificación: por nombre (preferido) o, si la fila trae
-        // course_id numérico (plantillas antiguas), por id — sin romper lo ya generado.
-        let courseId = null;
-        if(courseName){
-          const matches = courseByName.get(courseName.toLowerCase());
-          if(!matches){
-            results.push({ row: i + 2, ok: false, error: `Certificación no encontrada: "${courseName}"`, userName, userEmail });
-            continue;
-          }
-          if(matches.length > 1){
-            results.push({ row: i + 2, ok: false, error: `Nombre de certificación ambiguo: "${courseName}" (usa course_id)`, userName, userEmail });
-            continue;
-          }
-          courseId = matches[0];
-        } else if(row.course_id){
-          courseId = parseInt(row.course_id, 10) || null;
-        }
-
-        if(!courseId || !userName || !userEmail){
-          results.push({ row: i + 2, ok: false, error: 'Fila incompleta o datos inválidos', userName, userEmail });
+        const chk = bulkCheckRow(row, courseByName);
+        if(chk.error){
+          results.push({ row: i + 2, ok: false, error: chk.error, userName, userEmail });
           continue;
         }
 
         try {
           const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, {
             method: 'POST', headers: authHeaders(),
-            body: JSON.stringify({ course_id: courseId, user_name: userName, user_email: userEmail, final_client: finalClient || undefined, activation_months: actMonths })
+            body: JSON.stringify({ course_id: chk.courseId, user_name: userName, user_email: userEmail, final_client: finalClient || undefined, activation_months: chk.months })
           });
           const data = await resp.json();
           if(resp.ok){
@@ -7727,12 +7789,14 @@ document.addEventListener('DOMContentLoaded', () => {
         loadPartnerStats(false);
         loadActivationEligibility();
       }
-
+      // Terminado: se oculta el botón de activar para no repetir la carga; queda "Nueva carga".
+      if(btn) btn.style.display = 'none';
+      const rs = el('bulk-restart'); if(rs) rs.style.display = '';
+      _bulkRows = [];
     } catch(e){
       showLoginMessage('Error procesando archivo: ' + escapeHTML(e.message), 'danger', 5000);
-    } finally {
       if(btn) btn.disabled = false;
-      if(fileInput) fileInput.value = '';
+      if(backBtn) backBtn.style.display = '';
     }
   });
 
