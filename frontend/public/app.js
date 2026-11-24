@@ -7138,8 +7138,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if(maxLabel) maxLabel.textContent = `(máx. ${_maxActivationMonths} meses)`;
     const prevVal = parseInt(select.value) || _maxActivationMonths;
     select.innerHTML = '';
-    // Solo plazos de 3, 6, 9 y 12 meses, sin pasar del máximo del partner.
-    let allowed = [3, 6, 9, 12].filter(m => m <= _maxActivationMonths);
+    // Solo plazos de 3, 6 y 12 meses, sin pasar del máximo del partner.
+    let allowed = [3, 6, 12].filter(m => m <= _maxActivationMonths);
     if(!allowed.length) allowed = [_maxActivationMonths];
     const pick = allowed.includes(prevVal) ? prevVal : allowed[allowed.length - 1];
     allowed.forEach(i => {
