@@ -124,7 +124,9 @@ class local_certjoin_external extends external_api {
         list($insql, $inparams) = $DB->get_in_or_equal($userids, SQL_PARAMS_NAMED, 'uid');
         $sqlparams = array_merge($inparams, ['courseid' => $courseid]);
 
-        $sql = "SELECT ue.userid, MIN(ue.timecreated) AS timecreated
+        $sql = "SELECT ue.userid, MIN(ue.timecreated) AS timecreated,
+                       MIN(CASE WHEN ue.timeend = 0 THEN 1 ELSE 0 END) AS has_unlimited_zero,
+                       MAX(ue.timeend) AS timeend
                   FROM {user_enrolments} ue
                   JOIN {enrol} e ON e.id = ue.enrolid
                  WHERE e.courseid = :courseid
@@ -138,6 +140,8 @@ class local_certjoin_external extends external_api {
             $result[] = [
                 'userid'      => (int) $r->userid,
                 'timecreated' => (int) $r->timecreated,
+                // Fin de la matricula del alumno (0 = sin vencimiento). Si alguna inscripcion es ilimitada, 0.
+                'timeend'     => ((int) $r->has_unlimited_zero === 1) ? 0 : (int) $r->timeend,
             ];
         }
 
@@ -149,6 +153,7 @@ class local_certjoin_external extends external_api {
             new external_single_structure([
                 'userid'      => new external_value(PARAM_INT, 'Id de usuario'),
                 'timecreated' => new external_value(PARAM_INT, 'Fecha de matriculacion (unix timestamp), la mas antigua si hay mas de una inscripcion'),
+                'timeend'     => new external_value(PARAM_INT, 'Fin de la matricula (unix timestamp), 0 si no vence', VALUE_DEFAULT, 0),
             ])
         );
     }

@@ -1014,6 +1014,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  const histMoodlePage = {};
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('.hist-page-btn');
+    if(!b || !partnerHistoryCache.data) return;
+    histMoodlePage[b.dataset.p] = (histMoodlePage[b.dataset.p] || 1) + Number(b.dataset.dir);
+    renderPartnerHistory(b.dataset.p, partnerHistoryCache.data);
+  });
+
   function renderPartnerHistory(P, data){
     const tbM = el(P + '-moodle');
     const tbA = el(P + '-app');
@@ -1029,26 +1037,35 @@ document.addEventListener('DOMContentLoaded', () => {
         : `Grupo "${data.moodle.grupo_moodle || ''}" · ${n} curso(s) en Moodle`;
     }
     if(tbM){
-      const rows = view.courses;
-      tbM.innerHTML = rows.length
-        ? rows.map(c => {
-            const courseName = escapeHTML(c.course_name || ('Curso ' + c.moodle_course_id));
-            const fin = fmtEndDate(c.enddate);
-            const members = c.members || [];
-            if(!members.length){
-              return `<tr class="table-group-divider"><td>${courseName}</td><td colspan="3" class="text-muted">Sin estudiantes</td><td>${fin}</td></tr>`;
-            }
-            return members.map((m, i) => {
-              const nombre = escapeHTML(m.fullname || m.username || '—');
-              const correo = m.email ? escapeHTML(m.email) : '—';
-              const matriculado = m.enrolled_at ? fmtEndDate(m.enrolled_at) : '—';
-              if(i === 0){
-                return `<tr class="table-group-divider"><td rowspan="${members.length}">${courseName}</td><td>${nombre}</td><td>${correo}</td><td>${matriculado}</td><td rowspan="${members.length}">${fin}</td></tr>`;
-              }
-              return `<tr><td>${nombre}</td><td>${correo}</td><td>${matriculado}</td></tr>`;
-            }).join('');
-          }).join('')
+      // Filas planas (una por estudiante) paginadas a 15; la fecha fin es la de cada matrícula.
+      const flat = [];
+      view.courses.forEach(c => {
+        const courseName = escapeHTML(c.course_name || ('Curso ' + c.moodle_course_id));
+        const members = c.members || [];
+        if(!members.length){ flat.push(`<tr><td>${courseName}</td><td colspan="4" class="text-muted">Sin estudiantes</td></tr>`); return; }
+        members.forEach(m => {
+          const nombre = escapeHTML(m.fullname || m.username || '—');
+          const correo = m.email ? escapeHTML(m.email) : '—';
+          const matriculado = m.enrolled_at ? fmtEndDate(m.enrolled_at) : '—';
+          const fin = (m.enrol_end === undefined || m.enrol_end === null) ? '—' : (m.enrol_end === 0 ? 'Sin vencimiento' : fmtEndDate(m.enrol_end));
+          flat.push(`<tr><td>${courseName}</td><td>${nombre}</td><td>${correo}</td><td>${matriculado}</td><td>${fin}</td></tr>`);
+        });
+      });
+      const PAGE = 15;
+      const pages = Math.max(1, Math.ceil(flat.length / PAGE));
+      const cur = Math.min(histMoodlePage[P] || 1, pages);
+      histMoodlePage[P] = cur;
+      tbM.innerHTML = flat.length
+        ? flat.slice((cur - 1) * PAGE, cur * PAGE).join('')
         : `<tr><td colspan="5" class="text-muted">${view.filtered ? 'Ninguna matrícula de Moodle en el rango de fechas elegido' : 'Sin cursos con este grupo en Moodle'}</td></tr>`;
+      const pager = el(P + '-moodle-pager');
+      if(pager){
+        pager.innerHTML = flat.length > PAGE
+          ? `<button type="button" class="btn btn-sm btn-outline-secondary hist-page-btn" data-p="${P}" data-dir="-1" ${cur <= 1 ? 'disabled' : ''}>‹ Anterior</button>
+             <span class="small text-muted mx-2">Página ${cur} de ${pages} · ${flat.length} registros</span>
+             <button type="button" class="btn btn-sm btn-outline-secondary hist-page-btn" data-p="${P}" data-dir="1" ${cur >= pages ? 'disabled' : ''}>Siguiente ›</button>`
+          : '';
+      }
     }
     if(tbA){
       const appView = historyAppRowsForView(P, data);
@@ -1075,6 +1092,7 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const data = await fetchPartnerHistory(P, partnerId, refresh);
       partnerHistoryCache = { partnerId, data };
+      histMoodlePage[P] = 1;
       renderPartnerHistory(P, data);
       if(P === 'admin-hist') renderClosing();
     } catch(e) {
@@ -1124,7 +1142,6 @@ document.addEventListener('DOMContentLoaded', () => {
       const resp = await safeFetch(apiUrl + '/admin/partners?page=1&limit=1000', { headers: authHeaders() });
       const data = await safeJson(resp);
       adminPartnerList = Array.isArray(data) ? data : (data.data || data.partners || data.items || []);
-      renderAdminPartnerResults((el('admin-hist-search') || {}).value || '');
     } catch(e) {
       showToast('No se pudo cargar la lista de partners', 'danger');
     }
@@ -1157,7 +1174,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   on('admin-hist-search', 'input', () => renderAdminPartnerResults((el('admin-hist-search') || {}).value || ''));
-  on('admin-hist-search', 'focus', () => renderAdminPartnerResults((el('admin-hist-search') || {}).value || ''));
+  on('admin-hist-search', 'focus', () => { if(((el('admin-hist-search') || {}).value || '').trim()) renderAdminPartnerResults(el('admin-hist-search').value); });
   // Clic en un resultado: fija el partner y carga su historial (sin depender del evento change)
   document.addEventListener('click', (e) => {
     const item = e.target.closest && e.target.closest('.admin-hist-item');
@@ -1187,6 +1204,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(tbM) tbM.innerHTML = '';
     const tbA = el('admin-hist-app');
     if(tbA) tbA.innerHTML = '';
+    const pg = el('admin-hist-moodle-pager'); if(pg) pg.innerHTML = '';
     const kpis = el('admin-hist-kpis');
     if(kpis) kpis.innerHTML = '';
     el('admin-hist-search').focus();
@@ -1355,7 +1373,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const k = closingKpis(d, rows, hasDateFilter);
     const kpis = [
       ['Matriculados', k.matriculados, 'primary'],
-      ['Completados', k.completados, 'success'],
+      ['En curso', Math.max(0, k.matriculados - k.certificados), 'info'],
       ['Certificados', k.certificados, 'success'],
     ];
     box.innerHTML = kpis.map(([label, n, color]) =>
@@ -1466,6 +1484,7 @@ document.addEventListener('DOMContentLoaded', () => {
   function applyHistRange(){
     histApplied = { from: (el('admin-hist-from') || {}).value || '', to: (el('admin-hist-to') || {}).value || '' };
     renderClosing();
+    histMoodlePage['admin-hist'] = 1;
     if(partnerHistoryCache.data) renderPartnerHistory('admin-hist', partnerHistoryCache.data);
     renderHistFilterNote();
   }
@@ -1479,7 +1498,6 @@ document.addEventListener('DOMContentLoaded', () => {
   on('admin-hist-from', 'change', renderHistFilterNote);
   on('admin-hist-to', 'change', renderHistFilterNote);
   renderHistFilterNote();
-  on('admin-hist-closing-excel', 'click', exportClosingExcel);
 
   on('partner-hist-refresh', 'click', () => loadPartnerHistory(true));
   on('admin-hist-refresh', 'click', () => {
@@ -1487,8 +1505,6 @@ document.addEventListener('DOMContentLoaded', () => {
     if(pid) loadHistoryFor('admin-hist', pid, true);
     else showToast('Selecciona un partner', 'warning');
   });
-  on('partner-hist-excel', 'click', () => exportPartnerHistoryExcel('partner-hist'));
-  on('admin-hist-excel', 'click', () => exportPartnerHistoryExcel('admin-hist'));
 
   // Cart
   function loadCart(){
@@ -3559,6 +3575,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const _rptData = { compras: [], vouchers: {}, activaciones: [], partners: [], tendencia: [] };
 
   // Helper: construye URLSearchParams de fecha + partner opcional
+  // Una fecha 'YYYY-MM-DD' (input date) se interpreta en hora local; new Date('YYYY-MM-DD') la toma
+  // como UTC y en zonas con offset negativo (Colombia) mostraba el día anterior.
+  function parseLocalDate(v){
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(v || ''));
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(v);
+  }
+
   function rptParams(startId, endId, partnerIdId){
     const p = new URLSearchParams();
     const s = (el(startId)    || {}).value || '';
@@ -3958,7 +3981,7 @@ document.addEventListener('DOMContentLoaded', () => {
       const s = (el(`rpt-${mod}-start`) || {}).value;
       const e = (el(`rpt-${mod}-end`)   || {}).value;
       if(!s && !e) return 'Todo el período';
-      const fmt = d => new Date(d).toLocaleDateString('es-ES');
+      const fmt = d => parseLocalDate(d).toLocaleDateString('es-ES');
       if(s && e) return `${fmt(s)} – ${fmt(e)}`;
       return s ? `Desde ${fmt(s)}` : `Hasta ${fmt(e)}`;
     };
@@ -4057,7 +4080,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const startEl = el(`rpt-${module}-start`);
     const endEl   = el(`rpt-${module}-end`);
     const s = startEl?.value, e = endEl?.value;
-    const fmtD = d => new Date(d).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'numeric'});
+    const fmtD = d => parseLocalDate(d).toLocaleDateString('es-ES', {day:'2-digit', month:'short', year:'numeric'});
     const dateRange = (s || e)
       ? `Período: ${s ? fmtD(s) : '—'} al ${e ? fmtD(e) : '—'}`
       : 'Período: Todo el tiempo';
@@ -4135,7 +4158,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let _adminActPage    = 1;
   let _adminActTotal   = 0;
-  const ACT_PAGE_SIZE  = 20;
+  const ACT_PAGE_SIZE  = 10;
 
   function moodleStatusBadge(ms, moodleError, moodleCompletedAt) {
     ms = (ms || '').toUpperCase();
@@ -4159,7 +4182,7 @@ document.addEventListener('DOMContentLoaded', () => {
     _adminActPage = page || 1;
     const tbody = el('admin-activaciones-tbody');
     if(!tbody) return;
-    tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted p-3">Cargando...</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-3">Cargando...</td></tr>';
 
     const partner  = (el('admin-act-filter-partner')  || {}).value  || '';
     const moodle   = (el('admin-act-filter-moodle')   || {}).value  || '';
@@ -4174,13 +4197,13 @@ document.addEventListener('DOMContentLoaded', () => {
     try {
       const resp = await safeFetch(apiUrl + `/admin/activations?${params}`, { headers: authHeaders() });
       const data = await safeJson(resp);
-      if(!resp.ok) { tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger p-3">${escapeHTML(data.error||'Error')}</td></tr>`; return; }
+      if(!resp.ok) { tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger p-3">${escapeHTML(data.error||'Error')}</td></tr>`; return; }
 
       _adminActTotal = data.total || 0;
       const rows = data.activations || [];
 
       if(rows.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted p-3">No hay activaciones para los filtros seleccionados</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted p-3">No hay activaciones para los filtros seleccionados</td></tr>';
         renderAdminActPagination();
         return;
       }
@@ -4189,10 +4212,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const fecha      = a.activated_at ? new Date(a.activated_at).toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' }) : '-';
         const partner    = escapeHTML(a.partner_name || '-');
         const voucher    = `<code>${escapeHTML(a.voucher_code||'')}</code>`;
-        const cursoMoodle = a.moodle_course_id ? ` <small class="text-muted">#${a.moodle_course_id}</small>` : '';
-        const curso      = `${escapeHTML(a.course_name||'-')}${cursoMoodle}`;
+        const curso      = escapeHTML(a.course_name||'-');
         const estudiante = `<div>${escapeHTML(a.user_name||'-')}</div><div class="small text-muted">${escapeHTML(a.user_email||'')}</div>`;
-        const cliente    = escapeHTML(a.final_client||'-');
         let expiraBadge = '<span class="text-muted small">—</span>';
         if(a.expires_at){
           const expDate = new Date(a.expires_at);
@@ -4203,10 +4224,6 @@ document.addEventListener('DOMContentLoaded', () => {
             : `<span class="badge bg-success text-white">${expStr}</span>`;
         }
         const moodleBadge = moodleStatusBadge(a.moodle_status, a.moodle_error, a.moodle_completed_at);
-        let moodleId = a.moodle_user_id ? `<small class="text-muted">${a.moodle_user_id}</small>` : '—';
-        if(a.moodle_username) {
-          moodleId += `<div class="small text-muted mt-1" title="Usuario Moodle">👤 ${escapeHTML(a.moodle_username)}</div>`;
-        }
         // La contraseña temporal de Moodle ya no se expone en el listado admin (dato sensible).
 
         let acciones = '';
@@ -4231,10 +4248,8 @@ document.addEventListener('DOMContentLoaded', () => {
           <td>${voucher}</td>
           <td>${curso}</td>
           <td>${estudiante}</td>
-          <td>${cliente}</td>
           <td>${expiraBadge}</td>
           <td>${moodleBadge}</td>
-          <td>${moodleId}</td>
           <td style="position:sticky;right:0;z-index:1;background-color:#fff;box-shadow:-6px 0 6px -6px rgba(0,0,0,0.15);">${acciones}</td>
         </tr>`;
       }).join('');
@@ -4294,7 +4309,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       renderAdminActPagination();
     } catch(e) {
-      tbody.innerHTML = `<tr><td colspan="9" class="text-center text-danger p-3">${escapeHTML(e.message)}</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger p-3">${escapeHTML(e.message)}</td></tr>`;
     }
   }
 
@@ -4481,13 +4496,12 @@ document.addEventListener('DOMContentLoaded', () => {
       const monthBody = el('dash-monthly-body');
       if(monthBody){
         if(!monthlyData.length){
-          monthBody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">Sin datos</td></tr>';
+          monthBody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">Sin datos</td></tr>';
         } else {
           monthBody.innerHTML = monthlyData.map(r => `<tr>
             <td>${escapeHTML(String(r.month || ''))}</td>
             <td class="text-end">${fmtMoney(r.revenue || r.total_revenue || 0)}</td>
             <td class="text-end">${fmt(r.purchases || r.total_purchases || 0)}</td>
-            <td class="text-end">${fmt(r.vouchers_sold || r.total_vouchers || 0)}</td>
             <td class="text-end">${fmt(r.activations || r.total_activations || 0)}</td>
           </tr>`).join('');
         }
@@ -5374,7 +5388,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(r.includes('viajes')) return 'role-op-viajes';
     return 'role-default';
   }
-  function formatDate(d){ if(!d) return '—'; try{ return new Date(d).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}); }catch(e){ return d; } }
+  function formatDate(d){ if(!d) return '—'; try{ return parseLocalDate(d).toLocaleDateString('es-ES',{day:'2-digit',month:'short',year:'numeric'}); }catch(e){ return d; } }
 
   let _allUsersData = [];
 

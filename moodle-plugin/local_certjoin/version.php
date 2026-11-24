@@ -6,7 +6,7 @@
 defined('MOODLE_INTERNAL') || die();
 
 $plugin->component = 'local_certjoin';
-$plugin->version   = 2026110400;
+$plugin->version   = 2026112300;
 $plugin->requires  = 2020110900; // Moodle 3.10 o superior.
 $plugin->maturity  = MATURITY_STABLE;
 $plugin->release   = '1.0';

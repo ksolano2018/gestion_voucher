@@ -613,13 +613,14 @@ async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = 
       // Si el plugin no tiene esta función (instalación vieja, no reinstalada aún) o falla,
       // degrada con gracia: el reporte sigue funcionando sin esa columna.
       let enrolledAt = new Map();
+      let enrolEnd = new Map();
       if (userIds.length) {
         try {
           const enrolParams = { courseid: String(cid) };
           userIds.forEach((id, j) => { enrolParams['userids[' + j + ']'] = String(id); });
           const enrolments = await moodleRequest('local_certjoin_get_enrolment_dates', enrolParams);
           if (Array.isArray(enrolments)) {
-            enrolments.forEach(e => enrolledAt.set(e.userid, e.timecreated));
+            enrolments.forEach(e => { enrolledAt.set(e.userid, e.timecreated); if (e.timeend !== undefined) enrolEnd.set(e.userid, e.timeend); });
           }
         } catch (e) { /* plugin no instalado/actualizado: sin fecha de matrícula */ }
       }
@@ -632,6 +633,7 @@ async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = 
         moodle_group_id: g.id,
         user_ids: userIds,
         enrolled_at: enrolledAt,
+        enrol_end: enrolEnd,
       };
     });
     const rows = found.filter(Boolean);
@@ -658,7 +660,7 @@ async function getGroupReport(groupName, moodleCourseIds, { refresh = false } = 
         moodle_group_id: r.moodle_group_id,
         members: r.user_ids.map(id => userMap.get(id))
           .filter(Boolean)
-          .map(u => ({ ...u, enrolled_at: r.enrolled_at.has(u.id) ? r.enrolled_at.get(u.id) : null })),
+          .map(u => ({ ...u, enrolled_at: r.enrolled_at.has(u.id) ? r.enrolled_at.get(u.id) : null, enrol_end: r.enrol_end.has(u.id) ? r.enrol_end.get(u.id) : null })),
       })),
     };
     groupReportCache.set(key, { at: Date.now(), data });

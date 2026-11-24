@@ -3418,7 +3418,6 @@
                       <div class="col-md-6 d-flex flex-wrap gap-2 justify-content-md-end">
                         <button type="button" id="admin-hist-apply" class="btn btn-sm btn-primary">🔍 Aplicar</button>
                         <button type="button" id="admin-hist-clear" class="btn btn-sm btn-outline-secondary" title="Borrar criterios de búsqueda">✕ Limpiar</button>
-                        <button type="button" id="admin-hist-closing-excel" class="btn btn-sm btn-success">📥 Excel de cierre</button>
                       </div>
                     </div>
                     <div id="admin-hist-filter-note" class="small text-muted mb-2"></div>
@@ -3426,11 +3425,11 @@
                   </div>
                   <div class="d-flex flex-wrap gap-2 mb-3">
                     <button id="admin-hist-refresh" class="btn btn-sm btn-outline-primary">↻ Actualizar desde Moodle</button>
-                    <button id="admin-hist-excel" class="btn btn-sm btn-success">📥 Excel</button>
                     <span id="admin-hist-status" class="small text-muted align-self-center"></span>
                   </div>
                   <h6 class="mt-2">Cursos y estudiantes en Moodle</h6>
-                  <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th>Curso</th><th>Nombre</th><th>Correo</th><th>Matriculado</th><th>Fin</th></tr></thead><tbody id="admin-hist-moodle"></tbody></table></div>
+                  <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th>Curso</th><th>Nombre</th><th>Correo</th><th>Matriculado</th><th>Vence</th></tr></thead><tbody id="admin-hist-moodle"></tbody></table></div>
+                  <div id="admin-hist-moodle-pager" class="d-flex align-items-center justify-content-center mb-4"></div>
                   <h6>Matrículas hechas desde la app</h6>
                   <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Curso</th><th>Alumno</th><th>Correo</th><th>Cliente final</th><th>Activada</th><th>Vence</th><th>Moodle</th><th>Estado curso</th><th>Certificado</th></tr></thead><tbody id="admin-hist-app"></tbody></table></div>
                 </div>
@@ -3464,8 +3463,6 @@
                         <option value="ENROLLED">✅ Matriculado</option>
                         <option value="FAILED">❌ Error</option>
                         <option value="PENDING">⏳ Pendiente</option>
-                        <option value="SKIPPED">⬜ Sin mapear</option>
-                        <option value="MOCKED">🔵 Simulado</option>
                       </select>
                     </div>
                     <div class="col-md-3">
@@ -3491,15 +3488,13 @@
                           <th>Voucher</th>
                           <th>Certificación</th>
                           <th>Estudiante</th>
-                          <th>Cliente final</th>
                           <th>Expira</th>
                           <th>Estado Moodle</th>
-                          <th>ID Moodle</th>
                           <th style="position:sticky;right:0;z-index:3;background-color:#212529;">Acciones</th>
                         </tr>
                       </thead>
                       <tbody id="admin-activaciones-tbody">
-                        <tr><td colspan="10" class="text-center text-muted p-3">Haz clic en Actualizar para cargar activaciones</td></tr>
+                        <tr><td colspan="8" class="text-center text-muted p-3">Haz clic en Actualizar para cargar activaciones</td></tr>
                       </tbody>
                     </table>
                   </div>
@@ -3546,12 +3541,6 @@
                       </div>
                     </div>
                     <div class="col-6 col-md-4 col-lg-2">
-                      <div class="card text-center p-3 h-100" style="border-left:4px solid #f44336;">
-                        <div class="small text-muted mb-1">Activaciones</div>
-                        <div class="fw-bold fs-5" id="dash-kpi-activations">—</div>
-                      </div>
-                    </div>
-                    <div class="col-6 col-md-4 col-lg-2">
                       <div class="card text-center p-3 h-100" style="border-left:4px solid #00bcd4;">
                         <div class="small text-muted mb-1">Partners Registrados</div>
                         <div class="fw-bold fs-5" id="dash-kpi-partners">—</div>
@@ -3570,12 +3559,11 @@
                               <th>Mes</th>
                               <th class="text-end">Ingresos</th>
                               <th class="text-end">Compras</th>
-                              <th class="text-end">Vouchers</th>
-                              <th class="text-end">Activaciones</th>
+                              <th class="text-end">Vouchers usados</th>
                             </tr>
                           </thead>
                           <tbody id="dash-monthly-body">
-                            <tr><td colspan="5" class="text-center text-muted p-3">Cargando...</td></tr>
+                            <tr><td colspan="4" class="text-center text-muted p-3">Cargando...</td></tr>
                           </tbody>
                         </table>
                       </div>
@@ -3998,11 +3986,11 @@
 
                   <div class="d-flex flex-wrap gap-2 mb-3">
                     <button id="partner-hist-refresh" class="btn btn-sm btn-outline-primary">↻ Actualizar desde Moodle</button>
-                    <button id="partner-hist-excel" class="btn btn-sm btn-success">📥 Excel</button>
                     <span id="partner-hist-status" class="small text-muted align-self-center"></span>
                   </div>
                   <h6 class="mt-2">Cursos y estudiantes en Moodle</h6>
-                  <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th>Curso</th><th>Nombre</th><th>Correo</th><th>Matriculado</th><th>Fin</th></tr></thead><tbody id="partner-hist-moodle"></tbody></table></div>
+                  <div class="table-responsive mb-4"><table class="table table-sm"><thead><tr><th>Curso</th><th>Nombre</th><th>Correo</th><th>Matriculado</th><th>Vence</th></tr></thead><tbody id="partner-hist-moodle"></tbody></table></div>
+                  <div id="partner-hist-moodle-pager" class="d-flex align-items-center justify-content-center mb-4"></div>
                   <h6>Matrículas hechas desde la app</h6>
                   <div class="table-responsive"><table class="table table-sm"><thead><tr><th>Curso</th><th>Alumno</th><th>Correo</th><th>Cliente final</th><th>Activada</th><th>Vence</th><th>Moodle</th><th>Estado curso</th><th>Certificado</th></tr></thead><tbody id="partner-hist-app"></tbody></table></div>
                 </div>
