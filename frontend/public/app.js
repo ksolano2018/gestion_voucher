@@ -7511,6 +7511,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function syncFinalClientsSelect(){
+    // Los selectores del wizard masivo también dependen de esta lista: se refrescan cuando llega
+    // (antes quedaban vacíos si el wizard se pintaba antes de que terminara la carga).
+    try { renderBulkStudents(); if(_bulkStep === 3) renderBulkStep3(); } catch(e) { /* wizard aún no inicializado */ }
     const select = el('activate-final-client');
     if(!select) return;
     const current = select.value;
