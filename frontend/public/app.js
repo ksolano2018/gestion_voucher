@@ -1515,6 +1515,8 @@ document.addEventListener('DOMContentLoaded', () => {
   renderHistFilterNote();
 
   on('partner-hist-refresh', 'click', () => loadPartnerHistory(true));
+  on('partner-hist-excel', 'click', () => exportPartnerHistoryExcel('partner-hist'));
+  on('admin-hist-closing-excel', 'click', exportClosingExcel);
   on('admin-hist-refresh', 'click', () => {
     const pid = (el('admin-hist-partner') || {}).value;
     if(pid) loadHistoryFor('admin-hist', pid, true);
@@ -7524,16 +7526,20 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Activación masiva por Excel / CSV ──────────────────────────────────────
 
   function parseCSVRows(text){
+    text = String(text || '').replace(/^﻿/, ''); // BOM que agrega Excel al guardar CSV UTF-8
     const lines = text.split(/\r?\n/).filter(l => l.trim());
     if(lines.length < 2) return [];
-    const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
+    // Excel en español guarda los CSV con punto y coma: se detecta el separador por el encabezado.
+    const count = ch => (lines[0].match(new RegExp(ch === '\t' ? '\\t' : '\\' + ch, 'g')) || []).length;
+    const delim = [';', '\t', ','].reduce((best, ch) => count(ch) > count(best) ? ch : best, ',');
+    const headers = lines[0].split(delim).map(h => h.trim().replace(/^"|"$/g, ''));
     return lines.slice(1).map(line => {
       const values = [];
       let cur = '', inQuote = false;
       for(let i = 0; i < line.length; i++){
         const ch = line[i];
         if(ch === '"'){ inQuote = !inQuote; }
-        else if(ch === ',' && !inQuote){ values.push(cur); cur = ''; }
+        else if(ch === delim && !inQuote){ values.push(cur); cur = ''; }
         else { cur += ch; }
       }
       values.push(cur);
@@ -7706,14 +7712,30 @@ document.addEventListener('DOMContentLoaded', () => {
     let rows = [];
     if(ext === 'csv') rows = parseCSVRows(await file.text());
     else if(ext === 'xlsx' || ext === 'xls'){
-      if(!window.XLSX){ showToast('Librería Excel no cargada. Recarga la página.', 'danger'); return null; }
+      if(!window.XLSX) throw new Error('La librería de Excel no está cargada. Recarga la página.');
       const wb = window.XLSX.read(await file.arrayBuffer(), { type: 'array' });
       rows = window.XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' });
-    } else { showToast('Formato no soportado. Usa .xlsx, .xls o .csv', 'warning'); return null; }
-    if(!rows.length){ showToast('El archivo está vacío o no contiene datos', 'warning'); return null; }
-    const missing = ['user_name', 'user_email'].filter(c => !(c in rows[0]));
-    if(missing.length){ showToast(`Columnas faltantes: ${missing.join(', ')}`, 'danger', 6000); return null; }
-    return rows.map(r => ({ name: String(r.user_name || '').trim(), email: String(r.user_email || '').trim(), client: String(r.final_client || '').trim(), courseId: bulkDefaultCourse() }))
+    } else throw new Error('Formato no soportado. Usa .xlsx, .xls o .csv');
+    if(!rows.length) throw new Error('El archivo está vacío o no tiene filas debajo del encabezado.');
+
+    // Encabezados tolerantes: sin importar mayúsculas, espacios o acentos, y con nombres alternativos.
+    const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+    const ALIAS = {
+      name:   ['user_name', 'nombre', 'name', 'alumno', 'estudiante', 'nombre_completo'],
+      email:  ['user_email', 'email', 'correo', 'correo_electronico', 'e_mail', 'mail'],
+      client: ['final_client', 'cliente_final', 'cliente'],
+    };
+    const keys = Object.keys(rows[0]);
+    const find = list => keys.find(k => list.includes(norm(k)));
+    const kName = find(ALIAS.name), kEmail = find(ALIAS.email), kClient = find(ALIAS.client);
+    const missing = [];
+    if(!kName) missing.push('user_name');
+    if(!kEmail) missing.push('user_email');
+    if(missing.length) throw new Error(`Faltan las columnas ${missing.join(' y ')}. Encabezados encontrados: ${keys.map(k => '"' + String(k).trim() + '"').join(', ') || '(ninguno)'}`);
+
+    // Si Excel convirtió el correo en hipervínculo, el valor puede traer "mailto:".
+    const clean = v => String(v === undefined || v === null ? '' : v).trim().replace(/^mailto:/i, '');
+    return rows.map(r => ({ name: clean(r[kName]), email: clean(r[kEmail]), client: kClient ? clean(r[kClient]) : '', courseId: bulkDefaultCourse() }))
       .filter(r => r.name || r.email);
   }
 
@@ -7724,13 +7746,13 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!file){ if(note) note.textContent = ''; return; }
     try {
       const list = await bulkReadStudentsFile(file);
-      if(!list){ if(note) note.innerHTML = '<span class="text-danger">No se pudo leer el archivo.</span>'; fi.value = ''; return; }
       _bulkStudents = _bulkStudents.concat(list);
       fi.value = ''; // permite volver a elegir el mismo archivo
       renderBulkStudents();
       if(note) note.innerHTML = `<span class="text-success">✓ ${escapeHTML(file.name)}: ${list.length} alumno(s) agregados a la lista.</span>`;
     } catch(e){
-      if(note) note.innerHTML = `<span class="text-danger">No se pudo leer el archivo: ${escapeHTML(e.message)}</span>`;
+      fi.value = '';
+      if(note) note.innerHTML = `<span class="text-danger">✗ ${escapeHTML(file.name)}: ${escapeHTML(e.message)}</span>`;
     }
   });
   on('bulk-man-add', 'click', () => {
