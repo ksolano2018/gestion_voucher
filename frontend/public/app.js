@@ -7692,17 +7692,21 @@ document.addEventListener('DOMContentLoaded', () => {
       .filter(r => r.name || r.email);
   }
 
-  on('bulk-file-load', 'click', async () => {
+  // El archivo se lee en cuanto se elige: sus alumnos aparecen de inmediato en la lista.
+  on('activate-excel-file', 'change', async () => {
     const fi = el('activate-excel-file'); const file = fi && fi.files[0];
-    if(!file){ showToast('Selecciona un archivo primero', 'warning'); return; }
+    const note = el('bulk-file-note');
+    if(!file){ if(note) note.textContent = ''; return; }
     try {
       const list = await bulkReadStudentsFile(file);
-      if(!list) return;
+      if(!list){ if(note) note.innerHTML = '<span class="text-danger">No se pudo leer el archivo.</span>'; fi.value = ''; return; }
       _bulkStudents = _bulkStudents.concat(list);
-      fi.value = '';
+      fi.value = ''; // permite volver a elegir el mismo archivo
       renderBulkStudents();
-      showToast(`${list.length} alumno(s) cargados del archivo`, 'success');
-    } catch(e){ showToast('No se pudo leer el archivo: ' + e.message, 'danger'); }
+      if(note) note.innerHTML = `<span class="text-success">✓ ${escapeHTML(file.name)}: ${list.length} alumno(s) agregados a la lista.</span>`;
+    } catch(e){
+      if(note) note.innerHTML = `<span class="text-danger">No se pudo leer el archivo: ${escapeHTML(e.message)}</span>`;
+    }
   });
   on('bulk-man-add', 'click', () => {
     const n = el('bulk-man-name'), m = el('bulk-man-email');
