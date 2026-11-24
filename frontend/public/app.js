@@ -7548,7 +7548,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // alumnos, y cada alumno se activa en todas las certificaciones elegidas.
   let _bulkStep = 1;
   let _bulkCourseIds = [];
-  let _bulkStudents = []; // { name, email, client }
+  let _bulkStudents = []; // { name, email, client, courseId }
 
   function bulkAllowedMonths(){
     const a = [3, 6, 12].filter(m => m <= _maxActivationMonths);
@@ -7621,6 +7621,25 @@ document.addEventListener('DOMContentLoaded', () => {
         }).join('')
       : '<span class="text-muted small">Aún no has elegido ninguna certificación.</span>';
     const n = el('bulk-course-count'); if(n) n.textContent = _bulkCourseIds.length;
+    bulkSyncStudentsCourses();
+  }
+
+  // Mantiene coherentes las asignaciones con las certificaciones elegidas: si se quita una del
+  // paso 1, sus alumnos quedan sin certificación; si solo hay una elegida, todos van a ella.
+  function bulkSyncStudentsCourses(){
+    _bulkStudents.forEach(st => {
+      if(st.courseId && !_bulkCourseIds.some(id => String(id) === String(st.courseId))) st.courseId = '';
+      if(!st.courseId && _bulkCourseIds.length === 1) st.courseId = _bulkCourseIds[0];
+    });
+    if(typeof renderBulkStudents === 'function') renderBulkStudents();
+  }
+  function bulkDefaultCourse(){ return _bulkCourseIds.length === 1 ? _bulkCourseIds[0] : ''; }
+  function bulkCourseOptions(selected){
+    return '<option value="">Elige certificación…</option>' + _bulkCourseIds.map(id => {
+      const c = bulkCourseById(id); if(!c) return '';
+      const kind = courseKind(c.name);
+      return `<option value="${escapeHTML(String(c.id))}"${String(c.id) === String(selected) ? ' selected' : ''}>${escapeHTML(c.name.replace(/\s*-\s*(Content|Simulator)\s*$/i, ''))} (${kind.label})</option>`;
+    }).join('');
   }
 
   function bulkAddCourses(ids){
@@ -7650,6 +7669,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!EMAIL_RE.test(st.email)) return { ok: false, msg: 'Correo inválido' };
     const first = _bulkStudents.findIndex(x => x.email.toLowerCase() === st.email.toLowerCase());
     if(first !== idx) return { ok: false, msg: 'Correo repetido' };
+    if(!st.courseId) return { ok: false, msg: 'Elige la certificación' };
     return { ok: true };
   }
   const bulkValidStudents = () => _bulkStudents.filter((st, i) => bulkStudentState(st, i).ok);
@@ -7666,15 +7686,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderBulkStudents(){
     const man = el('bulk-man-client'); if(man){ const v = man.value; man.innerHTML = bulkClientOptions(v); }
+    const manC = el('bulk-man-course'); if(manC){ const v = manC.value; manC.innerHTML = bulkCourseOptions(v || bulkDefaultCourse()); }
+    const allC = el('bulk-assign-all'); if(allC){ const v = allC.value; allC.innerHTML = bulkCourseOptions(v); }
     const tb = el('bulk-students-body'); if(!tb) return;
     tb.innerHTML = _bulkStudents.length
       ? _bulkStudents.map((st, i) => {
           const s = bulkStudentState(st, i);
-          return `<tr class="${s.ok ? '' : 'table-danger'}"><td>${escapeHTML(st.name)}</td><td>${escapeHTML(st.email)}</td><td>${bulkClientSelectHtml(st.client, i)}</td>
+          return `<tr class="${s.ok ? '' : 'table-danger'}"><td>${escapeHTML(st.name)}</td><td>${escapeHTML(st.email)}</td><td><select class="form-select form-select-sm" data-bulk-student-course="${i}">${bulkCourseOptions(st.courseId)}</select></td><td>${bulkClientSelectHtml(st.client, i)}</td>
             <td>${s.ok ? '<span class="badge bg-success">✓ Listo</span>' : `<span class="badge bg-danger">✗ ${s.msg}</span>`}</td>
             <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-bulk-student-del="${i}" title="Quitar">✕</button></td></tr>`;
         }).join('')
-      : '<tr><td colspan="5" class="text-muted text-center">Aún no hay alumnos</td></tr>';
+      : '<tr><td colspan="6" class="text-muted text-center">Aún no hay alumnos</td></tr>';
     const n = el('bulk-students-count');
     if(n){ const v = bulkValidStudents().length; n.textContent = `${_bulkStudents.length}${v !== _bulkStudents.length ? ` (${v} válidos)` : ''}`; }
   }
@@ -7691,7 +7713,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!rows.length){ showToast('El archivo está vacío o no contiene datos', 'warning'); return null; }
     const missing = ['user_name', 'user_email'].filter(c => !(c in rows[0]));
     if(missing.length){ showToast(`Columnas faltantes: ${missing.join(', ')}`, 'danger', 6000); return null; }
-    return rows.map(r => ({ name: String(r.user_name || '').trim(), email: String(r.user_email || '').trim(), client: String(r.final_client || '').trim() }))
+    return rows.map(r => ({ name: String(r.user_name || '').trim(), email: String(r.user_email || '').trim(), client: String(r.final_client || '').trim(), courseId: bulkDefaultCourse() }))
       .filter(r => r.name || r.email);
   }
 
@@ -7715,13 +7737,26 @@ document.addEventListener('DOMContentLoaded', () => {
     const n = el('bulk-man-name'), m = el('bulk-man-email');
     const name = (n.value || '').trim(), email = (m.value || '').trim();
     if(!name || !EMAIL_RE.test(email)){ showToast('Escribe el nombre y un correo válido', 'warning'); return; }
-    _bulkStudents.push({ name, email, client: (el('bulk-man-client') || {}).value || '' });
+    _bulkStudents.push({ name, email, client: (el('bulk-man-client') || {}).value || '', courseId: (el('bulk-man-course') || {}).value || bulkDefaultCourse() });
     n.value = ''; m.value = ''; n.focus();
     renderBulkStudents();
   });
   on('bulk-man-email', 'keydown', (e) => { if(e.key === 'Enter'){ e.preventDefault(); el('bulk-man-add').click(); } });
   on('bulk-students-clear', 'click', () => { _bulkStudents = []; renderBulkStudents(); });
+  on('bulk-assign-all-btn', 'click', () => {
+    const v = (el('bulk-assign-all') || {}).value || '';
+    if(!v){ showToast('Elige primero la certificación que quieres asignar', 'warning'); return; }
+    if(!_bulkStudents.length){ showToast('Aún no hay alumnos en la lista', 'warning'); return; }
+    _bulkStudents.forEach(st => { st.courseId = v; });
+    renderBulkStudents();
+  });
   document.addEventListener('change', (e) => {
+    const cs = e.target.closest && e.target.closest('[data-bulk-student-course]');
+    if(cs && _bulkStudents[Number(cs.dataset.bulkStudentCourse)]){
+      _bulkStudents[Number(cs.dataset.bulkStudentCourse)].courseId = cs.value;
+      renderBulkStudents();
+      return;
+    }
     const sel = e.target.closest && e.target.closest('[data-bulk-student-client]');
     if(sel && _bulkStudents[Number(sel.dataset.bulkStudentClient)]) _bulkStudents[Number(sel.dataset.bulkStudentClient)].client = sel.value;
   });
@@ -7765,20 +7800,24 @@ document.addEventListener('DOMContentLoaded', () => {
     const box = el('bulk-summary'); if(!box) return;
     const students = bulkValidStudents();
     const skipped = _bulkStudents.length - students.length;
-    const total = students.length * _bulkCourseIds.length;
+    const total = students.length;
     const months = Number((el('bulk-months') || {}).value || 12);
     const end = new Date(); end.setMonth(end.getMonth() + months);
     const enough = _availableVouchers === null || total <= _availableVouchers;
-    const courseList = _bulkCourseIds.map(id => { const c = bulkCourseById(id); return c ? `<li>${escapeHTML(c.name)}</li>` : ''; }).join('');
+    const courseList = _bulkCourseIds.map(id => {
+      const c = bulkCourseById(id); if(!c) return '';
+      const n = students.filter(st => String(st.courseId) === String(id)).length;
+      return n ? `<li><strong>${n}</strong> × ${escapeHTML(c.name)}</li>` : '';
+    }).join('');
     const batchClient = (el('bulk-client') || {}).value || '';
     const withOwn = students.filter(st => st.client).length;
     box.innerHTML = `<div class="border rounded p-3">
         <div class="small text-muted mb-1">Cliente final: ${withOwn ? `${withOwn} alumno(s) con cliente propio` : 'ninguno propio'}${batchClient ? `; el resto: <strong>${escapeHTML(batchClient)}</strong>` : '; el resto sin cliente final'}</div>
-        <div><strong>${students.length}</strong> alumno(s) × <strong>${_bulkCourseIds.length}</strong> certificación(es) = <strong>${total}</strong> voucher(s) a consumir${_availableVouchers !== null ? ` <span class="text-muted">(disponibles: ${_availableVouchers})</span>` : ''}</div>
+        <div><strong>${total}</strong> alumno(s), uno por certificación asignada = <strong>${total}</strong> voucher(s) a consumir${_availableVouchers !== null ? ` <span class="text-muted">(disponibles: ${_availableVouchers})</span>` : ''}</div>
         <div class="small text-muted">Acceso hasta el ${escapeHTML(end.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }))} (${months} meses)</div>
         ${skipped ? `<div class="small text-danger mt-1">${skipped} fila(s) con errores se omitirán.</div>` : ''}
-        ${enough ? '' : `<div class="alert alert-danger py-2 mt-2 mb-0">No tienes vouchers suficientes: necesitas ${total} y tienes ${_availableVouchers}. Quita certificaciones o alumnos.</div>`}
-        <details class="mt-2"><summary class="small">Certificaciones elegidas</summary><ul class="small mb-0">${courseList}</ul></details>
+        ${enough ? '' : `<div class="alert alert-danger py-2 mt-2 mb-0">No tienes vouchers suficientes: necesitas ${total} y tienes ${_availableVouchers}. Quita alumnos de la lista.</div>`}
+        <details class="mt-2" open><summary class="small">Alumnos por certificación</summary><ul class="small mb-0">${courseList}</ul></details>
       </div>`;
     const go = el('activate-bulk-btn');
     if(go){ go.disabled = !total || !enough; go.textContent = total ? `📤 Activar ${total} voucher${total === 1 ? '' : 's'}` : 'Nada que activar'; }
@@ -7809,8 +7848,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const pid = getPartnerIdFromJwt();
     if(!pid){ showToast('No se pudo obtener Partner ID', 'danger'); return; }
     const students = bulkValidStudents();
-    const courseIds = _bulkCourseIds.slice();
-    if(!students.length || !courseIds.length){ showToast('Elige certificaciones y alumnos primero', 'warning'); return; }
+    if(!students.length){ showToast('Agrega alumnos con su certificación primero', 'warning'); return; }
     const months = Number((el('bulk-months') || {}).value || 12);
     const batchClient = (el('bulk-client') || {}).value || '';
 
@@ -7823,30 +7861,29 @@ document.addEventListener('DOMContentLoaded', () => {
     if(btn) btn.disabled = true;
     if(backBtn) backBtn.style.display = 'none';
 
-    const total = students.length * courseIds.length;
+    const total = students.length;
     const results = [];
     let done = 0;
     try {
       for(const st of students){
-        for(const cid of courseIds){
-          const pct = Math.round((done / total) * 100);
-          if(progressBar){ progressBar.style.width = pct + '%'; progressBar.textContent = pct + '%'; }
-          if(progressText) progressText.textContent = `Procesando ${done + 1} de ${total}…`;
-          const course = bulkCourseById(cid);
-          try {
-            const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, {
-              method: 'POST', headers: authHeaders(),
-              body: JSON.stringify({ course_id: cid, user_name: st.name, user_email: st.email, final_client: (st.client || batchClient) || undefined, activation_months: months })
-            });
-            const data = await resp.json();
-            results.push(resp.ok
-              ? { ok: true, voucher: data.voucher_code, course: course ? course.name : '', st }
-              : { ok: false, error: data.error || 'Error desconocido', course: course ? course.name : '', st });
-          } catch(e){
-            results.push({ ok: false, error: e.message, course: course ? course.name : '', st });
-          }
-          done++;
+        const cid = st.courseId;
+        const pct = Math.round((done / total) * 100);
+        if(progressBar){ progressBar.style.width = pct + '%'; progressBar.textContent = pct + '%'; }
+        if(progressText) progressText.textContent = `Procesando ${done + 1} de ${total}…`;
+        const course = bulkCourseById(cid);
+        try {
+          const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, {
+            method: 'POST', headers: authHeaders(),
+            body: JSON.stringify({ course_id: Number(cid), user_name: st.name, user_email: st.email, final_client: (st.client || batchClient) || undefined, activation_months: months })
+          });
+          const data = await resp.json();
+          results.push(resp.ok
+            ? { ok: true, voucher: data.voucher_code, course: course ? course.name : '', st }
+            : { ok: false, error: data.error || 'Error desconocido', course: course ? course.name : '', st });
+        } catch(e){
+          results.push({ ok: false, error: e.message, course: course ? course.name : '', st });
         }
+        done++;
       }
       if(progressBar){ progressBar.style.width = '100%'; progressBar.textContent = '100%'; progressBar.classList.remove('progress-bar-animated'); }
       const okCount = results.filter(r => r.ok).length, failCount = results.length - okCount;
