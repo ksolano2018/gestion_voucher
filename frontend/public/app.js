@@ -7601,7 +7601,7 @@ document.addEventListener('DOMContentLoaded', () => {
       return `<button type="button" class="list-group-item list-group-item-action course-opt course-opt-${kind.key}" data-bulk-course="${escapeHTML(String(c.id))}">
         <div class="d-flex justify-content-between align-items-center gap-2"><span class="fw-semibold">${hl(title)}</span><span class="badge ${kind.cls}">${kind.label}</span></div>
         <div class="small text-muted">ID ${hl(c.id)}</div></button>`;
-    }).join('') + (matches.length > shown.length ? `<div class="list-group-item text-muted small">Hay ${matches.length} coincidencias: sigue escribiendo o usa “Agregar todas”.</div>` : '');
+    }).join('') + (matches.length > shown.length ? `<div class="list-group-item text-muted small">Hay ${matches.length} coincidencias: sigue escribiendo para acotar.</div>` : '');
     dd.style.display = '';
   }
 
@@ -7629,23 +7629,13 @@ document.addEventListener('DOMContentLoaded', () => {
   on('bulk-course-search', 'focus', renderBulkCourseDropdown);
   on('bulk-course-search', 'keydown', (e) => { if(e.key === 'Escape'){ const dd = el('bulk-course-dropdown'); if(dd) dd.style.display = 'none'; } });
   on('bulk-course-clear', 'click', () => { const i = el('bulk-course-search'); if(i){ i.value = ''; i.focus(); } const dd = el('bulk-course-dropdown'); if(dd) dd.style.display = 'none'; });
-  on('bulk-course-addall', 'click', () => {
-    const term = (el('bulk-course-search') || {}).value || '';
-    const m = bulkCourseMatches(term);
-    if(!m.length){ showToast('No hay certificaciones para agregar con esa búsqueda', 'warning'); return; }
-    if(!term.trim() && !confirm(`¿Agregar las ${m.length} certificaciones disponibles?`)) return;
-    bulkAddCourses(m.map(c => c.id));
-    // Tras agregar en bloque se cierra la lista y se limpia la búsqueda para no tapar los chips.
-    const si = el('bulk-course-search'); if(si) si.value = '';
-    const dd = el('bulk-course-dropdown'); if(dd) dd.style.display = 'none';
-  });
   on('bulk-course-removeall', 'click', () => { _bulkCourseIds = []; renderBulkChips(); renderBulkCourseDropdown(); });
   document.addEventListener('click', (e) => {
     const add = e.target.closest && e.target.closest('[data-bulk-course]');
     if(add){ const c = bulkCourseById(add.dataset.bulkCourse); if(c) bulkAddCourses([c.id]); return; }
     const rm = e.target.closest && e.target.closest('[data-bulk-remove]');
     if(rm){ _bulkCourseIds = _bulkCourseIds.filter(id => String(id) !== rm.dataset.bulkRemove); renderBulkChips(); return; }
-    if(!e.target.closest('#bulk-course-search, #bulk-course-dropdown, #bulk-course-addall, #bulk-course-clear')){
+    if(!e.target.closest('#bulk-course-search, #bulk-course-dropdown, #bulk-course-clear')){
       const dd = el('bulk-course-dropdown'); if(dd) dd.style.display = 'none';
     }
   });
