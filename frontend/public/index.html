@@ -1241,6 +1241,12 @@
         letter-spacing: -0.03em;
       }
 
+      .act-step-pill { display:inline-flex; align-items:center; gap:.4rem; padding:.25rem .7rem; border-radius:999px; background:#e9ecef; color:#6c757d; font-size:.85rem; }
+      .act-step-pill .act-step-num { display:inline-flex; width:1.3rem; height:1.3rem; border-radius:50%; background:#adb5bd; color:#fff; align-items:center; justify-content:center; font-size:.75rem; font-weight:700; }
+      .act-step-pill.active { background:#0d6efd; color:#fff; }
+      .act-step-pill.active .act-step-num { background:#fff; color:#0d6efd; }
+      .act-step-pill.done { background:#d1e7dd; color:#0f5132; }
+      .act-step-pill.done .act-step-num { background:#198754; }
       .metric-note { font-size: 0.82rem; color: var(--muted); margin-top: 0.35rem; }
 
       /* ===== DASHBOARD PANELS ===== */
@@ -4016,46 +4022,64 @@
                   </div>
                   <div class="card shadow-sm mb-4">
                     <div class="card-body">
-                      <h6 class="mb-3">Activar Voucher</h6>
-                      <div class="row g-3">
-                        <div class="col-md-4">
-                          <label class="form-label">Certificación</label>
-                          <div class="position-relative">
-                            <input type="text" id="activate-course-search" class="form-control" placeholder="Busca una certificación..." autocomplete="off">
-                            <div id="activate-course-dropdown" class="list-group position-absolute w-100 shadow-sm" style="z-index:1050; max-height:260px; overflow-y:auto; display:none; top:100%;"></div>
-                            <select id="activate-course-id" class="d-none">
-                              <option value="">Selecciona una certificación</option>
+                      <div id="act-stepper" class="d-flex align-items-center gap-2 mb-4 flex-wrap">
+                        <span class="act-step-pill" data-step="1"><span class="act-step-num">1</span> Certificación</span>
+                        <span class="text-muted">›</span>
+                        <span class="act-step-pill" data-step="2"><span class="act-step-num">2</span> Datos del alumno</span>
+                        <span class="text-muted">›</span>
+                        <span class="act-step-pill" data-step="3"><span class="act-step-num">3</span> Confirmar</span>
+                      </div>
+
+                      <div class="act-step" data-step="1">
+                        <label class="form-label">¿Qué certificación vas a activar?</label>
+                        <div class="position-relative" style="max-width:520px;">
+                          <input type="text" id="activate-course-search" class="form-control" placeholder="Busca una certificación..." autocomplete="off">
+                          <div id="activate-course-dropdown" class="list-group position-absolute w-100 shadow-sm" style="z-index:1050; max-height:260px; overflow-y:auto; display:none; top:100%;"></div>
+                          <select id="activate-course-id" class="d-none">
+                            <option value="">Selecciona una certificación</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div class="act-step" data-step="2" style="display:none;">
+                        <div class="row g-3">
+                          <div class="col-md-4">
+                            <label class="form-label">Nombre</label>
+                            <input id="activate-firstname" class="form-control" placeholder="Nombre(s)">
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label">Apellidos</label>
+                            <input id="activate-lastname" class="form-control" placeholder="Apellidos">
+                          </div>
+                          <div class="col-md-4">
+                            <label class="form-label">Email del Usuario</label>
+                            <input id="activate-email" class="form-control" placeholder="usuario@ejemplo.com">
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label">Cliente Final (destinatario) <small class="text-muted">(opcional)</small></label>
+                            <select id="activate-final-client" class="form-control">
+                              <option value="">Sin cliente final</option>
+                            </select>
+                            <div class="form-text">Gestiona tus clientes en la sección <strong>Clientes</strong>.</div>
+                          </div>
+                          <div class="col-md-6">
+                            <label class="form-label">Disponibilidad (meses) <span id="activate-months-max-label" class="text-muted small"></span></label>
+                            <select id="activate-months" class="form-control">
+                              <option value="12">12 meses (1 año)</option>
                             </select>
                           </div>
                         </div>
-                        <div class="col-md-4">
-                          <label class="form-label">Nombre</label>
-                          <input id="activate-firstname" class="form-control" placeholder="Nombre(s)">
-                        </div>
-                        <div class="col-md-4">
-                          <label class="form-label">Apellidos</label>
-                          <input id="activate-lastname" class="form-control" placeholder="Apellidos">
-                        </div>
-                        <div class="col-md-4">
-                          <label class="form-label">Email del Usuario</label>
-                          <input id="activate-email" class="form-control" placeholder="usuario@ejemplo.com">
-                        </div>
-                        <div class="col-md-4">
-                          <label class="form-label">Cliente Final (destinatario) <small class="text-muted">(opcional)</small></label>
-                          <select id="activate-final-client" class="form-control">
-                            <option value="">Sin cliente final</option>
-                          </select>
-                          <div class="form-text">Gestiona tus clientes en la sección <strong>Clientes</strong>.</div>
-                        </div>
-                        <div class="col-md-4">
-                          <label class="form-label">Disponibilidad (meses) <span id="activate-months-max-label" class="text-muted small"></span></label>
-                          <select id="activate-months" class="form-control">
-                            <option value="12">12 meses (1 año)</option>
-                          </select>
-                        </div>
-                        <div class="col-12">
-                          <button id="activate-btn" class="btn btn-primary">✓ Activar Voucher</button>
-                        </div>
+                      </div>
+
+                      <div class="act-step" data-step="3" style="display:none;">
+                        <div id="act-summary" class="border rounded p-3 mb-2"></div>
+                        <div class="form-text">Al activar se consume un voucher y se matricula al alumno en Moodle.</div>
+                      </div>
+
+                      <div class="d-flex gap-2 mt-4">
+                        <button type="button" id="act-back" class="btn btn-outline-secondary" style="display:none;">‹ Atrás</button>
+                        <button type="button" id="act-next" class="btn btn-primary">Siguiente ›</button>
+                        <button id="activate-btn" class="btn btn-success" style="display:none;">✓ Activar Voucher</button>
                       </div>
                     </div>
                   </div>

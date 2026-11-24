@@ -7161,6 +7161,50 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // ── Wizard de activación (3 pasos) ─────────────────────────────────────────
+  let _actStep = 1;
+  function actWizardGo(n){
+    _actStep = n;
+    document.querySelectorAll('#partner-activate .act-step').forEach(d => { d.style.display = Number(d.dataset.step) === n ? '' : 'none'; });
+    document.querySelectorAll('#act-stepper .act-step-pill').forEach(p => {
+      const k = Number(p.dataset.step);
+      p.classList.toggle('active', k === n);
+      p.classList.toggle('done', k < n);
+    });
+    const back = el('act-back'), next = el('act-next'), go = el('activate-btn');
+    if(back) back.style.display = n > 1 ? '' : 'none';
+    if(next) next.style.display = n < 3 ? '' : 'none';
+    if(go)   go.style.display   = n === 3 ? '' : 'none';
+    if(n === 3) renderActSummary();
+  }
+  function renderActSummary(){
+    const sel = el('activate-course-id');
+    const courseName = sel && sel.options[sel.selectedIndex] ? sel.options[sel.selectedIndex].text : '';
+    const fc = el('activate-final-client');
+    const client = fc && fc.value ? fc.options[fc.selectedIndex].text : 'Sin cliente final';
+    const months = parseInt((el('activate-months') || {}).value || '12');
+    const end = new Date(); end.setMonth(end.getMonth() + months);
+    const name = `${(el('activate-firstname') || {}).value.trim()} ${(el('activate-lastname') || {}).value.trim()}`.trim();
+    const box = el('act-summary');
+    if(box) box.innerHTML = `<div><span class="text-muted">Certificación:</span> <strong>${escapeHTML(courseName)}</strong></div>
+      <div><span class="text-muted">Alumno:</span> <strong>${escapeHTML(name)}</strong> — ${escapeHTML((el('activate-email') || {}).value.trim())}</div>
+      <div><span class="text-muted">Cliente final:</span> ${escapeHTML(client)}</div>
+      <div><span class="text-muted">Disponibilidad:</span> ${months} meses · acceso hasta el <strong>${escapeHTML(end.toLocaleDateString('es-ES', { day: '2-digit', month: 'long', year: 'numeric' }))}</strong></div>`;
+  }
+  on('act-next', 'click', () => {
+    if(_actStep === 1){
+      if(!(el('activate-course-id') || {}).value){ showToast('Elige una certificación de la lista para continuar', 'warning'); return; }
+      actWizardGo(2);
+    } else if(_actStep === 2){
+      const f = (el('activate-firstname') || {}).value.trim(), l = (el('activate-lastname') || {}).value.trim(), e = (el('activate-email') || {}).value.trim();
+      if(!f || !l || !e){ showToast('Completa nombre, apellidos y correo del alumno', 'warning'); return; }
+      if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)){ showToast('El correo del alumno no es válido', 'warning'); return; }
+      actWizardGo(3);
+    }
+  });
+  on('act-back', 'click', () => actWizardGo(Math.max(1, _actStep - 1)));
+  actWizardGo(1);
+
   // Activar voucher — primero muestra confirmación
   on('activate-btn', 'click', () => {
     const pid = getPartnerIdFromJwt();
@@ -7205,6 +7249,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if(el('activate-lastname'))  el('activate-lastname').value = '';
         if(el('activate-email')) el('activate-email').value = '';
         if(el('activate-final-client')) el('activate-final-client').value = '';
+        actWizardGo(1);
         const ms = (data.moodle_status || '').toUpperCase();
         let moodleMsg = '';
         if(ms === 'ENROLLED') {

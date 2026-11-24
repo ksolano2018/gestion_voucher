@@ -48,10 +48,14 @@ un curso dado.
 **Salida:**
 ```json
 [
-  { "userid": 11, "timecreated": 1757462400 },
-  { "userid": 12, "timecreated": 1757548800 }
+  { "userid": 11, "timecreated": 1757462400, "timeend": 1789000000 },
+  { "userid": 12, "timecreated": 1757548800, "timeend": 0 }
 ]
 ```
+
+`timeend` es el fin de la matrícula del alumno (Unix timestamp); `0` significa
+que no vence. Si el alumno tiene varias inscripciones y alguna no vence, se
+devuelve `0`. Se agregó en la versión 2026112300.
 
 Si un usuario indicado no está matriculado en ese curso, simplemente no
 aparece una fila para él.
