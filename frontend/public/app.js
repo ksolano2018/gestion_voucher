@@ -457,9 +457,13 @@ document.addEventListener('DOMContentLoaded', () => {
     const d = decodeJwt(t);
     if(d){
       const label = d.role === 'admin' ? 'Admin' : (d.role === 'partner' ? 'Partner' : 'User');
-      const emailVal = escapeHTML(d.sub || d.email || 'usuario');
-      const nameVal = escapeHTML(d.first_name || d.name || label);
-      if(userInfoDisplay) userInfoDisplay.textContent = `${nameVal}`;
+      // textContent ya escapa: no pasar por escapeHTML (mostraría &amp; etc.)
+      const emailVal = d.email || '';
+      const nameVal = d.name || d.first_name || d.email || label;
+      if(userInfoDisplay){
+        userInfoDisplay.textContent = nameVal;
+        userInfoDisplay.title = emailVal ? `${label} · ${emailVal}` : label;
+      }
       const dropName = el('user-dropdown-name');
       const dropEmail = el('user-dropdown-email');
       if(dropName) dropName.textContent = `${label}: ${nameVal}`;

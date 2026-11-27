@@ -215,7 +215,14 @@ app.use(require('./src/modules/final-clients/routes'));
 // QA-10: el JWT viaja SOLO en una cookie httpOnly (no legible por JS/XSS). El cuerpo
 // de la respuesta trae únicamente los claims no secretos que la UI necesita para
 // decidir qué mostrar (rol, permisos, partner_id, exp) — no sirven para suplantar a nadie.
-function sendSession(res, token) {
+// Nombre visible del usuario para la cabecera (nombre + apellido; si no hay, el correo).
+function displayNameOf(user) {
+  if (!user) return null;
+  const full = [user.first_name, user.last_name].map(v => (v || '').trim()).filter(Boolean).join(' ');
+  return full || user.email || null;
+}
+
+function sendSession(res, token, user) {
   res.cookie('access_token', token, {
     httpOnly: true,
     sameSite: 'lax',
@@ -226,7 +233,11 @@ function sendSession(res, token) {
   return res.json({
     token_type: 'cookie',
     expires_in: SESSION_TIMEOUT_MINUTES * 60,
-    claims: { sub, role, role_type, partner_id, permissions, must_change_password, exp }
+    claims: {
+      sub, role, role_type, partner_id, permissions, must_change_password, exp,
+      name: displayNameOf(user),
+      email: user ? user.email : null
+    }
   });
 }
 
@@ -314,7 +325,7 @@ app.post('/oauth/token',
       secure: process.env.NODE_ENV === 'production'
     });
 
-    return sendSession(res, token);
+    return sendSession(res, token, user);
   }catch(e){
     await logSystemEvent('LOGIN_ERROR', 'AUTH', null, null, null, { username }, 'FAILED', e.message, req);
     logSecurityEvent('LOGIN_ERROR', { username, error: e.message, ip: req.ip });
@@ -506,7 +517,7 @@ app.post('/oauth/refresh', authLimiter, async (req,res)=>{
 
     logSecurityEvent('REFRESH_SUCCESS', { userId: user.id, email: user.email, ip: req.ip });
     await logSystemEvent('REFRESH_SUCCESS', 'AUTH', user.id, user.stripe_customer_id || null, null, { email: user.email }, 'SUCCESS', null, req);
-    return sendSession(res, token);
+    return sendSession(res, token, user);
   }catch(e){
     await logSystemEvent('REFRESH_ERROR', 'AUTH', null, null, null, {}, 'FAILED', e.message, req);
     logSecurityEvent('REFRESH_ERROR', { error: e.message, ip: req.ip });
