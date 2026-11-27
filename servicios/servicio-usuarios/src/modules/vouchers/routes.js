@@ -157,6 +157,30 @@ router.post('/partner/:id/activate',
         return res.status(404).json({ error: 'Certificación no encontrada' });
       }
 
+      // Un estudiante puede tener varias certificaciones, pero NO la misma dos veces mientras
+      // la primera siga vigente: re-activarla consumiría otro voucher sin darle nada nuevo
+      // (ya está matriculado). Se valida antes de tocar el voucher.
+      const existing = await pool.query(
+        `SELECT id, expires_at FROM activations
+          WHERE LOWER(user_email) = LOWER($1) AND course_id = $2
+            AND COALESCE(activation_status, 'ACTIVE') = 'ACTIVE'
+            AND (expires_at IS NULL OR expires_at > NOW())
+          ORDER BY expires_at DESC NULLS FIRST LIMIT 1`,
+        [user_email, course_id]
+      );
+      if (existing.rowCount > 0) {
+        const exp = existing.rows[0].expires_at;
+        const expLabel = exp ? new Date(exp).toLocaleDateString('es-CO', { day: '2-digit', month: 'long', year: 'numeric', timeZone: 'America/Bogota' }) : null;
+        await logSystemEvent('VOUCHER_ACTIVATION_ERROR', 'VOUCHER', req.user.sub, null, null, {
+          partner_id: parseInt(pid, 10), course_id, user_email, reason: 'already_active', existing_activation_id: existing.rows[0].id
+        }, 'FAILED', 'El estudiante ya tiene activa esta certificación', req);
+        return res.status(409).json({
+          error: 'already_active',
+          message: `Este estudiante ya tiene activa esta certificación${expLabel ? ` (vigente hasta el ${expLabel})` : ''}. No se consumió ningún voucher.`,
+          expires_at: exp
+        });
+      }
+
       // Grupo de Moodle = nombre del partner (paridad con el CSV bulk-upload
       // manual de antes de la app). Ver [[grupo-moodle-partner]].
       const partnerRow = await pool.query('SELECT COALESCE(group_name, name) AS name FROM partners WHERE id=$1', [pid]);

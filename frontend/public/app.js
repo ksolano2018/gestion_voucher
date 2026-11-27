@@ -7348,7 +7348,7 @@ document.addEventListener('DOMContentLoaded', () => {
         loadPartnerStats(false);
         loadActivationEligibility();
       } else {
-        showToast(data.error || 'No se pudo activar el voucher', 'danger', 5000);
+        showToast(data.message || data.error || 'No se pudo activar el voucher', data.error === 'already_active' ? 'warning' : 'danger', 8000);
       }
     }catch(e){
       setButtonLoading(btn, false);
@@ -7717,9 +7717,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!(st.firstName && st.lastName) && st.name.trim().split(/s+/).length < 2) return { ok: false, msg: 'Falta el apellido' };
     if(!st.email) return { ok: false, msg: 'Falta el correo' };
     if(!EMAIL_RE.test(st.email)) return { ok: false, msg: 'Correo inválido' };
-    const first = _bulkStudents.findIndex(x => x.email.toLowerCase() === st.email.toLowerCase());
-    if(first !== idx) return { ok: false, msg: 'Correo repetido' };
     if(!st.courseId) return { ok: false, msg: 'Elige la certificación' };
+    // Un alumno puede ir a varias certificaciones distintas en la misma carga (informe QA 4.3),
+    // pero no dos veces a la misma: eso consumiría un voucher de más.
+    const first = _bulkStudents.findIndex(x => x.email.toLowerCase() === st.email.toLowerCase() && String(x.courseId) === String(st.courseId));
+    if(first !== idx) return { ok: false, msg: 'Repetido: mismo correo y certificación' };
     return { ok: true };
   }
   const bulkValidStudents = () => _bulkStudents.filter((st, i) => bulkStudentState(st, i).ok);
@@ -7744,7 +7746,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const s = bulkStudentState(st, i);
           return `<tr class="${s.ok ? '' : 'table-danger'}"><td>${escapeHTML(st.name)}</td><td>${escapeHTML(st.email)}</td><td><select class="form-select form-select-sm" data-bulk-student-course="${i}">${bulkCourseOptions(st.courseId)}</select></td><td>${bulkClientSelectHtml(st.client, i)}</td>
             <td>${s.ok ? '<span class="badge bg-success">✓ Listo</span>' : `<span class="badge bg-danger">✗ ${s.msg}</span>`}</td>
-            <td class="text-end"><button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-bulk-student-del="${i}" title="Quitar">✕</button></td></tr>`;
+            <td class="text-end text-nowrap"><button type="button" class="btn btn-sm btn-outline-primary py-0 px-1 me-1" data-bulk-student-dup="${i}" title="Asignar este alumno a otra certificación">+ Otra</button><button type="button" class="btn btn-sm btn-outline-secondary py-0 px-1" data-bulk-student-del="${i}" title="Quitar">✕</button></td></tr>`;
         }).join('')
       : '<tr><td colspan="6" class="text-muted text-center">Aún no hay alumnos</td></tr>';
     const n = el('bulk-students-count');
@@ -7841,7 +7843,13 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.addEventListener('click', (e) => {
     const d = e.target.closest && e.target.closest('[data-bulk-student-del]');
-    if(d){ _bulkStudents.splice(Number(d.dataset.bulkStudentDel), 1); renderBulkStudents(); }
+    if(d){ _bulkStudents.splice(Number(d.dataset.bulkStudentDel), 1); renderBulkStudents(); return; }
+    // Mismo alumno a otra certificación: se inserta una copia debajo, sin certificación elegida.
+    const dup = e.target.closest && e.target.closest('[data-bulk-student-dup]');
+    if(dup){
+      const i = Number(dup.dataset.bulkStudentDup), src = _bulkStudents[i];
+      if(src){ _bulkStudents.splice(i + 1, 0, { ...src, courseId: '' }); renderBulkStudents(); }
+    }
   });
 
   on('download-activation-template', 'click', () => {
@@ -7958,7 +7966,7 @@ document.addEventListener('DOMContentLoaded', () => {
           const data = await resp.json();
           results.push(resp.ok
             ? { ok: true, voucher: data.voucher_code, course: course ? course.name : '', st }
-            : { ok: false, error: data.error || 'Error desconocido', course: course ? course.name : '', st });
+            : { ok: false, error: data.message || data.error || 'Error desconocido', course: course ? course.name : '', st });
         } catch(e){
           results.push({ ok: false, error: e.message, course: course ? course.name : '', st });
         }
