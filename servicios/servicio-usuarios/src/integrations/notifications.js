@@ -29,14 +29,14 @@ async function sendStudentWelcomeEmail(args = {}) {
 }
 
 // Bienvenida a un usuario de la plataforma (Partner u otro rol). Nunca lanza.
-async function sendUserWelcomeEmail({ to, userName, role, userId }) {
+async function sendUserWelcomeEmail({ to, userName, role, userId, setPasswordUrl, setPasswordDays }) {
   try {
     const headers = { 'Content-Type': 'application/json' };
     if (INTERNAL_API_TOKEN) headers['x-internal-token'] = INTERNAL_API_TOKEN;
     const loginUrl = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
     const resp = await fetch(`${NOTIFICATIONS_URL}/internal/send-user-welcome`, {
       method: 'POST', headers,
-      body: JSON.stringify({ to, userName, role, userId, loginUrl })
+      body: JSON.stringify({ to, userName, role, userId, loginUrl, setPasswordUrl, setPasswordDays })
     });
     if (!resp.ok) { console.error(`❌ servicio-notificaciones respondió ${resp.status}`); return 'FAILED'; }
     const data = await resp.json().catch(() => ({}));

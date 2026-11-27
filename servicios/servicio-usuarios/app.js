@@ -358,6 +358,11 @@ app.post('/oauth/change-password-first',
       const matches = await bcrypt.compare(current_password, user.password);
       if (!matches) return res.status(400).json({ error: 'invalid_grant' });
 
+      // No se permite reutilizar la contraseña vigente (informe QA 1.4).
+      if (await bcrypt.compare(new_password, user.password)) {
+        return res.status(400).json({ error: 'same_password', message: 'La nueva contraseña no puede ser igual a la actual.' });
+      }
+
       const hash = await bcrypt.hash(new_password, 10);
 
       // Calcular nueva fecha de expiración según política global

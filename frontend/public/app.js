@@ -321,7 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAdminDashboard();
   };
   if(navPartner) navPartner.onclick = () => { show(sPartner); navPartner.classList.add('active'); refreshVoucherPricingPreview(); };
-  if(navCart) navCart.onclick = () => { show(sCartSummary); navCart.classList.add('active'); };
+  if(navCart) navCart.onclick = () => { show(sCartSummary); navCart.classList.add('active'); renderCartSummary(); };
   on('user-dropdown-go-stats', 'click', () => {
     const t = getToken();
     const d = t ? decodeJwt(t) : null;
@@ -814,6 +814,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if(newPassword !== confirmPassword){
       showMsg('Las contraseñas no coinciden', 'danger'); return;
     }
+    if(newPassword === currentPassword){
+      showMsg('La nueva contraseña no puede ser igual a la actual', 'danger'); return;
+    }
 
     try{
       setButtonLoading(btn, true);
@@ -829,7 +832,8 @@ document.addEventListener('DOMContentLoaded', () => {
         if(el('login-password')) el('login-password').value = '';
         showLoginMessage('Contraseña actualizada. Inicia sesión con tu nueva contraseña.', 'success', 5000);
       } else {
-        showMsg('Error: ' + (data.error || 'No se pudo cambiar la contraseña'), 'danger');
+        const detail = Array.isArray(data.details) && data.details.length ? data.details[0].msg : '';
+        showMsg(data.message || detail || ('Error: ' + (data.error || 'No se pudo cambiar la contraseña')), 'danger');
       }
     }catch(e){
       setButtonLoading(btn, false);
@@ -1608,20 +1612,41 @@ document.addEventListener('DOMContentLoaded', () => {
         saveCart(updatedCart);
         const totalEl = el('cart-total');
         if(totalEl) totalEl.textContent = `$${parseFloat(pricing.total_price || 0).toFixed(2)}`;
+        renderCartBreakdown(pricing);
       }
     } catch (e) {
       if(previewEl) previewEl.textContent = 'No se pudo calcular el precio actual.';
+      renderCartBreakdown(null);
     }
+  }
+
+  // Desglose del precio en el carrito (informe QA 2.4): cantidad × precio unitario, perfil y tramo.
+  function renderCartBreakdown(pricing){
+    const box = el('cart-breakdown');
+    if(!box) return;
+    if(!pricing){ box.style.display = 'none'; box.innerHTML = ''; return; }
+    const unit = parseFloat(pricing.unit_price || 0).toFixed(2);
+    const total = parseFloat(pricing.total_price || 0).toFixed(2);
+    const tipo = pricing.pricing_source === 'SPECIAL' ? 'Precio especial' : 'Categoría';
+    box.innerHTML = `
+      <div class="cb-row"><span>${escapeHTML(tipo)}</span><strong>${escapeHTML(pricing.pricing_profile_name || '-')} · tramo ${escapeHTML(pricing.quantity_range || '-')}</strong></div>
+      <div class="cb-row"><span>Precio por voucher</span><strong>$${unit}</strong></div>
+      <div class="cb-row"><span>${parseInt(pricing.quantity, 10)} voucher(s) × $${unit}</span><strong>$${total}</strong></div>
+      <div class="cb-note">El tramo se calcula con tus ${parseInt(pricing.cumulative_qty, 10) || 0} vouchers comprados antes + los ${parseInt(pricing.quantity, 10)} de esta orden = ${parseInt(pricing.lookup_qty, 10)}.</div>`;
+    box.style.display = '';
   }
 
   function renderCartSummary(){
     const container = el('cart-items-container');
     const cart = loadCart();
     if(!container) return;
+    const checkoutBtn = el('cart-checkout');
+    if(checkoutBtn) checkoutBtn.disabled = !cart || cart.length === 0;
     if(!cart || cart.length === 0){
-      container.innerHTML = '<div class="text-muted">Tu carrito esta vacio</div>';
+      container.innerHTML = '<div class="text-muted">Tu carrito está vacío. Agrega vouchers desde <strong>Vouchers → Comprar</strong>.</div>';
       const totalEl = el('cart-total');
       if(totalEl) totalEl.textContent = '$0.00';
+      renderCartBreakdown(null);
       updateCartCount();
       return;
     }
@@ -1680,24 +1705,37 @@ document.addEventListener('DOMContentLoaded', () => {
       qty
     });
     show(sCartSummary);
+    renderCartSummary();
     if(navCart) navCart.classList.add('active');
-    showLoginMessage('Voucher agregado al carrito', 'success', 2000);
+    showToast('Voucher agregado al carrito', 'success', 2000);
   });
 
   on('voucher-qty', 'change', () => refreshVoucherPricingPreview());
 
-  on('cart-clear', 'click', () => { saveCart([]); renderCartSummary(); });
+  // Volver a la vista de Vouchers (informe QA 3.1: el carrito no tenía cómo regresar).
+  function leaveCart(){
+    if(navPartner && navPartner.style.display !== 'none') navPartner.click();
+    else if(navAdmin && navAdmin.style.display !== 'none') navAdmin.click();
+  }
+  on('cart-back', 'click', leaveCart);
+  on('cart-clear', 'click', () => {
+    const cart = loadCart();
+    if(!cart || cart.length === 0){ showToast('El carrito ya está vacío', 'info'); return; }
+    saveCart([]);
+    renderCartSummary();
+    showToast('Carrito vaciado', 'success', 2500);
+  });
   on('cart-checkout', 'click', async () => {
     const btn = el('cart-checkout');
     const cart = loadCart();
     if(!cart || cart.length === 0){
-      showLoginMessage('El carrito esta vacio', 'warning', 3000);
+      showToast('El carrito está vacío: agrega vouchers antes de continuar', 'warning', 4000);
       return;
     }
-    
+
     const pid = getPartnerIdFromJwt();
     if(!pid){
-      showLoginMessage('No se pudo obtener Partner ID', 'danger', 3000);
+      showToast('No se pudo identificar tu partner. Vuelve a iniciar sesión.', 'danger', 4000);
       return;
     }
     
@@ -1722,17 +1760,17 @@ document.addEventListener('DOMContentLoaded', () => {
       setButtonLoading(btn, false);
       
       if(resp.ok && data.url){
-        showLoginMessage('Redirigiendo a Stripe...', 'success', 2000);
+        showToast('Redirigiendo a Stripe...', 'success', 2000);
         // Redirigir a Stripe Checkout
         setTimeout(() => {
           window.location.href = data.url;
         }, 1000);
       } else {
-        showLoginMessage('Error: ' + (data.error || 'No se pudo procesar'), 'danger', 3000);
+        showToast('Error: ' + (data.message || data.error || 'No se pudo procesar'), 'danger', 5000);
       }
     }catch(e){
       setButtonLoading(btn, false);
-      showLoginMessage('Error: ' + e.message, 'danger', 3000);
+      showToast('Error: ' + e.message, 'danger', 5000);
     }
   });
 
@@ -7276,7 +7314,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const months = parseInt((el('activate-months') || {}).value || '12');
     try{
       setButtonLoading(btn, true);
-      const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, { method:'POST', headers: authHeaders(), body: JSON.stringify({ course_id: parseInt(courseId, 10), user_name: name, user_email: email, final_client: finalClient, activation_months: months }) });
+      const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, { method:'POST', headers: authHeaders(), body: JSON.stringify({ course_id: parseInt(courseId, 10), user_name: name, user_first_name: firstname, user_last_name: lastname, user_email: email, final_client: finalClient, activation_months: months }) });
       const data = await resp.json();
       setButtonLoading(btn, false);
       bootstrap.Modal.getInstance(document.getElementById('confirmActivateModal')).hide();
@@ -7675,6 +7713,8 @@ document.addEventListener('DOMContentLoaded', () => {
   // ── Paso 2: alumnos ──
   function bulkStudentState(st, idx){
     if(!st.name) return { ok: false, msg: 'Falta el nombre' };
+    // Moodle necesita nombre y apellido para el certificado (informe QA 4.3).
+    if(!(st.firstName && st.lastName) && st.name.trim().split(/s+/).length < 2) return { ok: false, msg: 'Falta el apellido' };
     if(!st.email) return { ok: false, msg: 'Falta el correo' };
     if(!EMAIL_RE.test(st.email)) return { ok: false, msg: 'Correo inválido' };
     const first = _bulkStudents.findIndex(x => x.email.toLowerCase() === st.email.toLowerCase());
@@ -7726,20 +7766,32 @@ document.addEventListener('DOMContentLoaded', () => {
     const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
     const ALIAS = {
       name:   ['user_name', 'nombre', 'name', 'alumno', 'estudiante', 'nombre_completo'],
+      first:  ['nombres', 'nombre', 'user_first_name', 'first_name', 'firstname', 'name', 'user_name'],
+      last:   ['apellidos', 'apellido', 'user_last_name', 'last_name', 'lastname', 'surname'],
       email:  ['user_email', 'email', 'correo', 'correo_electronico', 'e_mail', 'mail'],
       client: ['final_client', 'cliente_final', 'cliente'],
     };
     const keys = Object.keys(rows[0]);
     const find = list => keys.find(k => list.includes(norm(k)));
-    const kName = find(ALIAS.name), kEmail = find(ALIAS.email), kClient = find(ALIAS.client);
+    const kEmail = find(ALIAS.email), kClient = find(ALIAS.client);
+    // Columnas separadas Nombres / Apellidos (plantilla actual) o un solo nombre completo (plantilla anterior).
+    const kLast = find(ALIAS.last);
+    const kFirst = kLast ? find(ALIAS.first) : null;
+    const kName = kLast ? null : find(ALIAS.name);
     const missing = [];
-    if(!kName) missing.push('user_name');
+    if(kLast && !kFirst) missing.push('Nombres');
+    if(!kLast && !kName) missing.push('Nombres y Apellidos');
     if(!kEmail) missing.push('user_email');
     if(missing.length) throw new Error(`Faltan las columnas ${missing.join(' y ')}. Encabezados encontrados: ${keys.map(k => '"' + String(k).trim() + '"').join(', ') || '(ninguno)'}`);
 
     // Si Excel convirtió el correo en hipervínculo, el valor puede traer "mailto:".
     const clean = v => String(v === undefined || v === null ? '' : v).trim().replace(/^mailto:/i, '');
-    return rows.map(r => ({ name: clean(r[kName]), email: clean(r[kEmail]), client: kClient ? clean(r[kClient]) : '', courseId: bulkDefaultCourse() }))
+    return rows.map(r => {
+        const firstName = kFirst ? clean(r[kFirst]) : '';
+        const lastName = kLast ? clean(r[kLast]) : '';
+        const name = kLast ? [firstName, lastName].filter(Boolean).join(' ') : clean(r[kName]);
+        return { name, firstName, lastName, email: clean(r[kEmail]), client: kClient ? clean(r[kClient]) : '', courseId: bulkDefaultCourse() };
+      })
       .filter(r => r.name || r.email);
   }
 
@@ -7763,6 +7815,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const n = el('bulk-man-name'), m = el('bulk-man-email');
     const name = (n.value || '').trim(), email = (m.value || '').trim();
     if(!name || !EMAIL_RE.test(email)){ showToast('Escribe el nombre y un correo válido', 'warning'); return; }
+    if(name.split(/s+/).length < 2){ showToast('Escribe nombre y apellido del alumno', 'warning'); return; }
     _bulkStudents.push({ name, email, client: (el('bulk-man-client') || {}).value || '', courseId: (el('bulk-man-course') || {}).value || bulkDefaultCourse() });
     n.value = ''; m.value = ''; n.focus();
     renderBulkStudents();
@@ -7795,11 +7848,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if(!window.XLSX){ showLoginMessage('Librería Excel no cargada. Recarga la página.', 'danger', 4000); return; }
     const wb = window.XLSX.utils.book_new();
     const ws = window.XLSX.utils.aoa_to_sheet([
-      ['user_name', 'user_email', 'final_client'],
-      ['Juan Perez', 'juan@ejemplo.com', 'Empresa ABC'],
-      ['Maria Lopez', 'maria@ejemplo.com', ''], // final_client opcional
+      ['Nombres', 'Apellidos', 'Correo', 'Cliente final'],
+      ['Juan Carlos', 'Pérez Gómez', 'juan@ejemplo.com', 'Empresa ABC'],
+      ['María', 'López', 'maria@ejemplo.com', ''], // Cliente final opcional
     ]);
-    ws['!cols'] = [{ wch: 28 }, { wch: 32 }, { wch: 26 }];
+    ws['!cols'] = [{ wch: 22 }, { wch: 22 }, { wch: 32 }, { wch: 26 }];
     window.XLSX.utils.book_append_sheet(wb, ws, 'Alumnos');
     window.XLSX.writeFile(wb, 'plantilla_alumnos_activacion.xlsx');
   });
@@ -7900,7 +7953,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
           const resp = await safeFetch(apiUrl + `/partner/${pid}/activate`, {
             method: 'POST', headers: authHeaders(),
-            body: JSON.stringify({ course_id: Number(cid), user_name: st.name, user_email: st.email, final_client: (st.client || batchClient) || undefined, activation_months: months })
+            body: JSON.stringify({ course_id: Number(cid), user_name: st.name, user_first_name: st.firstName || undefined, user_last_name: st.lastName || undefined, user_email: st.email, final_client: (st.client || batchClient) || undefined, activation_months: months })
           });
           const data = await resp.json();
           results.push(resp.ok

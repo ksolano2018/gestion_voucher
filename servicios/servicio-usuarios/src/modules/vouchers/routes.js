@@ -14,6 +14,7 @@
 //   POST /admin/activations/:activationId/resend-email          reenvío del correo (admin, escalación sin límites)
 //   GET  /admin/activations                                     contexto completo de activaciones (admin)
 const express = require('express');
+const { splitStudentName } = require('../../lib/studentName');
 const { body, param } = require('express-validator');
 
 const pool = require('../../db/pool');
@@ -114,6 +115,8 @@ router.post('/partner/:id/activate',
   body('course_id').isInt({ min: 1 }).withMessage('Curso inválido'),
   body('user_name').trim().isLength({ min: 2, max: 100 }).withMessage('Nombre debe tener entre 2 y 100 caracteres'),
   body('user_email').isEmail().normalizeEmail().withMessage('Email inválido'),
+  body('user_first_name').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 100 }).withMessage('Nombres muy largos'),
+  body('user_last_name').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 100 }).withMessage('Apellidos muy largos'),
   body('final_client').optional({ nullable: true, checkFalsy: true }).trim().isLength({ min: 2, max: 200 }).withMessage('Cliente final debe tener entre 2 y 200 caracteres'),
   body('activation_months').optional().isInt({ min: 1, max: 120 }).withMessage('Meses de activación inválidos'),
   handleValidationErrors,
@@ -125,6 +128,14 @@ router.post('/partner/:id/activate',
 
     if (!req.user.partner_id || String(req.user.partner_id) !== String(pid)) {
       return res.status(403).json({ error: 'forbidden' });
+    }
+
+    // Nombres/apellidos para Moodle (y el certificado). Si no vienen separados se
+    // deducen del nombre completo; en ambos casos se exige al menos un apellido
+    // (informe QA 4.3: antes un nombre de una sola palabra quedaba con apellido "Student").
+    const names = splitStudentName(user_name, req.body.user_first_name, req.body.user_last_name);
+    if (!names) {
+      return res.status(400).json({ error: 'missing_last_name', message: 'Escribe nombre y apellido del estudiante.' });
     }
 
     try {
@@ -230,9 +241,7 @@ router.post('/partner/:id/activate',
       });
 
       // Moodle enrollment — non-blocking: activation already persisted above
-      const nameParts = (user_name || '').trim().split(/\s+/);
-      const firstName = nameParts[0] || user_email.split('@')[0];
-      const lastName  = nameParts.slice(1).join(' ') || 'Student';
+      const { firstName, lastName } = names;
 
       const moodleResult = await moodleService.enrollStudent({
         email: user_email,

@@ -21,4 +21,21 @@ async function createPasswordSetupUrl(moodleUserId, email) {
   return `${base}/set-password?token=${token}`;
 }
 
-module.exports = { createPasswordSetupUrl };
+// Usuarios de la plataforma (partner/admin/…): enlace de un solo uso para que creen su
+// contraseña desde el correo de bienvenida. Reutiliza password_reset_tokens y la página
+// /reset-password (mismo flujo que "Olvidé mi contraseña"), con vigencia más larga.
+const WELCOME_TOKEN_TTL_DAYS = 7;
+async function createPlatformPasswordUrl(userId) {
+  if (!userId) return null;
+  const token = crypto.randomBytes(32).toString('hex');
+  const hash = crypto.createHash('sha256').update(token).digest('hex');
+  await pool.query(
+    `INSERT INTO password_reset_tokens (user_id, token_hash, expires_at, requested_ip)
+     VALUES ($1, $2, NOW() + ($3 * INTERVAL '1 day'), 'welcome')`,
+    [userId, hash, WELCOME_TOKEN_TTL_DAYS]
+  );
+  const base = (process.env.FRONTEND_URL || '').replace(/\/$/, '');
+  return `${base}/reset-password?token=${token}&welcome=1`;
+}
+
+module.exports = { createPasswordSetupUrl, createPlatformPasswordUrl, WELCOME_TOKEN_TTL_DAYS };

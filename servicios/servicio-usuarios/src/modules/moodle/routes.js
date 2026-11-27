@@ -13,6 +13,7 @@ const { logSystemEvent } = require('../../lib/audit');
 const { sendStudentWelcomeEmail } = require('../../integrations/notifications');
 const { syncMoodleCompletions, syncMoodleCourses } = require('./service');
 const { createPasswordSetupUrl } = require('../../lib/passwordSetupToken');
+const { splitStudentNameLenient } = require('../../lib/studentName');
 
 // ── Moodle webhook: receptor de eventos push de cursos ───────────────────────
 // Moodle llama este endpoint cuando crea, actualiza o elimina un curso.
@@ -153,11 +154,11 @@ router.post('/admin/moodle/enrollments/:activationId/retry',
         [activationId]
       );
 
-      const nameParts = (act.user_name || '').trim().split(/\s+/);
+      const nameParts = splitStudentNameLenient(act.user_name, act.user_email);
       const moodleResult = await moodleService.enrollStudent({
         email:          act.user_email,
-        firstName:      nameParts[0] || act.user_email.split('@')[0],
-        lastName:       nameParts.slice(1).join(' ') || 'Student',
+        firstName:      nameParts.firstName,
+        lastName:       nameParts.lastName,
         moodleCourseId: act.moodle_course_id,
         expiresAt:      act.expires_at,
         groupName:      act.partner_name
@@ -272,11 +273,11 @@ router.post('/admin/moodle/enrollments/retry-all-failed',
         if (actResult.rowCount === 0) continue;
         const act = actResult.rows[0];
 
-        const nameParts = (act.user_name || '').trim().split(/\s+/);
+        const nameParts = splitStudentNameLenient(act.user_name, act.user_email);
         const moodleResult = await moodleService.enrollStudent({
           email:          act.user_email,
-          firstName:      nameParts[0] || act.user_email.split('@')[0],
-          lastName:       nameParts.slice(1).join(' ') || 'Student',
+          firstName:      nameParts.firstName,
+          lastName:       nameParts.lastName,
           moodleCourseId: act.moodle_course_id,
           expiresAt:      act.expires_at,
           groupName:      act.partner_name

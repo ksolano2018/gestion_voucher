@@ -15,6 +15,7 @@ const { getDefaultPricingProfileId } = require('../pricing/service');
 const { isGroupNameTaken } = require('../../lib/partnerGroup');
 const { syncUserWithStripe } = require('../../integrations/stripe');
 const { sendUserWelcomeEmail } = require('../../integrations/notifications');
+const { createPlatformPasswordUrl, WELCOME_TOKEN_TTL_DAYS } = require('../../lib/passwordSetupToken');
 
 router.post('/admin/users',
   authenticate,
@@ -146,7 +147,11 @@ router.post('/admin/users',
     // Correo de bienvenida (login de la plataforma). No bloqueante: ya se respondió
     // al admin y sendUserWelcomeEmail nunca lanza; un fallo SMTP no afecta la creación.
     const welcomeName = [first_name, last_name].filter(Boolean).join(' ').trim();
-    sendUserWelcomeEmail({ to: email, userName: welcomeName, role, userId }).catch(() => {});
+    // Enlace de un solo uso para que el usuario cree su contraseña (no se envía en claro, QA-08).
+    let setPasswordUrl = null;
+    try { setPasswordUrl = await createPlatformPasswordUrl(userId); }
+    catch (linkErr) { console.error('⚠️ No se pudo generar el enlace de contraseña de bienvenida:', linkErr.message); }
+    sendUserWelcomeEmail({ to: email, userName: welcomeName, role, userId, setPasswordUrl, setPasswordDays: WELCOME_TOKEN_TTL_DAYS }).catch(() => {});
   }catch(e){
     await logSystemEvent('USER_CREATE_ERROR', 'USER_MANAGEMENT', req.user.sub, null, null, { email, role }, 'FAILED', e.message, req);
     logSecurityEvent('USER_CREATE_ERROR', { error: e.message, adminId: req.user.sub });

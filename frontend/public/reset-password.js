@@ -7,6 +7,16 @@
   var subEl = document.getElementById('sp-sub');
   var form = document.getElementById('sp-form');
   var msgEl = document.getElementById('sp-msg');
+  // Enlace del correo de bienvenida: es la primera contraseña, no un "restablecer".
+  var isWelcome = params.get('welcome') === '1';
+  if(isWelcome){
+    document.getElementById('sp-title').textContent = 'Crea tu contraseña';
+    document.getElementById('sp-submit').textContent = 'Crear contraseña';
+    document.title = 'Crea tu contraseña · CertJoin';
+  }
+  var ERRORS = {
+    same_password: 'La nueva contraseña no puede ser igual a la actual. Elige una diferente.'
+  };
 
   function showMsg(text, type){
     msgEl.textContent = text;
@@ -30,7 +40,9 @@
         subEl.textContent = reasons[res.data.error] || 'No se pudo validar el enlace.';
         return;
       }
-      subEl.textContent = 'Hola, estás restableciendo la contraseña de ' + res.data.email + '.';
+      subEl.textContent = isWelcome
+        ? 'Hola, crea la contraseña de tu cuenta ' + res.data.email + '.'
+        : 'Hola, estás restableciendo la contraseña de ' + res.data.email + '.';
       form.classList.remove('hidden');
     })
     .catch(function(){ subEl.textContent = 'No se pudo validar el enlace. Intenta de nuevo más tarde.'; });
@@ -53,7 +65,7 @@
         btn.disabled = false;
         if(!res.ok){
           var detail = Array.isArray(res.data.details) && res.data.details.length ? res.data.details[0].msg : '';
-          showMsg(detail || res.data.error || 'No se pudo crear la contraseña.', 'error');
+          showMsg(detail || ERRORS[res.data.error] || res.data.error || 'No se pudo crear la contraseña.', 'error');
           return;
         }
         showMsg(res.data.message || 'Contraseña actualizada correctamente. Ya puedes iniciar sesión.', 'success');

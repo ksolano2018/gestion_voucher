@@ -90,7 +90,7 @@ router.post('/oauth/forgot-password',
 
 async function findValidToken(token) {
   const r = await pool.query(
-    `SELECT t.id, t.user_id, t.expires_at, t.used_at, u.email
+    `SELECT t.id, t.user_id, t.expires_at, t.used_at, u.email, u.password AS current_hash
        FROM password_reset_tokens t JOIN users u ON u.id = t.user_id
       WHERE t.token_hash=$1`,
     [hashToken(token)]
@@ -129,6 +129,12 @@ router.post('/oauth/reset-password',
       const v = await findValidToken(String(token));
       if (v.error) return res.status(400).json({ error: v.error });
       const t = v.row;
+
+      // No se permite reutilizar la contraseña vigente (informe QA 1.4). El token no se consume:
+      // el usuario puede reintentar con otra contraseña desde el mismo enlace.
+      if (t.current_hash && await bcrypt.compare(password, t.current_hash)) {
+        return res.status(400).json({ error: 'same_password', message: 'La nueva contraseña no puede ser igual a la actual.' });
+      }
 
       const hash = await bcrypt.hash(password, 10);
       const policyR = await pool.query("SELECT value FROM system_settings WHERE key='password_expiry_days'");

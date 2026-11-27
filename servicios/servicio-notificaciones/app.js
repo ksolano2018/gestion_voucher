@@ -105,11 +105,11 @@ async function sendStudentWelcomeEmail({ activationId, to, studentName, courseNa
  * LOGIN, no al campus. No toca `activations`; deja rastro en system_events.
  * No bloqueante (nunca lanza). Devuelve 'SENT' | 'FAILED' | 'SKIPPED' | null.
  */
-async function sendUserWelcomeEmail({ to, userName, role, loginUrl, userId = null }) {
+async function sendUserWelcomeEmail({ to, userName, role, loginUrl, setPasswordUrl, setPasswordDays, userId = null }) {
   try {
     if (!to) return null;
     const { subject, html, text } = await renderEmail(pool, 'partner_welcome', {
-      userName, email: to, role, loginUrl
+      userName, email: to, role, loginUrl, setPasswordUrl, setPasswordDays
     });
     const result = await mailer.sendMail({ to, subject, html, text });
 
@@ -120,7 +120,7 @@ async function sendUserWelcomeEmail({ to, userName, role, loginUrl, userId = nul
 
     await logSystemEvent(
       `USER_WELCOME_EMAIL_${status}`, 'EMAIL', userId, null, null,
-      { to, role: role || null, reason: result.reason || null },
+      { to, role: role || null, reason: result.reason || null, set_password_link: Boolean(setPasswordUrl) },
       status === 'FAILED' ? 'FAILED' : 'SUCCESS', err
     );
     return status;

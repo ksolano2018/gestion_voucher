@@ -68,7 +68,10 @@ const TEMPLATE_VARIABLES_USER = [
   { token: '{{resetUrl}}',  desc: 'Enlace de un solo uso para restablecer la contraseña (solo en la plantilla de recuperación)' },
   { token: '{{expiresMinutes}}', desc: 'Minutos de vigencia del enlace de recuperación' },
   { token: '{{#isPartner}}…{{/isPartner}}', desc: 'Bloque visible solo si el rol es Partner' },
-  { token: '{{#hasLoginUrl}}…{{/hasLoginUrl}}', desc: 'Bloque visible solo si hay URL de login' }
+  { token: '{{#hasLoginUrl}}…{{/hasLoginUrl}}', desc: 'Bloque visible solo si hay URL de login' },
+  { token: '{{setPasswordUrl}}', desc: 'Enlace de un solo uso para que el usuario cree su contraseña (bienvenida)' },
+  { token: '{{setPasswordDays}}', desc: 'Días de vigencia del enlace para crear la contraseña' },
+  { token: '{{#hasSetPasswordUrl}}…{{/hasSetPasswordUrl}}', desc: 'Bloque visible solo si hay enlace para crear la contraseña' }
 ];
 
 // Cada clave pertenece a una audiencia (se usa para agrupar en el selector del editor).
@@ -147,6 +150,7 @@ function buildContext(p = {}) {
     // El link de un solo uso es la vía vigente; tempPassword solo se muestra como
     // fallback si por algún motivo no se pudo generar el link (QA-08).
     hasSetPasswordUrl: Boolean(setPasswordUrl),
+    setPasswordDays: p.setPasswordDays || 7,
     hasTempPassword: Boolean(tempPassword) && !setPasswordUrl,
     hasExpires: Boolean(expiresLbl),
     isNewEnrollment: Boolean(p.isNewEnrollment),
@@ -316,7 +320,15 @@ function layoutPartnerHtml(copy) {
         <tr><td style="background:${Y};padding:22px 28px;text-align:center;">
           <h2 style="margin:0 0 8px;font-size:17pt;font-weight:700;color:${I};">🔐 Tus accesos</h2>
           <p style="margin:0;font-size:14px;color:${I};"><strong>👤 Usuario:</strong> {{email}}</p>
+          {{#hasSetPasswordUrl}}
+          <p style="margin:16px 0 10px;">
+            <a href="{{setPasswordUrl}}" target="_blank" style="background:${I};color:${W};text-decoration:none;padding:12px 28px;border-radius:4px;font-size:12pt;font-weight:700;display:inline-block;">🔑 Crear mi contraseña</a>
+          </p>
+          <p style="margin:0;font-size:13px;color:${I};">Este enlace es personal y de un solo uso, y vence en {{setPasswordDays}} días. Si vence, usa «¿Olvidaste tu contraseña?» en la pantalla de inicio de sesión.</p>
+          {{/hasSetPasswordUrl}}
+          {{^hasSetPasswordUrl}}
           <p style="margin:8px 0 0;font-size:13px;color:${I};">Tu contraseña inicial te la comparte el administrador por un canal seguro. Por seguridad, al ingresar por primera vez se te pedirá cambiarla.</p>
+          {{/hasSetPasswordUrl}}
         </td></tr>
 
         <tr><td style="background:${L};padding:24px 28px;">
@@ -345,7 +357,8 @@ function layoutPartnerText(copy) {
     '', '¿Cómo ingresar a la plataforma?',
     '{{#hasLoginUrl}}1. Ingresa aquí: {{{loginUrl}}}{{/hasLoginUrl}}', 'Inicia sesión con tus datos.',
     '', 'Tus accesos', 'Usuario: {{email}}',
-    'Tu contraseña inicial te la comparte el administrador por un canal seguro; al ingresar por primera vez se te pedirá cambiarla.',
+    '{{#hasSetPasswordUrl}}Crea tu contraseña aquí (enlace personal, de un solo uso, vence en {{setPasswordDays}} días): {{{setPasswordUrl}}}{{/hasSetPasswordUrl}}'
+      + '{{^hasSetPasswordUrl}}Tu contraseña inicial te la comparte el administrador por un canal seguro; al ingresar por primera vez se te pedirá cambiarla.{{/hasSetPasswordUrl}}',
     '', 'Tu éxito es nuestra prioridad.',
     'CertJoin Certifications LLC — http://www.certjoin.com',
     '4300 Biscayne Blvd Suite 203 Miami, Florida 33137'
@@ -471,7 +484,8 @@ function sampleContext(key) {
   if (key === 'partner_welcome') {
     return buildContext({
       userName: 'Ana Pérez', email: 'ana.perez@example.com', role: 'partner',
-      loginUrl: process.env.FRONTEND_URL || 'https://vouchers.certjoin.com'
+      loginUrl: process.env.FRONTEND_URL || 'https://vouchers.certjoin.com',
+      setPasswordUrl: (process.env.FRONTEND_URL || 'https://vouchers.certjoin.com') + '/reset-password?token=ejemplo&welcome=1'
     });
   }
   return buildContext({

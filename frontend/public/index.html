@@ -599,6 +599,16 @@
         margin: 0;
       }
 
+      .cart-breakdown {
+        margin-top: 1rem;
+        padding: .75rem 1rem;
+        border-radius: 8px;
+        background: var(--bg-soft, #f6f8fb);
+        font-size: .9rem;
+      }
+      .cart-breakdown .cb-row { display: flex; justify-content: space-between; gap: 1rem; padding: 2px 0; }
+      .cart-breakdown .cb-note { color: #6c757d; font-size: .8rem; margin-top: 4px; }
+
       .cart-total-row {
         display: flex;
         justify-content: space-between;
@@ -2471,13 +2481,15 @@
               <div class="card-body">
                 <h4 class="section-title">Carrito</h4>
                 <div id="cart-items-container" class="mt-3"></div>
+                <div id="cart-breakdown" class="cart-breakdown" style="display:none;"></div>
                 <div class="cart-total-row">
                   <span class="section-subtitle">Total</span>
                   <strong id="cart-total" class="cart-total-amount">$0.00</strong>
                 </div>
-                <div class="d-flex gap-2 mt-3">
-                  <button id="cart-clear" class="btn btn-outline-secondary">Vaciar carrito</button>
-                  <button id="cart-checkout" class="btn btn-primary">Continuar</button>
+                <div class="d-flex gap-2 mt-3 flex-wrap">
+                  <button id="cart-back" type="button" class="btn btn-outline-secondary">← Atrás</button>
+                  <button id="cart-clear" type="button" class="btn btn-outline-danger">Vaciar carrito</button>
+                  <button id="cart-checkout" type="button" class="btn btn-primary ms-auto">Continuar al pago</button>
                 </div>
               </div>
             </div>
@@ -4126,7 +4138,7 @@
                         <div class="row g-3">
                           <div class="col-lg-6">
                             <div class="fw-semibold mb-1">Opción A: subir un archivo</div>
-                            <p class="text-muted small mb-2">Solo con los alumnos: <code>user_name</code> y <code>user_email</code> (opcional <code>final_client</code>). La certificación de cada alumno la eliges aquí en la lista, así el catálogo siempre está al día.</p>
+                            <p class="text-muted small mb-2">Solo con los alumnos: <code>Nombres</code>, <code>Apellidos</code> y <code>Correo</code> (opcional <code>Cliente final</code>). También se acepta la plantilla anterior con <code>user_name</code> y <code>user_email</code>. La certificación de cada alumno la eliges aquí en la lista, así el catálogo siempre está al día.</p>
                             <button id="download-activation-template" class="btn btn-outline-secondary btn-sm mb-2">⬇ Descargar plantilla</button>
                             <input id="activate-excel-file" type="file" class="form-control" accept=".xlsx,.xls,.csv">
                             <div id="bulk-file-note" class="form-text">Al elegir el archivo, sus alumnos se agregan a la lista de abajo.</div>

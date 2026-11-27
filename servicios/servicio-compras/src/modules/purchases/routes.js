@@ -205,13 +205,18 @@ router.post('/partner/:id/checkout',
     // create Stripe Checkout session
     const sessionPayload = {
       payment_method_types: ['card'],
+      // Un único line-item: quantity = vouchers de la orden × precio unitario del tramo
+      // (informe QA 2.4/2.5). Así Stripe muestra el desglose: tramo, precio c/u y cantidad.
       line_items: [{
         price_data: {
           currency: 'usd',
-          product_data: { name: descriptor || `Vouchers x${q}` },
-          unit_amount: Math.round(parseFloat(pricing.total_price) * 100)
+          product_data: {
+            name: `Voucher CertJoin · ${pricing.pricing_profile_name} · tramo ${pricing.quantity_range}`,
+            description: `US$${pricing.unit_price.toFixed(2)} por voucher · ${pricing.cumulative_qty} vouchers comprados antes + ${q} en esta orden = ${pricing.lookup_qty} (tramo ${pricing.quantity_range})`
+          },
+          unit_amount: Math.round(parseFloat(pricing.unit_price) * 100)
         },
-        quantity: 1
+        quantity: q
       }],
       mode: 'payment',
       customer: stripeCustomerId,
@@ -576,8 +581,8 @@ router.post('/webhook/stripe', express.raw({ type: 'application/json' }), async 
           const prevPurchaseData = await pool.query('SELECT status, qty FROM purchases WHERE id=$1', [newPurchaseId]);
           previousPurchaseStatus = prevPurchaseData.rows[0]?.status || 'UNKNOWN';
 
-          // No se sobrescribe qty: la fijó /checkout con la cantidad real comprada (el line
-          // item de Stripe es quantity:1 con unit_amount=total, así que totalQty daría 1).
+          // No se sobrescribe qty: la fijó /checkout con la cantidad real comprada (las compras
+          // antiguas tenían un line item quantity:1 con unit_amount=total).
           await pool.query(
             `UPDATE purchases
              SET partner_id=$1, total_price=$2, status=$3, stripe_status=$4, stripe_session_id=$5, payment_intent_id=$6, updated_at=NOW()
